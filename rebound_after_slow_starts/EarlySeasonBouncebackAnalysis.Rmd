@@ -1,0 +1,522 @@
+---
+title: "Rebound After Slow Starts (2025–26)"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+params:
+  players:
+    - "Cam Spencer"
+    - "Cam Johnson"
+    - "Miles McBride"
+    - "Derrick White"
+    - "Tyus Jones"
+    - "Isaiah Stewart"
+    - "Jay Huff"
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(scales)
+library(showtext)
+library(sysfonts)
+library(knitr)
+library(hoopR)
+library(lubridate)
+library(tidyr)
+library(ggrepel)
+
+sysfonts::font_add_google("Poppins", "poppins")
+showtext::showtext_auto()
+```
+
+## Executive Summary
+This report flags players who improved after poor early-season results by comparing their first n/2 games to the most recent n/2 games. For each player, we diagnose whether the rebound is more consistent with (1) role/usage change, (2) shot diet change, or (3) shot-making regression.
+
+## Data
+```{r data, cache=TRUE, echo=FALSE}
+get_player_gamelogs = function(season = "2025-26") {
+  lg = hoopR::nba_leaguegamelog(
+    season = season,
+    season_type = "Regular Season",
+    player_or_team = "P"
+  )
+
+  lg$LeagueGameLog %>%
+    mutate(
+      team = TEAM_ABBREVIATION,
+      game_date = as.Date(GAME_DATE),
+      player_name = PLAYER_NAME,
+      player_id = PLAYER_ID,
+      minutes = as.numeric(MIN),
+      points = as.numeric(PTS),
+      fga = as.numeric(FGA),
+      fgm = as.numeric(FGM),
+      fg3a = as.numeric(FG3A),
+      fg3m = as.numeric(FG3M),
+      fta = as.numeric(FTA),
+      ftm = as.numeric(FTM),
+      tov = as.numeric(TOV),
+      ast = as.numeric(AST),
+      reb = as.numeric(REB),
+      ts_pct = if_else(
+        (as.numeric(FGA) + 0.44 * as.numeric(FTA)) > 0,
+        as.numeric(PTS) / (2 * (as.numeric(FGA) + 0.44 * as.numeric(FTA))),
+        NA_real_
+      )
+    ) %>%
+    select(player_name, player_id, team, game_date, minutes, points,
+           fgm, fga, fg3m, fg3a, ftm, fta, tov, ast, reb, ts_pct) %>%
+    arrange(player_name, game_date)
+}
+
+games = get_player_gamelogs("2025-26")
+```
+
+## Methods
+- Windows: player-specific first half of games vs second half of games.
+- Core outcomes: PPG, TS%, MPG, FGA/G.
+- Diagnostics: 3PA share, FT rate, turnovers, and shot-zone FG% splits.
+
+## Helper functions
+```{r helpers, echo=FALSE}
+# + formatting
+fmt_delta = function(x, digits = 1) {
+  out = round(x, digits)
+  ifelse(out > 0, paste0("+", out), as.character(out))
+}
+fmt_pct_delta = function(x, accuracy = 0.1) {
+  sign = ifelse(x > 0, "+", "")
+  paste0(sign, scales::percent(x, accuracy = accuracy))
+}
+
+split_halves = function(df, player) {
+  df_p = df %>%
+    filter(.data$player_name == player) %>%
+    arrange(.data$game_date)
+
+  n = nrow(df_p)
+  if (n < 6) return(NULL)
+
+  n_early = floor(n / 2)
+  list(
+    early  = df_p %>% slice_head(n = n_early),
+    recent = df_p %>% slice_tail(n = n - n_early)
+  )
+}
+
+summarize_window = function(df) {
+  df %>%
+    summarise(
+      gp = n(),
+      mpg = mean(minutes, na.rm = TRUE),
+      ppg = mean(points, na.rm = TRUE),
+      ast_pg = mean(ast, na.rm = TRUE),
+      reb_pg = mean(reb, na.rm = TRUE),
+      ts  = mean(ts_pct, na.rm = TRUE),
+      fga_pg = mean(fga, na.rm = TRUE),
+      three_rate = mean(fg3a / pmax(fga, 1), na.rm = TRUE),
+      ft_rate    = mean(fta  / pmax(fga, 1), na.rm = TRUE),
+      tov_pg     = mean(tov, na.rm = TRUE)
+    )
+}
+
+make_deltas = function(early, recent) {
+  out = tibble(
+    gp_early = early$gp, gp_recent = recent$gp,
+    mpg_early = early$mpg, mpg_recent = recent$mpg,
+    ppg_early = early$ppg, ppg_recent = recent$ppg,
+    ast_pg_early = early$ast_pg, ast_pg_recent = recent$ast_pg,
+    reb_pg_early = early$reb_pg, reb_pg_recent = recent$reb_pg,
+    ts_early  = early$ts,  ts_recent  = recent$ts,
+    fga_pg_early = early$fga_pg, fga_pg_recent = recent$fga_pg,
+    three_rate_early = early$three_rate, three_rate_recent = recent$three_rate,
+    ft_rate_early    = early$ft_rate,    ft_rate_recent    = recent$ft_rate,
+    tov_pg_early     = early$tov_pg,     tov_pg_recent     = recent$tov_pg
+  ) %>%
+    mutate(
+      ppg_delta = ppg_recent - ppg_early,
+      ast_pg_delta = ast_pg_recent - ast_pg_early,
+      reb_pg_delta = reb_pg_recent - reb_pg_early,
+      ts_delta  = ts_recent  - ts_early,
+      mpg_delta = mpg_recent - mpg_early,
+      fga_pg_delta = fga_pg_recent - fga_pg_early,
+      three_rate_delta = three_rate_recent - three_rate_early,
+      ft_rate_delta    = ft_rate_recent    - ft_rate_early,
+      tov_pg_delta     = tov_pg_recent     - tov_pg_early
+    )
+
+  out
+}
+
+
+
+make_halves_table = function(early_sum, recent_sum) {
+  tibble(
+    Window = c("Early", "Recent"),
+    GP = c(early_sum$gp, recent_sum$gp),
+    MPG = round(c(early_sum$mpg, recent_sum$mpg), 1),
+    PPG = round(c(early_sum$ppg, recent_sum$ppg), 1),
+    `AST/G` = round(c(early_sum$ast_pg, recent_sum$ast_pg), 1),
+    `REB/G` = round(c(early_sum$reb_pg, recent_sum$reb_pg), 1),
+    `TS%` = scales::percent(c(early_sum$ts, recent_sum$ts), accuracy = 0.1),
+    `FGA/G` = round(c(early_sum$fga_pg, recent_sum$fga_pg), 1),
+    `3PA Share` = scales::percent(c(early_sum$three_rate, recent_sum$three_rate), accuracy = 1),
+    `FT Rate` = scales::percent(c(early_sum$ft_rate, recent_sum$ft_rate), accuracy = 1),
+    `TOV/G` = round(c(early_sum$tov_pg, recent_sum$tov_pg), 2)
+  )
+}
+
+
+# --- shots: fetch, split, zone, plot ---
+get_player_shots = function(player_id, season = "2025-26") {
+  sc = hoopR::nba_shotchartdetail(
+    season = season,
+    season_type = "Regular Season",
+    player_id = player_id,
+    team_id = 0,
+    context_measure_simple = "FGA"
+  )
+
+  sc$Shot_Chart_Detail %>%
+    mutate(
+      game_date_raw = as.character(GAME_DATE),
+      game_date = suppressWarnings(lubridate::mdy(game_date_raw)),
+      game_date = if_else(is.na(game_date),
+                          suppressWarnings(lubridate::ymd(game_date_raw)),
+                          game_date),
+      x = as.numeric(LOC_X),
+      y = as.numeric(LOC_Y),
+      made = as.integer(SHOT_MADE_FLAG)
+    ) %>%
+    filter(!is.na(game_date)) %>%
+    select(game_date, x, y, made)
+}
+
+split_halves_dates = function(games_player) {
+  dates = games_player %>% arrange(game_date) %>% pull(game_date)
+  n = length(dates)
+  n_early = floor(n / 2)
+  list(
+    early_dates = dates[1:n_early],
+    recent_dates = dates[(n_early + 1):n]
+  )
+}
+
+build_player_shots_split = function(games_df, shots_df, player_name) {
+  gp = games_df %>%
+    filter(.data$player_name == player_name) %>%
+    arrange(game_date)
+
+  cut = split_halves_dates(gp)
+
+  shots_df %>%
+    mutate(
+      window = case_when(
+        game_date %in% cut$early_dates ~ "Early",
+        game_date %in% cut$recent_dates ~ "Recent",
+        TRUE ~ NA_character_
+      )
+    ) %>%
+    filter(!is.na(window))
+}
+
+dir.create("rebound_after_slow_starts/data/processed/shots", recursive = TRUE, showWarnings = FALSE)
+
+get_cached_shots = function(player_id, season = "2025-26") {
+  path = file.path("rebound_after_slow_starts/data/processed/shots", paste0("shots_", player_id, ".csv"))
+  if (file.exists(path)) return(readr::read_csv(path, show_col_types = FALSE))
+  s = get_player_shots(player_id, season)
+  readr::write_csv(s, path)
+  s
+}
+
+add_zone = function(df) {
+  df %>%
+    mutate(
+      r = sqrt(x^2 + y^2),
+      corner = abs(x) > 220 & y < 92,
+      zone = case_when(
+        r <= 48 ~ "Rim",
+        r <= 120 ~ "Paint (non-rim)",
+        r <= 220 ~ "Midrange",
+        corner ~ "Corner 3",
+        r > 220 ~ "Above-the-break 3",
+        TRUE ~ "Other"
+      ),
+      zone = factor(zone, levels = c("Rim", "Paint (non-rim)", "Midrange", "Corner 3", "Above-the-break 3", "Other"))
+    )
+}
+
+zone_summary = function(shots_split) {
+  shots_split %>%
+    add_zone() %>%
+    group_by(window, zone) %>%
+    summarise(
+      fga = n(),
+      fgm = sum(made, na.rm = TRUE),
+      fg_pct = fgm / fga,
+      .groups = "drop"
+    ) %>%
+    filter(fga >= 5)
+}
+
+zone_delta = function(zdf) {
+  zdf %>%
+    select(window, zone, fg_pct, fga) %>%
+    tidyr::pivot_wider(names_from = window, values_from = c(fg_pct, fga)) %>%
+    mutate(
+      fg_delta = fg_pct_Recent - fg_pct_Early,
+      fga_delta = fga_Recent - fga_Early
+    ) %>%
+    arrange(desc(abs(fg_delta)))
+}
+
+plot_zone_eff = function(zdf, title = NULL) {
+  ggplot(zdf, aes(x = zone, y = window, fill = fg_pct)) +
+    geom_tile(color = "white", linewidth = 0.6) +
+    geom_text(aes(label = paste0(round(fg_pct * 100), "%\n(", fga, ")")),
+              size = 3.1, lineheight = 0.95) +
+    scale_fill_gradient2(
+      low = "red3",
+      mid = "orange",
+      high = "chartreuse4",
+      midpoint = 0.50,
+      labels = scales::percent_format(accuracy = 1)
+    ) +
+    labs(
+      title = title,
+      subtitle = "FG% by zone. Cell shows FG% and attempts (FGA).",
+      x = NULL, y = NULL, fill = "FG%"
+    ) +
+    theme_minimal(base_family = "poppins") +
+    theme(
+      panel.grid = element_blank(),
+      axis.text.x = element_text(angle = 0, hjust = 0.5),
+      strip.text = element_text(face = "bold"),
+      plot.title = element_text(face = "bold")
+    )
+}
+
+write_player_paragraph = function(player, halves_tbl, deltas_row, zdelta) {
+  # deltas_row is the 1-row tibble from make_deltas()
+  ppg_d = deltas_row$ppg_delta
+  ts_d  = deltas_row$ts_delta
+  mpg_d = deltas_row$mpg_delta
+  fga_d = deltas_row$fga_pg_delta
+
+  # top 2 zone efficiency changes
+  top = zdelta %>% slice_head(n = 2)
+  z1 = if (nrow(top) >= 1) paste0(as.character(top$zone[1]), " (", fmt_pct_delta(top$fg_delta[1], 1), ")") else "N/A"
+  z2 = if (nrow(top) >= 2) paste0(as.character(top$zone[2]), " (", fmt_pct_delta(top$fg_delta[2], 1), ")") else "N/A"
+
+  paste0(
+    "Across the second half of games played, ", player, " increased production by ",
+    fmt_delta(ppg_d, 1), " PPG with TS% up ", fmt_pct_delta(ts_d, 0.1), ". ",
+    "Minutes changed by ", fmt_delta(mpg_d, 1), " MPG and shot volume changed by ",
+    fmt_delta(fga_d, 1), " FGA/G. ",
+    "The biggest zone-level FG% swings were ", z1, " and ", z2, "."
+  )
+}
+```
+
+```{r overview-plot, echo=FALSE, fig.width=6.2, fig.height=4.2, fig.align='center', fig.pos='H'}
+plot_df = lapply(params$players, function(p) {
+  sp = split_halves(games, p)
+  if (is.null(sp)) return(NULL)
+
+  team = games %>% filter(player_name == p) %>% slice_tail(n = 1) %>% pull(team) %>% .[1]
+
+  early  = summarize_window(sp$early)  %>% mutate(player = p, window = "Early",  team = team)
+  recent = summarize_window(sp$recent) %>% mutate(player = p, window = "Recent", team = team)
+
+  bind_rows(early, recent)
+}) %>% bind_rows()
+
+team_colors = c(
+  BOS = "#007A33",
+  DET = "#C8102E",
+  IND = "#002D62",
+  MEM = "#5D76A9",
+  NYK = "#006BB6",
+  ORL = "#0077C0"
+)
+
+theme_caleb_big = theme_minimal(base_family = "poppins") +
+  theme(
+    plot.background = element_rect(fill = "#f6f4ef", color = NA),
+    panel.background = element_rect(fill = "#f6f4ef", color = NA),
+    panel.grid.major = element_line(color = "#dedad3", linewidth = 0.3),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(size = 18, face = "bold", hjust = 0.5, color = "#141414"),
+    plot.subtitle = element_text(size = 12, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 10)),
+    axis.title = element_text(size = 13, face = "bold", color = "#141414"),
+    axis.text = element_text(size = 10, color = "#333333"),
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 9),
+    plot.caption = element_text(size = 8, color = "#6e6e6e", hjust = 1, margin = margin(t = 8)),
+    plot.margin = margin(10, 14, 10, 14)
+  )
+
+p_plot = ggplot(
+  plot_df,
+  aes(x = three_rate, y = ts, group = player, color = team, shape = window)
+) +
+  geom_line(linewidth = 0.9, alpha = 0.7) +
+  geom_point(size = 3.0) +
+  ggrepel::geom_text_repel(
+    data = dplyr::filter(plot_df, window == "Recent"),
+    aes(label = player),
+    size = 3.0,
+    box.padding = 0.35,
+    point.padding = 0.25,
+    min.segment.length = 0,
+    segment.size = 0.3,
+    segment.alpha = 0.6,
+    max.overlaps = 12,
+    force = 1,
+    force_pull = 0.2,
+    seed = 42,
+    show.legend = FALSE
+  ) +
+  scale_color_manual(values = team_colors) +
+  scale_shape_manual(values = c(Early = 1, Recent = 16)) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1), expand = expansion(mult = c(0.02, 0.12))) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1), expand = expansion(mult = c(0.03, 0.10))) +
+  labs(
+    title = "Rebound After Slow Starts",
+    subtitle = "Early vs recent half-season splits",
+    x = "3PA Share (3PA / FGA)",
+    y = "True Shooting %",
+    caption = "Data: NBA game logs via hoopR | Windows split by games played | Plot: @Rambzee_"
+  ) +
+  theme_caleb_big
+
+print(p_plot)
+```
+
+## Summary Tables
+```{r summary, echo=FALSE}
+summary_tbl = lapply(params$players, function(p) {
+  sp = split_halves(games, p)
+  if (is.null(sp)) return(NULL)
+
+  early = summarize_window(sp$early)
+  recent = summarize_window(sp$recent)
+
+  make_deltas(early, recent) %>% mutate(player = p)
+}) %>% bind_rows() %>%
+  select(
+    player,
+    gp_early, gp_recent,
+    mpg_early, mpg_recent,
+    ppg_early, ppg_recent, ppg_delta,
+    ast_pg_early, ast_pg_recent, ast_pg_delta,
+    reb_pg_early, reb_pg_recent, reb_pg_delta,
+    ts_early, ts_recent, ts_delta,
+    fga_pg_early, fga_pg_recent, fga_pg_delta,
+    three_rate_early, three_rate_recent, three_rate_delta,
+    ft_rate_early, ft_rate_recent, ft_rate_delta,
+    tov_pg_early, tov_pg_recent, tov_pg_delta
+  ) %>%
+  arrange(desc(ppg_delta))
+
+summary_core = summary_tbl %>%
+  transmute(
+    Player = player,
+    `GP (E→R)` = paste0(gp_early, "→", gp_recent),
+    `MPG (E→R)` = paste0(round(mpg_early, 1), "→", round(mpg_recent, 1)),
+    `PPG Δ` = fmt_delta(ppg_delta, 1),
+    `AST/G Δ` = fmt_delta(ast_pg_delta, 1),
+    `REB/G Δ` = fmt_delta(reb_pg_delta, 1),
+    `TS% Δ` = fmt_pct_delta(ts_delta, 0.1),
+    `FGA/G Δ` = fmt_delta(fga_pg_delta, 1)
+  )
+
+knitr::kable(summary_core, booktabs = TRUE,
+             caption = "Core rebound signals (first half vs second half of games played)")
+
+summary_diet = summary_tbl %>%
+  transmute(
+    Player = player,
+    `3PA Share (E→R)` = paste0(
+      scales::percent(three_rate_early, accuracy = 1), "→",
+      scales::percent(three_rate_recent, accuracy = 1)
+    ),
+    `3PA Share Δ` = fmt_pct_delta(three_rate_delta, 1),
+    `FT Rate (E→R)` = paste0(
+      scales::percent(ft_rate_early, accuracy = 1), "→",
+      scales::percent(ft_rate_recent, accuracy = 1)
+    ),
+    `FT Rate Δ` = fmt_pct_delta(ft_rate_delta, 1),
+    `TOV/G (E→R)` = paste0(round(tov_pg_early, 2), "→", round(tov_pg_recent, 2)),
+    `TOV/G Δ` = fmt_delta(tov_pg_delta, 2)
+  )
+
+knitr::kable(summary_diet, booktabs = TRUE,
+             caption = "Shot diet / role proxies (first half vs second half)")
+```
+## How to interpret the diagnostics
+- If 3PA share and FT rate are stable but TS% jumps: likely shot-making regression.
+- If 3PA share rises: role shifted toward spacing or catch-and-shoot.
+- If FT rate rises: more rim pressure or more physical usage.
+- If TOV/G rises with production: more on-ball responsibility.
+
+## Player pages
+```{r player-pages, results='asis', echo=FALSE, fig.width=8.5, fig.height=3.8, fig.align='center', fig.pos='H'}
+for (player in params$players) {
+  sp = split_halves(games, player)
+  if (is.null(sp)) next
+
+  early_sum  = summarize_window(sp$early)
+  recent_sum = summarize_window(sp$recent)
+  deltas_row = make_deltas(early_sum, recent_sum)
+
+  halves_tbl = make_halves_table(early_sum, recent_sum)
+
+  delta_tbl = deltas_row %>%
+  transmute(
+    `PPG Δ` = fmt_delta(ppg_delta, 1),
+    `AST/G Δ` = fmt_delta(ast_pg_delta, 1),
+    `REB/G Δ` = fmt_delta(reb_pg_delta, 1),
+    `TS% Δ` = fmt_pct_delta(ts_delta, 0.1),
+    `MPG Δ` = fmt_delta(mpg_delta, 1),
+    `FGA/G Δ` = fmt_delta(fga_pg_delta, 1),
+    `3PA Share Δ` = fmt_pct_delta(three_rate_delta, 1),
+    `FT Rate Δ` = fmt_pct_delta(ft_rate_delta, 1),
+    `TOV/G Δ` = fmt_delta(tov_pg_delta, 2)
+  )
+
+  player_id = games %>%
+    filter(player_name == player) %>%
+    slice_tail(n = 1) %>%
+    pull(player_id) %>%
+    .[1]
+
+  shots = get_cached_shots(player_id, "2025-26")
+  shots_split = build_player_shots_split(games, shots, player)
+  zdf = zone_summary(shots_split)
+  zdelta = zone_delta(zdf)
+
+  # page break + header
+  cat("\n\n\\newpage\n")
+  cat("\n\n# ", player, "\n\n", sep = "")
+
+  # paragraph
+  cat(write_player_paragraph(player, halves_tbl, deltas_row, zdelta), "\n\n")
+
+  # tables
+  cat("## First half vs second half\n\n")
+  cat(knitr::kable(halves_tbl, booktabs = TRUE), sep = "\n")
+
+  cat("\n\n## Change summary\n\n")
+  cat(knitr::kable(delta_tbl, booktabs = TRUE), sep = "\n")
+
+  # zone plot
+  cat("\n\n## Shot zone efficiency\n\n")
+  print(plot_zone_eff(zdf, title = paste0(player, " shot zone efficiency (Early vs Recent)")))
+}
+```
