@@ -199,8 +199,8 @@ add_standard_shot_zones = function(shots) {
 
       r = sqrt(x^2 + y^2),
 
-      rim_5ft = 60,     # 5 ft = 60 in
-      paint_10ft = 120, # 10 ft = 120 in
+      rim_5ft = 60,    
+      paint_10ft = 120, 
 
       is_corner = abs(x) > 220 & y < 92,
       is_3pt = (r >= 237.5 & y >= 92) | is_corner,
@@ -212,7 +212,7 @@ add_standard_shot_zones = function(shots) {
       ),
 
       zone = case_when(
-        # 3s
+
         is_3pt & is_corner & x < 0 ~ "LC3",
         is_3pt & is_corner & x > 0 ~ "RC3",
 
@@ -439,7 +439,6 @@ plot_keon_density = function(df, metric_col, metric_label,
   lg_avg = mean(df2[[metric_col]], na.rm = TRUE)
   pctl = pct_rank(df2[[metric_col]], keon_val)
 
-  # nice annotation text
   ann_txt = paste0(
     keon_name, "\n",
     round(keon_val, 2), " ", metric_label, "\n",
@@ -456,13 +455,10 @@ plot_keon_density = function(df, metric_col, metric_label,
   ggplot(df2, aes(x = .data[[metric_col]])) +
     geom_density(fill = "grey85", alpha = 1) +
 
-    # league average (dashed dark gray)
     geom_vline(xintercept = lg_avg, linetype = "dashed", linewidth = 0.9, color = "#4b4b4b") +
 
-    # Keon (Kings purple)
     geom_vline(xintercept = keon_val, linewidth = 1.2, color = kings_purple) +
 
-    # label box anchored near top
     annotate(
       "label",
       x = keon_val,
@@ -485,8 +481,6 @@ plot_keon_density = function(df, metric_col, metric_label,
       caption = "Data: NBA API via hoopR | Viz: @Rambzee_"
     ) +
     theme_caleb_rmd() +
-
-    # keep caption safely bottom-left, never overlapping plot
     theme(plot.caption.position = "plot")
 }
 
