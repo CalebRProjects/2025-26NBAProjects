@@ -1,0 +1,553 @@
+---
+title: "Keon Ellis: Why Teams Want Him (2025–26)"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, echo = FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(hoopR)
+library(lubridate)
+library(showtext)
+library(sysfonts)
+library(tibble)
+library(grid)
+
+font_add_google("Poppins", "poppins")
+showtext_auto()
+
+theme_caleb_rmd = function()
+  {
+  theme_minimal(base_family = "poppins") +
+    theme(
+      plot.background = element_rect(fill = "#f6f4ef", color = NA),
+      panel.background = element_rect(fill = "#f6f4ef", color = NA),
+      panel.grid.major = element_line(color = "#dedad3", linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+
+      plot.title = element_text(size = 20, face = "bold", hjust = 0.5, color = "#141414"),
+      plot.subtitle = element_text(size = 9.5, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 6)),
+
+      axis.title = element_text(size = 13, face = "bold", color = "#141414"),
+      axis.text = element_text(size = 10, color = "#333333"),
+
+      legend.position = "none",
+
+      plot.caption = element_text(size = 8, color = "#6e6e6e", hjust = 0, margin = margin(t = 8)),
+      plot.margin = margin(10, 12, 18, 12)
+      )
+  }
+```
+
+# Executive Summary
+
+Keon Ellis profiles as a low-usage, high-impact rotation guard whose value is driven by defensive event creation, offensive efficiency, and versatility rather than raw box-score production. Across multiple seasons and data sources, Ellis consistently grades as a positive on-court contributor despite moderate usage and fluctuating team context.
+
+Offensively, Ellis functions as a connective piece rather than a driver. His shot diet is tightly constrained to efficient zones, his turnover rates remain low, and his efficiency holds as minutes differ game-to-game. Defensively, he produces events at an elite rate, placing him near the top of the league in steal-based metrics and stop creation, making Keon one of the leagues most disruptive perimeter defenders.
+
+For teams seeking perimeter defense without offensive drag, Ellis is a scalable, playoff-viable role player whose value increases alongside offensive talent.
+
+# Impact Metrics
+
+Across Cleaning the Glass and Databallr, Ellis’ impact profile is unusually consistent for a low-usage perimeter guard.
+
+```{r ctg data, echo = FALSE, message=FALSE, warning=FALSE}
+ctg_onoff = tibble(
+  season = c("2023-24","2024-25","2025-26"),
+  minutes = c(912, 1929, 424),
+  net_onoff = c(2.8, 5.0, -0.5),
+  pts_poss_onoff = c(-0.4, 3.9, -1.6),
+  efg_onoff = c(-0.008, 0.019, -0.005),
+  tov_onoff = c(0.001, -0.003, 0.014),
+  orb_onoff = c(0.012, 0.002, -0.032),
+  ftr_onoff = c(-0.002, -0.003, 0.016)
+  )
+
+ctg_onoff %>%
+  transmute(
+    Season = season,
+    Min = scales::comma(minutes),
+    `Net Rating (On-Off)` = net_onoff,
+    ) %>% kable(caption = "Cleaning the Glass – On/Off Differentials (On minus Off)")
+
+```
+
+* 2023–24: Ellis posted a slightly positive net rating (+2.8 on/off) despite largely neutral offensive indicators. Even early in his career, his defensive presence led to him having a meaningful impact.
+
+* 2024–25: That trend strengthened meaningfully. Lineups with Ellis on the floor improved by +5.0 points per 100 possessions, driven by a +3.9 offensive points-per-possession differential. Established him as a clear lineup booster rather than a defense first guard with questionable offense. 
+
+* 2025–26: So far, the 424-minute sample shows mixed results and should be treated as noise, particularly given Sacramento’s volatile lineup context.
+
+Importantly, Ellis’ positive on/off impact persists without scoring volume. As shown in Table 1, on-court offensive ratings trend upward with increased minutes, while turnover rates remain low and efficiency stays stable.
+
+```{r databallr data, echo = FALSE, message=FALSE, warning=FALSE}
+databallr = tibble::tribble(
+  ~season, ~mp, ~o_dpm, ~d_dpm, ~rapm, ~rts, ~three_pct, ~stl_pct, ~blk_pct, ~stop_pct,
+  "2024-25", 1900, -0.2, 1.2, 1.2, 0.089, 0.433, 3.1, 1.6, 4.3,
+  "2025-26", 458,  -0.5, 1.0, 0.5, -0.055, 0.352, 3.6, 1.1, 5.3
+  )
+
+databallr %>%
+  transmute(
+    Season = season,
+    MP = scales::comma(mp),
+    `O-DPM` = round(o_dpm, 2),
+    `D-DPM` = round(d_dpm, 2),
+    `RAPM` = round(rapm, 2),
+    `STL%` = round(stl_pct, 1),
+    `BLK%` = round(blk_pct, 1),
+    `STOP%` = round(stop_pct, 1)) %>% kable(caption = "Databallr – Impact and Event Creation")
+```
+
+Advanced metrics reinforce this profile.
+
+From Databallr (Table 2), Ellis posts:
+
+* Defensive DPM: +1.2 (2024–25), +1.0 (2025–26)
+
+* RAPM: +1.2 (2024–25)
+
+* STOP%: 4.3% → 5.3% (2024 → 2025)
+
+Offensive metrics remain near league average, but do not negate his defensive value. This combination of positive defense without offensive drag is rare among perimeter role players and explains Ellis’ persistent positive impact.
+
+Keon Ellis contributes to winning without requiring the ball or concessions on offense.
+
+# Offensive Role & Shot-Profile
+
+Ellis’ offensive game is defined by role adherence.
+
+```{r usage-v-efficiency, echo = FALSE, message=FALSE, warning=FALSE}
+plot_usage_vs_eff_base = function(season_used = "2024-25",
+                                  min_minutes = 200,
+                                  keon_name = "Keon Ellis",
+                                  kings_purple = "#5A2D81") {
+
+  df = hoopR::nba_leaguedashplayerstats(
+    season = season_used,
+    season_type = "Regular Season",
+    measure_type = "Base"
+  )$LeagueDashPlayerStats %>%
+    mutate(
+      MIN = suppressWarnings(as.numeric(MIN)),
+      FGA = suppressWarnings(as.numeric(FGA)),
+      FG_PCT = suppressWarnings(as.numeric(FG_PCT))
+    ) %>%
+    filter(!is.na(MIN), MIN >= min_minutes) %>%
+    mutate(
+      fga_per_36 = ifelse(MIN > 0, FGA / (MIN / 36), NA_real_)
+    )
+
+  keon = df %>% filter(PLAYER_NAME == keon_name)
+  if (nrow(keon) == 0) stop("Keon not found in Base table. Check spelling or season.")
+
+  keon = keon %>% slice_tail(n = 1)
+
+  ggplot(df, aes(x = fga_per_36, y = FG_PCT)) +
+    geom_point(alpha = 0.25, size = 1.4) +
+    geom_point(data = keon, color = kings_purple, size = 3.2) +
+    ggrepel::geom_text_repel(
+      data = keon,
+      aes(label = PLAYER_NAME),
+      size = 3.2,
+      box.padding = 0.4,
+      max.overlaps = 10,
+      seed = 42
+    ) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+    labs(
+      title = "Usage vs Efficiency",
+      subtitle = paste0("Regular Season ", season_used, " | Min ", min_minutes, "+ minutes"),
+      x = "FGA per 36 (usage proxy)",
+      y = "FG%",
+      caption = "Data: NBA API via hoopR | Viz: @Rambzee_"
+    ) +
+    theme_caleb_rmd() +
+    theme(plot.caption.position = "plot")
+}
+
+plot_usage_vs_eff_base("2024-25", 200)
+plot_usage_vs_eff_base("2025-26", 200)
+
+```
+
+The usage-versus-efficiency scatterplots contextualize Ellis relative to the league.
+
+Across both seasons shown:
+
+* Ellis operates at low-to-moderate usage (FGA per 36 well below primary scorers)
+
+* His field-goal efficiency remains above league average in 2024-25 & remains just below league average through this season.
+
+This combination of low-usage and moderate-to-good efficiency is precisely the offensive profile contending teams need.
+
+```{r offensive-role, echo = FALSE, message=FALSE, warning=FALSE}
+add_standard_shot_zones = function(shots) {
+
+  shots %>%
+    mutate(
+      x = suppressWarnings(as.numeric(x)),
+      y = suppressWarnings(as.numeric(y)),
+      made = suppressWarnings(as.numeric(made)),
+
+      r = sqrt(x^2 + y^2),
+
+      rim_5ft = 60,     # 5 ft = 60 in
+      paint_10ft = 120, # 10 ft = 120 in
+
+      is_corner = abs(x) > 220 & y < 92,
+      is_3pt = (r >= 237.5 & y >= 92) | is_corner,
+
+      side = case_when(
+        x < 0 ~ "L",
+        x > 0 ~ "R",
+        TRUE ~ "C"
+      ),
+
+      zone = case_when(
+        # 3s
+        is_3pt & is_corner & x < 0 ~ "LC3",
+        is_3pt & is_corner & x > 0 ~ "RC3",
+
+        is_3pt & !is_corner & abs(x) <= 80 ~ "Top Key 3",
+        is_3pt & !is_corner & x < 0 ~ "LW3",
+        is_3pt & !is_corner & x > 0 ~ "RW3",
+
+        !is_3pt & r <= rim_5ft ~ "Rim (0–5')",
+        !is_3pt & r <= paint_10ft ~ "Paint (non-rim)",
+
+        !is_3pt & y < 92 & abs(x) >= 150 & x < 0 ~ "L Corner MR",
+        !is_3pt & y < 92 & abs(x) >= 150 & x > 0 ~ "R Corner MR",
+
+        !is_3pt & abs(x) >= 150 & x < 0 ~ "L Wing MR",
+        !is_3pt & abs(x) >= 150 & x > 0 ~ "R Wing MR",
+
+        TRUE ~ "Middle MR"
+      ),
+
+      zone = factor(
+        zone,
+        levels = c(
+          "LC3","LW3","Top Key 3","RW3","RC3",
+          "L Corner MR","L Wing MR","Middle MR","R Wing MR","R Corner MR",
+          "Paint (non-rim)","Rim (0–5')"
+        )
+      )
+    )
+}
+
+shots_dir = file.path("data", "processed", "shots")
+dir.create(shots_dir, recursive = TRUE, showWarnings = FALSE)
+
+get_cached_shots = function(player_id, season) {
+  path = file.path(shots_dir, paste0("shots_", season, "_", player_id, ".csv"))
+  if (file.exists(path)) return(readr::read_csv(path, show_col_types = FALSE))
+
+  sc = hoopR::nba_shotchartdetail(
+    season = season,
+    season_type = "Regular Season",
+    player_id = player_id,
+    team_id = 0,
+    context_measure_simple = "FGA"
+  )
+
+  shots = sc$Shot_Chart_Detail %>%
+    mutate(
+      game_date = suppressWarnings(lubridate::mdy(as.character(GAME_DATE))),
+      game_date = ifelse(is.na(game_date), suppressWarnings(lubridate::ymd(as.character(GAME_DATE))), game_date),
+      game_date = as.Date(game_date, origin = "1970-01-01"),
+      x = suppressWarnings(as.numeric(LOC_X)),
+      y = suppressWarnings(as.numeric(LOC_Y)),
+      made = suppressWarnings(as.integer(SHOT_MADE_FLAG))
+    ) %>%
+    filter(!is.na(x), !is.na(y)) %>%
+    select(game_date, x, y, made)
+
+  try(readr::write_csv(shots, path), silent = TRUE)
+  shots
+}
+
+get_player_id = function(season, player_name = "Keon Ellis") {
+  lg = hoopR::nba_leaguedashplayerstats(
+    season = season,
+    season_type = "Regular Season",
+    measure_type = "Base"
+  )$LeagueDashPlayerStats
+
+  pid = lg %>% filter(PLAYER_NAME == player_name) %>% slice_tail(n = 1) %>% pull(PLAYER_ID) %>% .[1]
+  if (length(pid) == 0 || is.na(pid)) stop("PLAYER_ID not found. Check season string or player spelling.")
+  pid
+}
+
+plot_binned_shotchart = function(shots, title, binsize = 25) {
+  b = shots %>%
+    mutate(
+      bx = floor(x / binsize) * binsize,
+      by = floor(y / binsize) * binsize
+    ) %>%
+    group_by(bx, by) %>%
+    summarise(
+      FGA = dplyr::n(),
+      FG = sum(made, na.rm = TRUE),
+      FG_PCT = dplyr::if_else(FGA > 0, FG / FGA, NA_real_),
+      .groups = "drop"
+    ) %>%
+    filter(FGA >= 3)
+
+  ggplot(b, aes(x = bx, y = by)) +
+    geom_tile(aes(fill = FG_PCT), color = NA) +
+    geom_text(aes(label = FGA), size = 2.7, color = "#141414") +
+    coord_fixed() +
+    scale_fill_gradient(
+      low = "grey90",
+      high = "#5A2D81",
+      labels = scales::percent_format(accuracy = 1)
+    ) +
+    labs(
+      title = title,
+      subtitle = "Binned shot map. Color = FG%, number = attempts (min 3 per bin).",
+      x = "Court X",
+      y = "Court Y",
+      caption = "Data: NBA API via hoopR (ShotChartDetail) | Viz: @Rambzee_"
+    ) +
+    theme_caleb_rmd() +
+    theme(plot.caption.position = "plot")
+}
+
+keon_id_2425 = get_player_id("2024-25", "Keon Ellis")
+keon_id_2526 = get_player_id("2025-26", "Keon Ellis")
+
+shots_2425 = get_cached_shots(keon_id_2425, "2024-25")
+shots_2526 = get_cached_shots(keon_id_2526, "2025-26")
+
+plot_binned_shotchart(shots_2425, "Keon Ellis shot chart (2024–25)")
+plot_binned_shotchart(shots_2526, "Keon Ellis shot chart (2025–26)")
+```
+
+His shot charts show a tightly constrained shot diet concentrated on capitalizing on advantages created by him & his teammates:
+
+* Catch-and-shoot threes (especially from the corners and wings)
+
+* Rim attempts
+
+* Opportunistic transition attempts
+
+His shot-chart visuals illustrate this clearly. Attempts cluster along the arc and at the rim, with minimal activity in low-value midrange zones. This profile produces sustainable efficiency rather than variance-driven scoring. 
+
+Ellis is not an offensive initiator. Instead, he operates as a play-finisher and advantage extender, an archetype that sustains offensive efficiency in a variety of lineups without disrupting hierarchy.
+
+```{r efficiency by context, echo = FALSE, message=FALSE, warning=FALSE}
+ctx = tibble::tibble(
+  season = c("2024-25", "2025-26"),
+  mp = c(1900, 458),
+  spotup_tsa = c(7.1, 7.1),
+  spotup_rts = c(0.089, -0.015),
+  finish_tsa = c(4.8, 5.2),
+  finish_rts = c(0.088, -0.030),
+  overall_rts = c(0.089, -0.055),
+  three_pct = c(0.433, 0.352)
+)
+
+ctx %>%
+  transmute(
+    Season = season,
+    MP = scales::comma(mp),
+    `Spot-up TSA` = spotup_tsa,
+    `Spot-up rTS` = scales::percent(spotup_rts, accuracy = 0.1),
+    `Finishing TSA` = finish_tsa,
+    `Finishing rTS` = scales::percent(finish_rts, accuracy = 0.1),
+    `Overall rTS` = scales::percent(overall_rts, accuracy = 0.1),
+    `3P%` = scales::percent(three_pct, accuracy = 0.1)
+  ) %>%
+  knitr::kable(caption = "Efficiency by Context (Databallr)")
+```
+
+Contextual efficiency data further clarifies how Ellis scores.
+
+As shown in Table 3:
+
+* 2024–25:
+
+- Spot-up possessions: +8.9% relative TS
+
+- Finishing possessions: +8.8% relative TS
+
+- Overall rTS: +8.9%
+
+- 3P%: 43.3%
+
+* 2025–26: Efficiency dips alongside reduced sample size, reinforcing the need to contextualize that season appropriately.
+
+In 2024–25, Ellis ranked in the 95th percentile or higher in both spot-up and finishing efficiency. These are not creator reps; they are role-player reps. Keon Ellis takes the right shots and finishes at an elite rate if he gets to the rim.
+
+This efficiency profile explains why his offensive impact remains positive even when his usage stays low.
+
+# Defensive Playmaking & Event Creation
+
+Ellis’ defensive value is anchored in elite event creation, supported by both tracking data and impact metrics.
+
+```{r keon_defensive_distribution, echo=FALSE, message=FALSE, warning=FALSE}
+get_league_def = function(season = "2024-25") {
+  hoopR::nba_leaguedashplayerstats(
+    season = season,
+    season_type = "Regular Season",
+    measure_type = "Defense"
+  )$LeagueDashPlayerStats %>%
+    mutate(
+      MIN = suppressWarnings(as.numeric(MIN)),
+      STL = suppressWarnings(as.numeric(STL)),
+      PCT_STL = suppressWarnings(
+        as.numeric(gsub("[^0-9\\.]", "", PCT_STL))
+      )
+    )
+}
+
+pct_rank = function(x, value) {
+  mean(x <= value, na.rm = TRUE) * 100
+}
+
+ordinal = function(x) {
+  x = as.integer(round(x))
+  if (x %% 100 %in% c(11,12,13)) return(paste0(x, "th"))
+  last = x %% 10
+  suf = ifelse(last == 1, "st", ifelse(last == 2, "nd", ifelse(last == 3, "rd", "th")))
+  paste0(x, suf)
+}
+
+plot_keon_density = function(df, metric_col, metric_label,
+                             season_label,
+                             keon_name = "Keon Ellis",
+                             min_minutes = 200,
+                             kings_purple = "#5A2D81") {
+
+  df2 = df %>%
+    filter(!is.na(.data[[metric_col]]), !is.na(MIN)) %>%
+    filter(MIN >= min_minutes)
+
+  keon = df2 %>% filter(PLAYER_NAME == keon_name) %>% slice_tail(n = 1)
+
+  if (nrow(keon) == 0) stop("Keon not found in this season table. Check spelling or season.")
+
+  keon_val = keon[[metric_col]][1]
+  lg_avg = mean(df2[[metric_col]], na.rm = TRUE)
+  pctl = pct_rank(df2[[metric_col]], keon_val)
+
+  # nice annotation text
+  ann_txt = paste0(
+    keon_name, "\n",
+    round(keon_val, 2), " ", metric_label, "\n",
+    round(pctl, 1), "th percentile"
+  )
+
+  subtitle_txt = paste0(
+    season_label,
+    " | Min ", min_minutes, "+ minutes",
+    " | League avg: ", round(lg_avg, 2),
+    " | Keon: ", round(keon_val, 2), " (", round(pctl, 1), "th pct)"
+  )
+
+  ggplot(df2, aes(x = .data[[metric_col]])) +
+    geom_density(fill = "grey85", alpha = 1) +
+
+    # league average (dashed dark gray)
+    geom_vline(xintercept = lg_avg, linetype = "dashed", linewidth = 0.9, color = "#4b4b4b") +
+
+    # Keon (Kings purple)
+    geom_vline(xintercept = keon_val, linewidth = 1.2, color = kings_purple) +
+
+    # label box anchored near top
+    annotate(
+      "label",
+      x = keon_val,
+      y = Inf,
+      label = ann_txt,
+      hjust = 0,
+      vjust = 1.1,
+      size = 3.2,
+      label.size = 0.3,
+      label.r = unit(0.15, "lines"),
+      fill = "white",
+      color = "#111111"
+    ) +
+
+    labs(
+      title = paste0(metric_label, " distribution"),
+      subtitle = subtitle_txt,
+      x = metric_label,
+      y = "Density",
+      caption = "Data: NBA API via hoopR | Viz: @Rambzee_"
+    ) +
+    theme_caleb_rmd() +
+
+    # keep caption safely bottom-left, never overlapping plot
+    theme(plot.caption.position = "plot")
+}
+
+make_def_rates = function(df) 
+  {
+  df %>%
+    mutate(
+      stl_per_36 = ifelse(MIN > 0, STL / (MIN / 36), NA_real_),
+      stl_pct = PCT_STL
+    )
+  }
+
+# PLOT
+make_keon_def_plots = function(season_used = "2024-25", min_minutes = 200) {
+  league_def = get_league_def(season = season_used) %>% make_def_rates()
+
+  p_stl36 = plot_keon_density(
+    df = league_def,
+    metric_col = "stl_per_36",
+    metric_label = "STL per 36 minutes",
+    season_label = paste0("Regular Season ", season_used),
+    min_minutes = min_minutes
+  )
+
+  p_stlpct = plot_keon_density(
+    df = league_def,
+    metric_col = "stl_pct",
+    metric_label = "STL%",
+    season_label = paste0("Regular Season ", season_used),
+    min_minutes = min_minutes
+  )
+
+  list(stl36 = p_stl36, stlpct = p_stlpct)
+}
+
+plots_2425 = make_keon_def_plots("2024-25", min_minutes = 200)
+plots_2526 = make_keon_def_plots("2025-26", min_minutes = 200)
+
+plots_2425$stl36
+plots_2425$stlpct
+
+plots_2526$stl36
+plots_2526$stlpct
+```
+
+League-wide distributions show Ellis in the 96th percentile in both steals per 36 minutes and steal percentage. Importantly, these events do not come at the expense of team structure. His STOP% climbed from 4.3% in 2024–25 to 5.3% in 2025–26, while Defensive DPM and RAPM remain consistently positive. He generates stops at an elite rate for a guard, even in lackluster defensive circumstances.
+
+Beyond steals and stop creation, deflections provide the clearest signal of Ellis’ defensive activity level without gambling. In 2025–26, Ellis is averaging 5.8 deflections per 36 minutes, ranking 7th in the NBA. In 2024–25, he averaged 5.2 deflections per 36, ranking 11th league-wide. These are top-tier marks and place Ellis firmly in the league’s elite disruption tier.
+
+# Team Fit & Market Value
+
+Ellis fits best in lineups featuring:
+
+* Established creators
+
+* Motion-based or read-and-react offenses
+
+* Defensive schemes that value pressure and physicality
+
+He is an ideal complementary guard for teams seeking to stabilize bench units or enhance lineups without altering offensive schemes.
+
+Conversely, Ellis is not optimized for heliocentric systems that demand secondary shot creation or guard-led scoring bursts. His value lies in connectivity, efficiency, and defensive disruption.
+
+Given league-wide demand for perimeter defense and versatile role players, Ellis profiles as a universally positive asset whose market value exceeds his traditional counting stats.
