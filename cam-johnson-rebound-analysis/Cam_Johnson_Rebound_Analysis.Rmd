@@ -1,5 +1,5 @@
 ---
-title: "Cam Johnson: Second-Half Rebound in Denver (2025–26)"
+title: "Cam Johnson: Second-Half Rebound (2025–26)"
 author: "Caleb Ramsey"
 date: "`r format(Sys.Date(), '%B %d, %Y')`"
 output:
@@ -14,52 +14,116 @@ header-includes:
   - \floatplacement{figure}{H}
 ---
 
-
-```{r setup, echo = FALSE, message=FALSE, warning=FALSE}
-library(dplyr); library(tidyr); library(readr); library(ggplot2)
-library(scales); library(knitr); library(hoopR); library(lubridate)
-library(showtext); library(sysfonts); library(ggrepel); library(stringr)
+```{r setup, include=FALSE}
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(hoopR)
+library(lubridate)
+library(showtext)
+library(sysfonts)
+library(ggrepel)
+library(stringr)
 
 font_add_google("Poppins", "poppins")
 showtext_auto()
 
-theme_caleb <- function() {
-theme_minimal(base_family = "poppins") +
-theme(
-plot.background = element_rect(fill = "#f6f4ef", color = NA),
-panel.background = element_rect(fill = "#f6f4ef", color = NA),
-panel.grid.major = element_line(color = "#dedad3", linewidth = 0.35),
-panel.grid.minor = element_blank(),
-plot.title = element_text(size = 18, face = "bold", hjust = 0.5, color = "#141414"),
-plot.subtitle = element_text(size = 10, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 8)),
-axis.title = element_text(size = 12, face = "bold", color = "#141414"),
-axis.text  = element_text(size = 10, color = "#333333"),
-plot.caption = element_text(size = 8, color = "#6e6e6e", hjust = 0, margin = margin(t = 8)),
-plot.margin = margin(10, 12, 14, 12),
-legend.position = "top"
-)
-}
+theme_caleb <- function()
+  {
+  theme_minimal(base_family = "poppins") +
+    theme(
+      plot.background = element_rect(fill = "#f6f4ef", color = NA),
+    panel.background = element_rect(fill = "#f6f4ef", color = NA),
+    panel.grid.major = element_line(color = "#dedad3", linewidth = 0.35),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(size = 18, face = "bold", hjust = 0.5, color = "#141414"),
+    plot.subtitle = element_text(size = 10, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 8)),
+    axis.title = element_text(size = 12, face = "bold", color = "#141414"),
+    axis.text  = element_text(size = 10, color = "#333333"),
+    plot.caption = element_text(size = 8, color = "#6e6e6e", hjust = 0, margin = margin(t = 8)),
+    plot.margin = margin(10, 12, 14, 12),
+    legend.position = "top"
+    )
+  }
 
 opts_chunk$set(
-echo = FALSE, message = FALSE, warning = FALSE,
-fig.pos = "H", fig.align = "center"
+  echo = FALSE, message = FALSE, warning = FALSE,
+  fig.pos = "H", fig.align = "center",
+  fig.width = 7.2, fig.height = 4.6,
+  dpi = 300, out.width = "100%"
+  )
+
+# Robust NBA date parsing
+
+parse_nba_date = function(x)
+  {
+  x <- as.character(x)
+  d1 <- suppressWarnings(lubridate::ymd(x))
+  d2 <- suppressWarnings(lubridate::mdy(x))
+  as.Date(dplyr::coalesce(d1, d2))
+  }
+
+# Full-window rolling mean 
+
+roll_mean_full = function(x, k)
+  {
+  out = rep(NA_real_, length(x))
+  for (i in seq_along(x)) {
+    if (i >= k) out[i] = mean(x[(i-k+1):i], na.rm = TRUE)
+    }
+  out
+  }
+
+# Shot fetch 
+
+get_player_shots <- function(player_id, season) {
+sc <- hoopR::nba_shotchartdetail(
+season = season,
+season_type = "Regular Season",
+player_id = player_id,
+team_id = 0,
+context_measure_simple = "FGA"
 )
 
-dir.create("data/processed", recursive = TRUE, showWarnings = FALSE)
-dir.create("data/processed/shots", recursive = TRUE, showWarnings = FALSE)
+raw <- sc$Shot_Chart_Detail
+if (is.null(raw) || nrow(raw) == 0) stop("ShotChartDetail returned no rows.")
+
+if (!"DRIBBLES" %in% names(raw)) raw$DRIBBLES <- NA
+if (!"SHOT_DISTANCE" %in% names(raw)) raw$SHOT_DISTANCE <- NA
+
+raw %>%
+mutate(
+game_date = parse_nba_date(GAME_DATE),
+made = as.integer(SHOT_MADE_FLAG),
+shot_type = as.character(SHOT_TYPE),
+dribbles = suppressWarnings(as.numeric(DRIBBLES)),
+shot_dist = suppressWarnings(as.numeric(SHOT_DISTANCE)),
+x = suppressWarnings(as.numeric(LOC_X)),
+y = suppressWarnings(as.numeric(LOC_Y))
+) %>%
+filter(!is.na(game_date))
+}
+
 ```
 
 # Executive Summary
-Cam Johnson’s first half in Denver was fine but inconsistent. In the recent half, the profile matches what Denver hoped to get when trading for him: a high-level complementary piece who can knock down threes, score within the flow, and keep possessions alive with simple playmaking when the offense stalls.
+Cam Johnson’s first half in Denver was fine but inconsistent. In the recent half, the profile more closely matches what Denver hoped to acquire: a high-level complementary piece who can knock down threes, score within the flow of the offense, and keep possessions alive with simple playmaking when the offense stalls.
 
-The numbers support a “same role, better outcomes” story. His usage has remained essentially stable, while efficiency jumps sharply. His shot diet is trending further toward threes, with the biggest gain coming above the break in both volume and make rate. Rebounding rates are steady overall, with the mix shifting toward more defensive boards and fewer offensive crashes, fitting Denver’s spacing role and floor balance.
+Early in the season, Johnson was still settling into his role as the fourth or fifth offensive option. After coming from a Brooklyn Nets team where he functioned as a primary or secondary scorer (22.1% usage), his responsibilities shifted sharply in Denver (14.3% usage this season). More than half of his shot attempts came from three-point range, reflecting that change in role. That transition led to early-season inefficiencies, but Johnson has responded in dramatic fashion over his most recent 14 games.
 
-This report splits the season into Early vs Recent by games played and uses rolling trends to show the change is sustained, not a one-week heater.
+During that stretch, his scoring output jumped from 8.6 points per game to 14.7 points per game, while his efficiency surged from 49.2% true shooting to 65.4%. Importantly, his role remained stable. Usage hovered around the same ~14% mark, while his minutes increased from 26.4 to 34.9 per game. Some of that increase coincided with lineup absences, but Johnson has clearly found a rhythm playing alongside the league’s most impactful offensive hub.
 
-# How we split the season
-```{r data-and-split}
+His three-point attempt share has risen modestly as well, from 51% of his shots over the first 14 games to 54% over the last 14. That increase reflects a more consistent and intentional perimeter role rather than the sporadic shot diet seen early in the season.
+
+This report splits the season into Early versus Recent segments by games played and uses rolling trends to assess whether the improvement represents sustained change or short-run variance.
+
+```{r data-and-split, include=FALSE}
 get_player_gamelogs <- function(season) {
-lg <- nba_leaguegamelog(
+lg <- hoopR::nba_leaguegamelog(
 season = season,
 season_type = "Regular Season",
 player_or_team = "P"
@@ -68,7 +132,7 @@ player_or_team = "P"
 lg$LeagueGameLog %>%
 mutate(
 team = TEAM_ABBREVIATION,
-game_date = suppressWarnings(mdy(GAME_DATE)),
+game_date = parse_nba_date(GAME_DATE),
 player_name = PLAYER_NAME,
 player_id = PLAYER_ID,
 minutes = as.numeric(MIN),
@@ -85,30 +149,28 @@ reb = as.numeric(REB),
 oreb = as.numeric(OREB),
 dreb = as.numeric(DREB),
 ts_pct = if_else(
-(as.numeric(FGA) + 0.44 * as.numeric(FTA)) > 0,
-as.numeric(PTS) / (2 * (as.numeric(FGA) + 0.44 * as.numeric(FTA))),
+(fga + 0.44 * fta) > 0,
+points / (2 * (fga + 0.44 * fta)),
 NA_real_
 )
 ) %>%
-select(player_name, player_id, team, game_date, minutes, points,
-fgm, fga, fg3m, fg3a, ftm, fta, tov, ast, reb, oreb, dreb, ts_pct) %>%
+filter(!is.na(game_date)) %>%
+select(
+player_name, player_id, team, game_date, minutes, points,
+fgm, fga, fg3m, fg3a, ftm, fta, tov, ast, reb, oreb, dreb, ts_pct
+) %>%
 arrange(player_name, game_date)
 }
 
-games_path <- file.path("data/processed", paste0("gamelogs_", params$season, ".csv"))
-games <- if (file.exists(games_path)) {
-readr::read_csv(games_path, show_col_types = FALSE)
-} else {
-g <- get_player_gamelogs(params$season)
-readr::write_csv(g, games_path)
-g
-}
+games <- get_player_gamelogs(params$season)
 
 cam_games <- games %>%
 filter(player_name == params$player_name) %>%
 arrange(game_date)
 
-if (nrow(cam_games) < 10) stop("Not enough games returned for this player/season.")
+if (nrow(cam_games) < params$rolling_k + 2) {
+stop("Not enough games to compute rolling trends at this k. Lower params$rolling_k or verify player/season.")
+}
 
 cut_idx  <- floor(nrow(cam_games) / 2)
 cut_date <- cam_games$game_date[cut_idx]
@@ -116,116 +178,23 @@ cut_date <- cam_games$game_date[cut_idx]
 cam_games <- cam_games %>%
 mutate(
 window = if_else(row_number() <= cut_idx, "Early", "Recent"),
+window = factor(window, levels = c("Early","Recent")),
 reb36  = reb  / pmax(minutes, 1) * 36,
 oreb36 = oreb / pmax(minutes, 1) * 36,
 dreb36 = dreb / pmax(minutes, 1) * 36,
-fga36  = fga  / pmax(minutes, 1) * 36,
-fta36  = fta  / pmax(minutes, 1) * 36,
-tov36  = tov  / pmax(minutes, 1) * 36,
 three_share = fg3a / pmax(fga, 1),
 ft_rate = fta / pmax(fga, 1),
+fga36  = fga / pmax(minutes, 1) * 36,
+fta36  = fta / pmax(minutes, 1) * 36,
+tov36  = tov / pmax(minutes, 1) * 36,
 usage_events36 = fga36 + 0.44 * fta36 + tov36
 )
-``` 
-
-# Is it real or just a hot week?
-```{r,  fig.cap="Rolling trends (REB/36, TS%, 3PA Share). Dashed line marks the Early vs Recent split by games played."}
-# 1) Clean the games FIRST
-cam_games_clean <- cam_games %>%
-  filter(minutes >= 8) %>%
-  mutate(
-    reb36  = reb  / minutes * 36,
-    ts_ok  = (fga + fta) >= 3,
-    ts_use = if_else(ts_ok, ts_pct, NA_real_),
-    three_share = fg3a / pmax(fga, 1)
-  )
-
-# 2) Full-window rolling mean (no partial windows)
-roll_mean <- function(x, k = 10) {
-  out <- rep(NA_real_, length(x))
-  for (i in seq_len(length(x))) {
-    if (i >= k) out[i] <- mean(x[(i-k+1):i], na.rm = TRUE)
-  }
-  out
-}
-
-# 3) Build plot_roll AFTER cleaning (this is what you were missing)
-plot_roll <- cam_games_clean %>%
-  arrange(game_date) %>%
-  mutate(
-    reb36_roll = roll_mean(reb36, params$rolling_k),
-    ts_roll    = roll_mean(ts_use, params$rolling_k),
-    three_roll = roll_mean(three_share, params$rolling_k)
-  ) %>%
-  select(game_date, reb36_roll, ts_roll, three_roll) %>%
-  pivot_longer(-game_date, names_to = "metric", values_to = "value") %>%
-  mutate(
-    metric = factor(
-      metric,
-      levels = c("reb36_roll", "ts_roll", "three_roll"),
-      labels = c("REB/36 (rolling)", "TS% (rolling)", "3PA Share (rolling)")
-    )
-  )
-
-ggplot(plot_roll, aes(x = game_date, y = value)) +
-  geom_line(linewidth = 1.05, alpha = 0.95) +
-  geom_vline(xintercept = as.numeric(cut_date), linetype = "dashed", linewidth = 0.9) +
-  facet_wrap(~ metric, ncol = 1, scales = "free_y") +
-  labs(x = NULL, y = NULL, caption = "Data: NBA game logs via hoopR | Viz: @Rambzee_") +
-  theme_caleb()
-```
-
-
-# Early vs Recent snapshot
-```{r}
-get_player_shots <- function(player_id, season) {
-sc <- hoopR::nba_shotchartdetail(
-season = season,
-season_type = "Regular Season",
-player_id = player_id,
-team_id = 0,
-context_measure_simple = "FGA"
-)
-
-raw <- sc$Shot_Chart_Detail
-if (!"DRIBBLES" %in% names(raw)) raw$DRIBBLES <- NA
-if (!"SHOT_DISTANCE" %in% names(raw)) raw$SHOT_DISTANCE <- NA
-
-zone_cols <- names(raw)[grepl("^SHOT_ZONE", names(raw))]
-
-raw %>%
-mutate(
-game_date_raw = as.character(GAME_DATE),
-game_date = suppressWarnings(mdy(game_date_raw)),
-game_date = if_else(is.na(game_date), suppressWarnings(ymd(game_date_raw)), game_date),
-game_date = as.Date(game_date),
-made = as.integer(SHOT_MADE_FLAG),
-shot_type = as.character(SHOT_TYPE),
-dribbles = suppressWarnings(as.numeric(DRIBBLES)),
-shot_dist = suppressWarnings(as.numeric(SHOT_DISTANCE)),
-x = suppressWarnings(as.numeric(LOC_X)),
-y = suppressWarnings(as.numeric(LOC_Y))
-) %>%
-filter(!is.na(game_date)) %>%
-select(any_of(c("game_date","made","shot_type","dribbles","shot_dist","x","y")),
-any_of(zone_cols))
-}
 
 cam_id <- cam_games %>% slice_tail(n = 1) %>% pull(player_id) %>% .[1]
-shots_path <- file.path("data/processed/shots", paste0("shots_", params$season, "_", cam_id, ".csv"))
-
-shots <- if (file.exists(shots_path)) {
-readr::read_csv(shots_path, show_col_types = FALSE)
-} else {
-s <- get_player_shots(cam_id, params$season)
-readr::write_csv(s, shots_path)
-s
-}
-
-shots <- shots %>%
+shots <- get_player_shots(cam_id, params$season) %>%
 mutate(
 window = if_else(game_date <= cut_date, "Early", "Recent"),
-r = sqrt(x^2 + y^2),
+window = factor(window, levels = c("Early","Recent")),
 corner3 = abs(x) > 220 & y < 92,
 is_3 = shot_type == "3PT Field Goal",
 three_zone = case_when(
@@ -234,81 +203,201 @@ is_3 ~ "Above-the-break 3",
 TRUE ~ NA_character_
 ),
 three_zone = factor(three_zone, levels = c("Corner 3","Above-the-break 3"))
-)
+) %>%
+filter(!is.na(window))
 ```
 
-# Where the threes came from
-```{r, fig.cap="3PT accuracy by location (Corner vs Above-the-break). Points show Early vs Recent"}
+# Results
+
+## Is it sustained or just noise?
+```{r rolling-trends, fig.cap="Rolling trends. Dashed line marks the Early vs Recent split by games played.", fig.height=4.6}
+cam_games_clean <- cam_games %>%
+filter(minutes >= 8) %>%
+arrange(game_date) %>%
+mutate(
+reb36 = reb / minutes * 36,
+three_share = fg3a / pmax(fga, 1),
+ts_use = if_else((fga + fta) >= 3, ts_pct, NA_real_)
+)
+
+roll_mean_partial <- function(x, k) {
+  sapply(seq_along(x), function(i) {
+    mean(x[pmax(1, i-k+1):i], na.rm = TRUE)
+  })
+}
+
+plot_roll <- cam_games_clean %>%
+  mutate(
+    reb36_roll = roll_mean_partial(reb36, params$rolling_k),
+    ts_roll    = roll_mean_partial(ts_use, params$rolling_k),
+    three_roll = roll_mean_partial(three_share, params$rolling_k)
+  ) %>%
+  select(game_date, reb36_roll, ts_roll, three_roll) %>%
+  pivot_longer(-game_date, names_to = "metric", values_to = "value") %>%
+  mutate(metric = factor(
+    metric,
+    levels = c("reb36_roll","ts_roll","three_roll"),
+    labels = c("REB/36 (rolling)", "TS% (rolling)", "3PA Share (rolling)")
+  ))
+
+ggplot(plot_roll, aes(game_date, value)) +
+  geom_line(linewidth = 1.0, na.rm = TRUE) +
+  geom_vline(xintercept = as.numeric(cut_date), linetype = "dashed", linewidth = 0.8) +
+  facet_wrap(~metric, ncol = 1, scales = "free_y") +
+  labs(x = NULL, y = NULL, caption = "Data: NBA game logs via hoopR | Viz: @Rambzee_") +
+  theme_caleb()
+```
+The rolling trend analysis (Figure 1) suggests that Johnson’s rebounding has remained relatively stable across the season, with a slight uptick during the recent stretch. The more meaningful changes appear on the offensive side. His three-point shot profile has stabilized, with game-to-game three-point attempt share settling near 50% after early-season volatility that frequently spiked into the 60–75% range.
+
+As his shot mix normalized, efficiency followed. True shooting percentage climbed steadily during the recent stretch, culminating in one of the most efficient multi-week runs of his season prior to injury. Taken together, the rolling trends indicate that this improvement is not driven by a single hot week but reflects a sustained adjustment in shot selection and comfort within the offense.
+
+## Early vs Recent snapshot
+```{r split-table}
+split_tbl <- cam_games %>%
+group_by(window) %>%
+summarise(
+GP = n(),
+MPG = mean(minutes, na.rm = TRUE),
+`REB/36` = mean(reb36, na.rm = TRUE),
+`OREB/36` = mean(oreb36, na.rm = TRUE),
+`DREB/36` = mean(dreb36, na.rm = TRUE),
+`3PA Share` = sum(fg3a, na.rm = TRUE) / sum(fga, na.rm = TRUE),
+`FT Rate` = mean(ft_rate, na.rm = TRUE),
+`Usage events/36` = mean(usage_events36, na.rm = TRUE),
+.groups = "drop"
+) %>%
+mutate(
+MPG = round(MPG, 1),
+`REB/36` = round(`REB/36`, 2),
+`OREB/36` = round(`OREB/36`, 2),
+`DREB/36` = round(`DREB/36`, 2),
+`3PA Share` = scales::percent(`3PA Share`, 1),
+`FT Rate` = scales::percent(`FT Rate`, 1),
+`Usage events/36` = round(`Usage events/36`, 2)
+)
+
+knitr::kable(split_tbl, booktabs = TRUE, caption = "Early vs Recent (split by games played).") %>%
+kableExtra::kable_styling(latex_options = c("scale_down"))
+
+split_counting <- cam_games %>%
+  group_by(window) %>%
+  summarise(
+    GP  = n(),
+    MPG = mean(minutes, na.rm = TRUE),
+    PPG = mean(points,  na.rm = TRUE),
+    RPG = mean(reb,     na.rm = TRUE),
+    APG = mean(ast,     na.rm = TRUE),
+    FGA = mean(fga,     na.rm = TRUE),
+    `3PA` = mean(fg3a,    na.rm = TRUE),
+    TOV = mean(tov,     na.rm = TRUE),
+    TS  = mean(ts_pct,  na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    across(c(MPG, PPG, RPG, APG, FGA, `3PA`, TOV), ~round(.x, 1)),
+    TS = scales::percent(TS, accuracy = 0.1)
+    )
+
+knitr::kable(split_counting, booktabs = TRUE, caption = "First half vs second half (per-game).") %>%
+  kableExtra::kable_styling(latex_options = c("scale_down"))
+```
+Table 1 reinforces the “same role, better outcomes” story. Johnson’s usage, free-throw rate, and three-point attempt share remain largely unchanged between the two segments, suggesting that his responsibilities within the offense have been consistent.
+
+Where the difference emerges is in execution. Improved efficiency, paired with a meaningful increase in minutes played, translated into stronger counting production (Table 2). The combination of role clarity, lineup fit, and increased court time produced the type of impact Denver envisioned when acquiring Johnson.
+
+## Shooting Profile
+```{r, fig.cap="Where the 3s are coming from."}
 three_zone_tbl <- shots %>%
-filter(!is.na(three_zone)) %>%
-group_by(window, three_zone) %>%
-summarise(att = n(), pct = mean(made, na.rm = TRUE), .groups = "drop")
+  filter(!is.na(three_zone), is_3) %>%
+  group_by(window, three_zone) %>%
+  summarise(att = n(), pct = mean(made, na.rm = TRUE), .groups = "drop") %>%
+  tidyr::complete(window, three_zone, fill = list(att = 0, pct = NA_real_))
 
 three_zone_w <- three_zone_tbl %>%
 tidyr::pivot_wider(names_from = window, values_from = c(pct, att))
 
 ggplot(three_zone_w, aes(y = three_zone)) +
-geom_segment(aes(x = pct_Early, xend = pct_Recent, yend = three_zone),
-linewidth = 1, alpha = 0.6) +
-geom_point(aes(x = pct_Early), size = 3) +
-geom_point(aes(x = pct_Recent), size = 3) +
-ggrepel::geom_text_repel(
-aes(x = pct_Early, label = paste0("Early\n", scales::percent(pct_Early, 0.1),
-"\n(", att_Early, ")")),
-size = 3, seed = 42, nudge_x = -0.02, direction = "y", show.legend = FALSE
-) +
-ggrepel::geom_text_repel(
-aes(x = pct_Recent, label = paste0("Recent\n", scales::percent(pct_Recent, 0.1),
-"\n(", att_Recent, ")")),
-size = 3, seed = 42, nudge_x = 0.02, direction = "y", show.legend = FALSE
-) +
-scale_x_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, 1)) +
-labs(x = "3P%", y = NULL,
-caption = "Data: NBA ShotChartDetail via hoopR | Viz: @Rambzee_") +
-theme_caleb()
-
+  geom_segment(aes(x = pct_Early, xend = pct_Recent, yend = three_zone),
+               linewidth = 1, alpha = 0.6) +
+  geom_point(aes(x = pct_Early), size = 3) +
+  geom_point(aes(x = pct_Recent), size = 3) +
+  ggrepel::geom_text_repel(
+    aes(x = pct_Early, label = paste0("Early\n", scales::percent(pct_Early, 0.1), "\n(", att_Early, ")")),
+    size = 3, seed = 42, nudge_x = -0.02, direction = "y", show.legend = FALSE) +
+  ggrepel::geom_text_repel(
+    aes(x = pct_Recent, label = paste0("Recent\n", scales::percent(pct_Recent, 0.1), "\n(", att_Recent, ")")),
+    size = 3, seed = 42, nudge_x = 0.02, direction = "y", show.legend = FALSE) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, 1)) +
+  labs(x = "3P%", y = NULL, caption = "Data: NBA ShotChartDetail via hoopR | Viz: @Rambzee_") +
+  theme_caleb()
 ```
-# How the shot diet changed
-```{r, fig.cap="Shot diet shift by distance bucket. Each bar shows share of attempts; labels show share and FG% within each bucket."}
+Location-based three-point shooting (Figure 2) shows meaningful gains without a fundamental change in shot distribution. Johnson increased his above-the-break three-point accuracy by 28% and his corner three accuracy by 7%. He also attempted 16 more above-the-break threes and 10 more corner threes in the recent stretch. The key takeaway is that the share of three-point locations remained similar, but the volume and efficiency improved. 
 
+## How the shot diet changed
+```{r, fig.cap="Shot diet shift by distance bucket."}
 diet <- shots %>%
-filter(!is.na(shot_dist), !is.na(made)) %>%
-mutate(
-shot_bucket = case_when(
-shot_type == "3PT Field Goal" ~ "3PT",
-shot_dist <= 4  ~ "Rim (0–4)",
-shot_dist <= 14 ~ "Short mid (5–14)",
-shot_dist <= 22 ~ "Long mid (15–22)",
-TRUE ~ "Other 2PT"
-),
-shot_bucket = factor(
-shot_bucket,
-levels = c("Rim (0–4)","Short mid (5–14)","Long mid (15–22)","Other 2PT","3PT")
-)
-) %>%
-group_by(window, shot_bucket) %>%
-summarise(fga = n(), fg_pct = mean(made, na.rm = TRUE), .groups = "drop") %>%
-group_by(window) %>%
-mutate(share = fga / sum(fga)) %>%
-ungroup() %>%
-mutate(lbl = if_else(share >= 0.08,
-paste0(scales::percent(share, 1), "\n", scales::percent(fg_pct, 0.1)),
-""))
+  filter(!is.na(shot_dist), !is.na(made)) %>%
+  mutate(
+    shot_bucket = case_when(
+      shot_type == "3PT Field Goal" ~ "3PT",
+      shot_dist <= 4  ~ "Rim (0–4)",
+      shot_dist <= 14 ~ "Short mid (5–14)",
+      shot_dist <= 22 ~ "Long mid (15–22)"
+    ),
+    shot_bucket = factor(
+      shot_bucket,
+      levels = c("Rim (0–4)","Short mid (5–14)","Long mid (15–22)","3PT")
+    )
+  ) %>%
+  count(window, shot_bucket, name = "fga") %>%
+  left_join(
+    shots %>%
+      filter(!is.na(shot_dist), !is.na(made)) %>%
+      mutate(
+        shot_bucket = case_when(
+          shot_type == "3PT Field Goal" ~ "3PT",
+          shot_dist <= 4  ~ "Rim (0–4)",
+          shot_dist <= 14 ~ "Short mid (5–14)",
+          shot_dist <= 22 ~ "Long mid (15–22)"
+        ),
+        shot_bucket = factor(
+          shot_bucket,
+          levels = c("Rim (0–4)","Short mid (5–14)","Long mid (15–22)","3PT")
+        )
+      ) %>%
+      group_by(window, shot_bucket) %>%
+      summarise(fg_pct = mean(made, na.rm = TRUE), .groups = "drop"),
+    by = c("window","shot_bucket")
+  ) %>%
+  tidyr::complete(window, shot_bucket, fill = list(fga = 0, fg_pct = NA_real_)) %>%
+  group_by(window) %>%
+  mutate(
+    share = fga / sum(fga),
+    lbl = dplyr::case_when(
+      fga == 0 ~ "",
+      share >= 0.06 | fga >= 10 ~ paste0("Share: ", scales::percent(share, 1), "\n", "FG%: ", scales::percent(fg_pct, 0.1)),
+      TRUE ~ ""
+    )
+  ) %>%
+  ungroup()
 
 ggplot(diet, aes(x = window, y = share, fill = shot_bucket)) +
-geom_col(width = 0.62) +
-geom_text(
-aes(label = lbl),
-position = position_stack(vjust = 0.5),
-size = 2.8,
-lineheight = 0.95
-) +
-scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
-labs(x = NULL, y = "Share of FGA", fill = NULL,
-caption = "Data: NBA ShotChartDetail via hoopR | Viz: @Rambzee_") +
-theme_caleb()
+  geom_col(width = 0.62) +
+  geom_text(
+    aes(label = lbl),
+    position = position_stack(vjust = 0.5),
+    size = 2.8,
+    lineheight = 0.95,
+    check_overlap = TRUE
+  ) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(x = NULL, y = "Share of FGA", fill = NULL,
+       caption = "Data: NBA ShotChartDetail via hoopR | Viz: @Rambzee_") +
+  theme_caleb()
 ```
+The shot diet breakdown (Figure 3) shows only marginal structural change. Johnson is taking slightly more threes overall, but the location distribution closely mirrors his early-season profile; The difference lies in outcomes.
 
-# What it means for Denver
+Efficiency improved both from beyond the arc and at the rim, reinforcing the idea that comfort and rhythm are driving the recent production. Denver is getting higher returns from the same offensive blueprint, which has contributed to their historic 125.5 offensive rating this season (1st all-time, current record: 123.2 - 2024 Celtics).
 
 # Limitations
+This analysis relies on mid-season splits defined by games played rather than context-aware lineup or matchup considerations. Usage rate is unavailable at a game-by-game level, so usage-proxies were used to find that usage remained consistent across segments. These factors should be considered when interpreting marginal differences between segments.
