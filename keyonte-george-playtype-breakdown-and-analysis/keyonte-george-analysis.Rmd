@@ -1,0 +1,309 @@
+---
+title: "Keyonte George: 2025–26 Scoring Leap & Play-Type Profile"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(showtext)
+library(sysfonts)
+library(ggrepel)
+
+# Fonts (safe for xelatex)
+font_add_google("Poppins", "poppins")
+showtext_auto()
+
+# Utah Jazz colors (modern palette approximations)
+JAZZ_NAVY   <- "#002B5C"
+JAZZ_YELLOW <- "#F9A01B"
+JAZZ_GREEN  <- "#00471B"
+BG          <- "#f6f4ef"
+TEXT_DARK   <- "#141414"
+GRID        <- "#dedad3"
+
+theme_caleb_jazz <- function() {
+  theme_minimal(base_family = "poppins") +
+    theme(
+      plot.background  = element_rect(fill = BG, color = NA),
+      panel.background = element_rect(fill = BG, color = NA),
+      panel.grid.major = element_line(color = GRID, linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+      plot.title    = element_text(size = 18, face = "bold", hjust = 0.5, color = TEXT_DARK),
+      plot.subtitle = element_text(size = 10, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 6)),
+      axis.title    = element_text(size = 12, face = "bold", color = TEXT_DARK),
+      axis.text     = element_text(size = 10, color = "#333333"),
+      legend.position = "none",
+      plot.caption  = element_text(size = 8, color = "#6e6e6e", hjust = 0, margin = margin(t = 6)),
+      plot.margin   = margin(10, 12, 14, 12)
+    )
+}
+
+# ---- DATA PATH ----
+playtype_path <- "KeyonteGeorgePlaytypeTable.xlsx"
+```
+
+# Executive Summary
+
+**Season context:** 
+```{r}
+season_ctx <- tribble(
+  ~Season, ~MPG, ~PPG, ~FGA, ~FG_PCT, ~`3PA`, ~`3P_PCT`, ~FTA, ~FT_PCT, ~AST, ~TO,
+  "2024–25", 31.5, 16.8, 13.7, .391, 7.6, .343, 6.1, .818, 5.6, 2.7,
+  "2025–26", 34.4, 24.6, 16.8, .455, 7.0, .374, 7.4, .903, 6.8, 3.4
+)
+
+kbl(
+  season_ctx,
+  format = "latex",
+  booktabs = TRUE,
+  digits = 2,
+  caption = "Season context: counting stats comparison"
+) |>
+  kable_styling(
+    latex_options = c("striped", "hold_position"),
+    font_size = 10
+  ) |>
+  column_spec(1, bold = TRUE) |>
+  column_spec(2:13, width = "1.2cm")
+```
+
+**Scoring spikes:** 9x 30-point games (6 total in first two seasons); 3x 35+ (39, 37, 37).
+
+**What the play-type data says:**
+
+- **Role distribution:** Keyonte’s offense is driven by **PnR Ball Handler volume** with secondary reps in **Transition**, **Spot Up**, and **Isolation**.
+- **Efficiency pockets:** His best efficiency comes from **Spot Ups** and **Cuts**. These are high-value scoring channels that scale with star-level creation around him.
+- **Engine reps are solid:** **PnR Ball Handler** and **Isolation** are not “free points,” but they are good enough at meaningful volume to support a real scoring leap.
+
+# Data
+
+```{r load_playtype}
+pt_raw <- read_excel(playtype_path) |>
+  clean_names()
+
+# Convert percents to proportions for formatting, keep PPP numeric
+pt <- pt_raw |>
+  mutate(
+    poss = readr::parse_number(poss),
+    ppp  = readr::parse_number(ppp),
+    percent_time = readr::parse_number(percent_time) / 100,
+    across(c(fg_pct, efg_pct, ts_pct, to_pct, ft_pct, sf_pct, score_pct, fg2_pct, fg3_pct),
+           ~ readr::parse_number(.x) / 100),
+    tsa = readr::parse_number(tsa),
+    fta_fga = readr::parse_number(fta_fga),
+    pa3_fga = readr::parse_number(pa3_fga)
+  )
+
+# Weighted averages for reference lines
+w_ppp  <- weighted.mean(pt$ppp, w = pt$poss, na.rm = TRUE)
+w_time <- weighted.mean(pt$percent_time, w = pt$poss, na.rm = TRUE)
+```
+
+```{r table_snapshot}
+pt_small <- pt |>
+  transmute(
+    Play = playtype,
+    Poss = poss,
+    `Time%` = percent_time,
+    PPP = round(ppp, 2),
+    Rating = ppp_rating,
+    `TS%` = ts_pct,
+    `TO%` = to_pct,
+    `FTA/FGA` = fta_fga,
+    `3PA/FGA` = pa3_fga
+  ) |>
+  arrange(desc(`Time%`))
+
+kbl(
+  pt_small,
+  format = "latex",
+  booktabs = TRUE,
+  caption = "Play-type snapshot (Keyonte George, 2025–26)"
+) |>
+  kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"),
+    font_size = 9
+  ) |>
+  column_spec(1, bold = TRUE) |>
+  column_spec(4, bold = TRUE)
+```
+
+```{r table_splits}
+pt_splits <- pt |>
+  transmute(
+    Play = playtype,
+    Poss = poss,
+    PPP = round(ppp, 2),
+    `FG%` = fg_pct,
+    `eFG%` = efg_pct,
+    `2FG%` = fg2_pct,
+    `3P%` = fg3_pct,
+    `3PA/FGA` = pa3_fga
+  ) |>
+  arrange(desc(Poss))
+
+kbl(
+  pt_splits,
+  format = "latex",
+  booktabs = TRUE,
+  caption = "Shot profile by play type"
+) |>
+  kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"),
+    font_size = 9
+  ) |>
+  column_spec(1, bold = TRUE)
+```
+
+# Figure 1: Efficiency by play type (PPP)
+
+```{r plot_ppp}
+ggplot(pt, aes(x = ppp, y = reorder(playtype, ppp))) +
+  geom_point(aes(size = poss), color = JAZZ_GREEN, alpha = 0.95) +
+  geom_vline(xintercept = w_ppp, linetype = "dashed", color = JAZZ_NAVY, linewidth = 0.9) +
+  scale_size(range = c(2, 8)) +
+  labs(
+    title = "Efficiency by play type (PPP)",
+    subtitle = glue::glue("Size: Volume | Dashed line: Avg PPP ({round(w_ppp, 2)})."),
+    x = "Points per possession (PPP)",
+    y = NULL,
+    caption = "Source: Synergy/SportsRadar | Viz: @Rambzee_"
+  ) +
+  theme_caleb_jazz()
+```
+
+# Figure 2: Frequency by play type (%Time)
+
+```{r plot_time}
+ggplot(pt, aes(x = reorder(playtype, percent_time), y = percent_time)) +
+  geom_col(fill = JAZZ_NAVY, alpha = 0.92) +
+  coord_flip() +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "Play-type frequency",
+    subtitle = "Share of offensive possessions by play type",
+    x = NULL,
+    y = "%Time",
+    caption = "Source: Synergy/SportsRadar | Viz: @Rambzee_"
+  ) +
+  theme_caleb_jazz()
+```
+
+# Figure 3: Value map (Usage vs PPP)
+
+```{r plot_value_map}
+ggplot(pt, aes(x = percent_time, y = ppp)) +
+  geom_vline(xintercept = w_time, linetype = "dashed", color = "#4b4b4b", linewidth = 0.7) +
+  geom_hline(yintercept = w_ppp,  linetype = "dashed", color = "#4b4b4b", linewidth = 0.7) +
+  geom_point(aes(size = poss), color = JAZZ_GREEN, alpha = 0.75) +
+
+  geom_label_repel(
+    aes(label = playtype),
+    size = 3.0,
+    seed = 42,
+    force = 8,
+    max.time = 2,
+    max.iter = 5000,
+    max.overlaps = Inf,
+    point.padding = 0.35,
+    box.padding = 0.45,
+    min.segment.length = 0,
+    segment.color = "grey55",
+    segment.alpha = 0.7,
+    fill = "white",
+    label.size = 0.15,
+    label.r = unit(0.12, "lines")
+  ) +
+
+  scale_x_continuous(labels = percent_format(accuracy = 1)) +
+  scale_size(range = c(2, 7)) +
+
+  labs(
+    title = "Usage vs Efficiency (Play-Types)",
+    subtitle = glue::glue(
+      "Size: Volume | Dashed lines: Avg % Time ({percent(w_time, 0.1)}) and PPP ({round(w_ppp, 2)})."
+    ),
+    x = "%Time",
+    y = "PPP",
+    caption = "Source: Synergy/SportsRadar | Viz: @Rambzee_"
+  ) +
+  theme_caleb_jazz()
+```
+
+# On/Off Context
+```{r}
+wowy <- tibble::tribble(
+  ~Split, ~MIN, ~OFF_RTG, ~DEF_RTG, ~NET_RTG, ~OFF_TS, ~OFF_TOV, ~OFF_ORB, ~DEF_TS, ~DEF_TOV, ~DEF_ORB,
+  "On",   999,  118.7,    125.3,    -6.6,     60.1,   14.9,     30.0,     62.3,   12.0,     26.7,
+  "Off",  345,  108.8,    115.7,    -6.9,     55.3,   17.4,     28.3,     57.6,   13.8,     26.8
+)
+
+wowy_delta <- tibble::tibble(
+  Split   = "On - Off",
+  MIN     = NA_real_,
+  OFF_RTG = 9.9,
+  DEF_RTG = 9.7,
+  NET_RTG = 0.2,
+  OFF_TS  = 4.8,
+  OFF_TOV = -2.6,
+  OFF_ORB = 1.7,
+  DEF_TS  = 4.7,
+  DEF_TOV = -1.8,
+  DEF_ORB = -0.1
+)
+
+wowy_tbl <- bind_rows(wowy, wowy_delta)
+
+knitr::kable(
+  wowy_tbl,
+  format = "latex",
+  booktabs = TRUE,
+  digits = 1,
+  caption = "Databallr WOWY (2025–26): team performance with Keyonte George ON vs OFF"
+) |>
+  kableExtra::kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"),
+    font_size = 9
+  ) |>
+  kableExtra::column_spec(1, bold = TRUE)
+```
+
+# Interpretation
+
+## 1) What he runs
+
+- **PnR Ball Handler is the engine** (largest share of possessions).
+- Secondary mix is real: **Transition, Spot Up, Isolation** each matter.
+- This supports both **creator scoring** and **easy points** buckets.
+
+## 2) Where the efficiency comes from
+
+- **Spot Up** is a major efficiency driver (high PPP and high 3-point rate).
+- **Cuts** are extremely efficient in small volume.
+- **Handoffs** produce strong PPP, lots of value in motion and DHO actions.
+
+## 3) Impact
+
+- **Offense improves with George on the floor:** +9.9 points/100 and +4.8 TS% (team efficiency spike).
+- **Turnovers improve on offense with him on:** offensive TOV% drops by 2.6 points -- cleaner creation than the raw 3.4 TO/g implies.
+- **Defense is the problem:** defensive rating worsens by +9.7 points/100 and opponent TS% rises by +4.7 points with him on the floor.
+- **Defensive “event” pressure declines:** opponent TOV% drops by 1.8 points with him on -- fewer forced mistakes by the Jazz defense.
+- **Net impact is basically neutral in this lens:** +0.2 net because the offensive gains are almost fully canceled by defensive losses.
+- **Context note:** WOWY is role + lineup dependent, but the data is consistent with the eye test: offense-driving guard, defensive liability.
+
+# Final Summary
+Keyonte George’s 2025–26 leap is driven by legit scoring growth. His top-line production (24.6 PPG on 45.5/37.4/90.3 splits with 6.8 AST) is supported by a play-type mix where high-value buckets pop: Spot Ups and Cuts are areas of elite efficiency in his game, while high-volume creator reps in PnR and Isolation remain solid enough to sustain primary usage. The tradeoff is defensive. On-off splits show a major offensive lift with him on the floor (+9.9 OFF RTG, +4.8 TS%), but an equally severe defensive collapse (+9.7 DEF RTG, +4.7 opponent TS%), leaving the net close to neutral. The All-Star argument is simple: the offense is real; the swing factor is whether Utah can scheme and insulate the defense.
+
+
