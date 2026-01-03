@@ -1,0 +1,467 @@
+---
+title: "Neemias Queta: Flourishing in TD Garden (2025–26)"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: false
+params:
+  season: "2025-26"
+  player_name: "Neemias Queta"
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, message = FALSE, warning = FALSE,
+  fig.pos = "H", fig.align = "center")
+
+library(tidyverse)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(showtext)
+library(sysfonts)
+library(ggrepel)
+library(glue)
+
+font_add_google("Poppins", "poppins")
+showtext_auto()
+
+# Celtics palette
+CELTICS_GREEN <- "#007A33"
+CELTICS_GOLD  <- "#BA9653"
+CELTICS_BLACK <- "#000000"
+BG            <- "#f6f4ef"
+TEXT_DARK     <- "#141414"
+GRID          <- "#dedad3"
+
+theme_caleb_celtics <- function()
+  {
+  theme_minimal(base_family = "poppins") +
+    theme(
+      plot.background  = element_rect(fill = BG, color = NA),
+      panel.background = element_rect(fill = BG, color = NA),
+      panel.grid.major = element_line(color = GRID, linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+      plot.title    = element_text(size = 18, face = "bold", hjust = 0.5, color = TEXT_DARK),
+      plot.subtitle = element_text(size = 10, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 6)),
+      axis.title    = element_text(size = 12, face = "bold", color = TEXT_DARK),
+      axis.text     = element_text(size = 10, color = "#333333"),
+      legend.position = "none",
+      plot.caption  = element_text(size = 8, color = "#6e6e6e", hjust = 0, margin = margin(t = 6)),
+      plot.margin   = margin(10, 12, 14, 12)
+    )
+}
+```
+
+# Executive Summary
+
+Neemias Queta has undergone a dramatic role shift this season. After being released by Sacramento in late 2023, he found a home in Boston on a two-way contract, where his 2024–25 campaign showed flashes of value as a rim protector, screener, and play finisher in limited minutes. At the time, his impact was constrained by frontcourt depth behind Kristaps Porziņģis, Al Horford, and Luke Kornet, and by inconsistencies that capped his usage.
+
+That context changed entirely in 2025–26. With all three veterans departing, Queta was thrust into a starting role and asked to absorb real minutes, tougher matchups, and sustained responsibility. Rather than being exposed by the jump in role, he has met, and exceeded, the demands placed on him. In a season defined by frontcourt uncertainty and selective trust, Queta has earned consistent minutes while other options have cycled through short stints and DNPs.
+
+His value is rooted in play finishing, vertical rim pressure, and rim protection outcomes that hold up at starter usage. Just as importantly, that skill set scales cleanly: it works if he remains the starting center, and it remains highly valuable if Boston elects to pursue a higher-end option at the position. In either scenario, Queta has established himself as a reliable, winning piece rather than a stopgap solution.
+
+## Net Impact Across Minutes
+```{r, fig.cap = "Net impact vs minutes played"}
+queta_games <- tibble(
+  game = 1:33,
+  minutes = c(
+    25,22,27,22,26,20,16,26,24,30,26,29,20,34,23,29,5,NA,29,NA,
+    21,21,26,34,25,35,25,22,24,21,29,29,23
+  ),
+  net_rtg = c(
+    8.9,0.4,19.5,27.9,44.2,-7.3,-22.6,31.3,47.8,14.8,-2.4,-2.1,
+    62.6,18.6,18.5,-2.7,-6.8,NA,-2.0,NA,-26.8,63.8,15.1,21.6,
+    -23.4,14.1,1.8,-25.1,-6.5,-3.8,3.3,-10.7,-4.3
+  )
+)
+
+queta_games <- queta_games %>%
+  mutate(
+    status = case_when(
+      is.na(minutes) ~ "DNP",
+      game == 17 ~ "Left early",
+      TRUE ~ "Played"
+    )
+  )
+
+ggplot(queta_games, aes(x = minutes, y = net_rtg)) +
+  geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.5) +
+  geom_point(color = CELTICS_GREEN, alpha = 0.85, size = 2.6) +
+  geom_smooth(method = "loess", se = FALSE, color = CELTICS_GOLD, linewidth = 1) +
+  labs(
+    title = "Queta’s Minutes Align With Positive Impact",
+    subtitle = "Game-level net rating vs minutes played",
+    x = "Minutes played",
+    y = "Net rating",
+    caption = "Source: Game-level on/off data | Viz: @Rambzee_"
+  ) +
+  theme_caleb_celtics()
+
+```
+
+When Queta’s minutes increase, Boston’s net rating does not deteriorate. Results are often positive across his starter-minute range, and while individual games vary by matchup and context, there is no indication that extended minutes introduce defensive slippage or lineup stress. That stability reinforces Queta’s growth and impact as a starter.
+
+# The Numbers
+
+```{r data_tables}
+# OFFENSIVE PLAY TYPES (Synergy/SportsRadar)
+pt_off <- tribble(
+  ~playtype, ~poss, ~pct_time, ~pct_time_rank, ~pts, ~ppp, ~ppp_rank, ~ppp_rating,
+  ~fg_att, ~fg_made, ~fg_miss, ~fg_pct, ~efg_pct, ~ts_pct, ~tsa, ~to_pct, ~pct_ft,
+  "Cut", 75, 29.0, 93, 106, 1.413, 70, "Very Good", 68, 47, 21, 69.1, 69.1, 69.8, 76, 0.0, 14.7,
+  "P&R Roll Man", 66, 25.5, 91, 88, 1.333, 79, "Very Good", 58, 42, 16, 72.4, 72.4, 71.0, 62, 6.1, 7.6,
+  "Putbacks", 51, 19.7, 86, 64, 1.255, 68, "Very Good", 42, 27, 15, 64.3, 64.3, 64.1, 50, 2.0, 19.6,
+  "Transition", 19, 7.3, 2, 28, 1.474, 96, "Excellent", 16, 12, 4, 75.0, 75.0, 73.4, 19, 0.0, 21.1
+)
+
+# DEFENSIVE PLAY TYPES (opponent results vs Queta; Synergy/SportsRadar)
+pt_def <- tribble(
+  ~playtype, ~poss, ~pct_time, ~pct_time_rank, ~pts, ~ppp, ~ppp_rank, ~ppp_rating,
+  ~fg_att, ~fg_made, ~fg_miss, ~fg_pct, ~efg_pct, ~ts_pct, ~tsa, ~to_pct,
+  "P&R Ball Handler", 176, 53.5, 94, 155, 0.881, 50, "Average", 134, 48, 86, 35.8, 44.4, 50.5, 153, 12.5,
+  "Spot Up", 74, 22.5, 20, 90, 1.216, 19, "Below Average", 70, 33, 37, 47.1, 62.9, 63.5, 71, 4.1,
+  "P&R Roll Man", 34, 10.3, 63, 34, 1.000, 74, "Very Good", 28, 14, 14, 50.0, 53.6, 55.5, 31, 11.8,
+  "Isolation", 30, 9.1, 54, 21, 0.700, 85, "Excellent", 26, 9, 17, 34.6, 34.6, 37.2, 28, 6.7,
+  "Post-Up", 10, 3.0, 7, 4, 0.400, 99, "Excellent", 10, 2, 8, 20.0, 20.0, 20.0, 10, 0.0
+)
+
+# DATABALLR WOWY (low leverage removed)
+wowy <- tribble(
+  ~split, ~min, ~off_rtg, ~def_rtg, ~net_rtg, ~off_ts, ~off_tov, ~off_orb, ~def_ts, ~def_tov, ~def_orb,
+  "On",  700, 121.3, 111.8,  9.4, 58.5, 12.4, 31.1, 56.3, 16.2, 29.5,
+  "Off", 673, 121.1, 119.0,  2.2, 59.5, 12.8, 27.5, 58.3, 14.1, 27.6
+) |>
+  bind_rows(
+    tibble(
+      split = "On - Off", min = NA_real_,
+      off_rtg = 0.1, def_rtg = -7.1, net_rtg = 7.2,
+      off_ts = -1.0, off_tov = -0.4, off_orb = 3.6,
+      def_ts = -2.0, def_tov = 2.1, def_orb = 1.9
+    )
+  )
+
+# NBA.com defense dashboard
+nba_def <- tibble(
+  player = "Neemias Queta", team = "BOS", age = 26, pos = "C",
+  gp = 29, games_guarded = 29, freq_pct = 100,
+  dfgm = 5.8, dfga = 12.2, dfg_pct = 47.5, fg_pct = 49.9, diff_pct = -2.4
+)
+
+# Rebounding environment (contest level)
+reb_contest <- tribble(
+  ~range, ~gp, ~reb_freq, ~oreb, ~dreb, ~reb,
+  ~cont_oreb, ~cont_dreb, ~cont_reb, ~cont_reb_pct,
+  ~uncont_oreb, ~uncont_dreb, ~uncont_reb, ~uncont_reb_pct,
+  "0 Contesting Rebounders", 30, 43.3, 0.9, 2.4, 3.3, 0.0, 0.0, 0.0, 0.0, 0.9, 2.4, 3.3, 100,
+  "1 Contesting Rebounder",  30, 49.4, 1.7, 2.1, 3.8, 1.7, 2.1, 3.8, 100, 0.0, 0.0, 0.0, 0,
+  "2+ Contesting Rebounders",30,  7.4, 0.4, 0.2, 0.6, 0.4, 0.2, 0.6, 100, 0.0, 0.0, 0.0, 0
+)
+
+# NBA.com advanced
+nba_adv <- tibble(
+  season = "2025-26", team = "BOS", gp = 31, min = 24.7,
+  offrtg = 118.5, defrtg = 108.7, netrtg = 9.7,
+  ast_pct = 8.2, ast_to = 1.70, ast_ratio = 14.9,
+  oreb_pct = 11.4, dreb_pct = 18.5, reb_pct = 14.9
+)
+
+# NBA.com traditional
+nba_trad <- tibble(
+  season = "2025-26", team = "BOS", gp = 31, min = 24.7,
+  pts = 10.1, fgm = 4.4, fga = 6.6, fg_pct = 66.7,
+  fg3m = 0.0, fg3a = 0.1, fg3_pct = 0.0,
+  ftm = 1.4, fta = 2.3, ft_pct = 60.0,
+  oreb = 2.9, dreb = 4.7, reb = 7.6,
+  ast = 1.5, tov = 0.9, stl = 0.8, blk = 1.3, pf = 2.9
+)
+```
+
+
+```{r table_role}
+role_tbl <- nba_trad |>
+  transmute(
+    Season = season,
+    GP = gp,
+    MPG = min,
+    PTS = pts,
+    REB = reb,
+    OREB = oreb,
+    DREB = dreb,
+    AST = ast,
+    BLK = blk,
+    TOV = tov,
+    `FG%` = fg_pct,
+    `FT%` = ft_pct
+  )
+
+kbl(role_tbl, format = "latex", booktabs = TRUE, caption = "Traditional production (NBA.com)") |>
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 10)
+```
+
+```{r table_adv}
+adv_tbl <- nba_adv |>
+  transmute(
+    Season = season,
+    `OffRtg` = offrtg,
+    `DefRtg` = defrtg,
+    `NetRtg` = netrtg,
+    `OREB%` = oreb_pct,
+    `DREB%` = dreb_pct,
+    `REB%`  = reb_pct,
+    `AST%`  = ast_pct,
+    `AST/TO` = ast_to
+  )
+
+kbl(adv_tbl, format = "latex", booktabs = TRUE, caption = "Advanced profile (NBA.com)") |>
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 10)
+```
+
+# Offensive Role: Play-finishing (cuts, rolls, putbacks)
+
+On the offensive end, Queta operates primarily as a play-finisher; he is not asked to self-create, but he converts advantages at a high rate through:
+* Cuts (timing and rim runs)
+* Roll man possessions (vertical spacing)
+* Putbacks (second-chance points and pressure on the glass)
+
+```{r table_pt_off}
+pt_off_tbl <- pt_off |>
+  mutate(
+    pct_time = pct_time / 100,
+    fg_pct = fg_pct / 100, efg_pct = efg_pct / 100, ts_pct = ts_pct / 100,
+    to_pct = to_pct / 100, pct_ft = pct_ft / 100
+  ) |>
+  transmute(
+    Play = playtype,
+    Poss = poss,
+    `Time%` = pct_time,
+    PPP = round(ppp, 3),
+    Rating = ppp_rating,
+    `TS%` = ts_pct,
+    `TO%` = to_pct,
+    `FT% of plays` = pct_ft
+  ) |>
+  arrange(desc(`Time%`))
+
+kbl(pt_off_tbl, format = "latex", booktabs = TRUE,
+    caption = "Offensive play types (Synergy/SportsRadar)") |>
+  kable_styling(latex_options = c("striped","hold_position","scale_down"), font_size = 9) |>
+  column_spec(1, bold = TRUE) |>
+  column_spec(4, bold = TRUE)
+```
+
+## Efficiency by play type
+
+```{r fig_off_ppp, fig.cap="PPP by offensive play type"}
+w_off_ppp <- weighted.mean(pt_off$ppp, pt_off$poss, na.rm = TRUE)
+
+ggplot(pt_off, aes(x = ppp, y = reorder(playtype, ppp))) +
+  geom_point(aes(size = poss), color = CELTICS_GREEN, alpha = 0.9) +
+  geom_vline(xintercept = w_off_ppp, linetype = "dashed", color = CELTICS_GOLD, linewidth = 0.9) +
+  scale_size(range = c(2, 8)) +
+  labs(
+    title = "Efficiency by Play Type",
+    subtitle = glue("Size: Volume. Dashed-line: Weighted avg PPP ({round(w_off_ppp, 3)})."),
+    x = "PPP",
+    y = NULL,
+    caption = "Source: Synergy/SportsRadar | Viz: @Rambzee_"
+  ) +
+  theme_caleb_celtics()
+```
+
+## Interpretation
+
+Queta’s offensive value shows up in how defenses are forced to react to him. As a vertical spacer, he consistently draws weakside help and collapses coverage in actions Boston already prioritizes. His cuts and rolls convert ball pressure and spacing into efficient points without changing the structure of the offense.
+
+That pressure carries over to the glass. Queta’s offensive rebounding follows naturally from the attention he commands at the rim. His second-chance scoring (2.9 OREB per game, 64.3% conversion on putbacks) raises the cost of helping off him and extends possessions without requiring touches or play calls. 
+
+# Defensive Impact
+
+```{r table_wowy}
+kbl(wowy, format = "latex", booktabs = TRUE, digits = 1,
+    caption = "Databallr WOWY (low leverage removed): ON vs OFF") |>
+  kable_styling(latex_options = c("striped","hold_position","scale_down"), font_size = 9) |>
+  column_spec(1, bold = TRUE)
+```
+
+Queta’s defensive impact is substantial and well-supported by multiple lenses. With him on the floor, Boston allows 7.1 fewer points per 100 possessions, and opponent true shooting drops by approximately two percentage points. The resulting +7.2 net rating reflects impact driven primarily by defensive outcomes rather than offensive usage.
+
+
+```{r CraftedNBA defense}
+crafted_def <- tibble::tribble(
+  ~Metric, ~Value, ~Percentile,
+  "Deflections", 2.2, 41,
+  "raDTOV (Rim-Adjusted D-TOV)", 1.0, 97,
+  "Defensive Rebounds (DRB)", -1.0, 31,
+  "Rim Defense (pts saved)", -6.3, 74,
+  "Rim Frequency Defended", 44.4, 86,
+  "Block Rate (BLK%)", 5.3, 94,
+  "Defensive Versatility", 31, 35,
+  "Relative Personal Fouls (rPF)", 1.9, 4,
+  "Crafted DPM", 1.6, 87
+)
+
+kbl(
+  crafted_def,
+  format = "latex",
+  booktabs = TRUE,
+  caption = "Defensive impact metrics (CraftedNBA)"
+) |>
+  kableExtra::kable_styling(
+    latex_options = c("striped","hold_position","scale_down"),
+    font_size = 9
+  ) |>
+  column_spec(1, bold = TRUE) |>
+  column_spec(3, bold = TRUE)
+```
+CraftedNBA metrics help explain how that defensive impact is produced. Queta contests a large share of opponent rim attempts (44.4%, 86th percentile) and materially lowers efficiency on those shots. When he is the closest defender at the rim (<6 ft), opponents shoot 6.3 percentage points worse than their baseline (74th percentile). He pairs that deterrence with strong event creation, ranking in the 97th percentile in rim-adjusted defensive turnovers forced (raDTOV) and the 94th percentile in block rate.
+
+Queta’s defensive profile is concentrated rather than broad. He is most effective around the basket, offers limited value guarding in space, and does not consistently disrupt passing lanes. His foul rate places a ceiling on minutes, and his defensive rebounding is solid but not a defining strength. Within a rim-focused role, however, the results are clear. Neemias Queta reliably limits shot quality at the basket and generates defensive events in the areas Boston prioritizes most.
+
+## Rim Defense
+```{r rim_def_plot_build, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(hoopR)
+library(ggimage)
+library(ggrepel)
+library(scales)
+
+season_used <- params$season
+target_name <- params$player_name
+
+def_dash <- hoopR::nba_leaguedashptdefend(
+  season = season_used,
+  season_type = "Regular Season"
+)$LeagueDashPTDefend %>%
+  janitor::clean_names()
+
+rim <- def_dash %>%
+  mutate(
+    workload  = as.numeric(d_fga),
+    dfg_pct   = as.numeric(d_fg_pct),
+    base_pct  = as.numeric(normal_fg_pct),
+    fg_change = dfg_pct - base_pct
+  ) %>%
+  filter(!is.na(workload), workload >= 75, !is.na(fg_change)) %>%
+  filter(player_position %in% c("C","PF","F-C","C-F","PF-C"))
+
+players <- hoopR::nba_leaguedashplayerstats(
+  season = season_used,
+  season_type = "Regular Season",
+  measure_type = "Base"
+)$LeagueDashPlayerStats %>%
+  janitor::clean_names() %>%
+  select(player_id, player_name)
+
+rim <- rim %>%
+  left_join(players, by = "player_name") %>%
+  mutate(
+    headshot = ifelse(
+      !is.na(player_id),
+      paste0("https://cdn.nba.com/headshots/nba/latest/1040x760/", player_id, ".png"),
+      NA_character_
+    )
+  )
+
+rim_queta <- rim %>% filter(player_name == target_name)
+rim_anchors <- rim %>% slice_max(workload, n = 30) %>%
+  bind_rows(rim_queta) %>%
+  distinct(player_name, .keep_all = TRUE)
+rim_other <- rim %>% filter(!player_name %in% rim_anchors$player_name)
+
+p_rim <- ggplot() +
+  geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.5) +
+  geom_point(
+    data = rim_other,
+    aes(x = workload, y = fg_change),
+    color = "#6b6b6b", alpha = 0.15, size = 1.2
+  ) +
+  ggimage::geom_image(
+    data = rim_anchors,
+    aes(x = workload, y = fg_change, image = headshot),
+    size = 0.075, asp = 1.1
+  ) +
+  ggimage::geom_image(
+    data = rim_queta,
+    aes(x = workload, y = fg_change, image = headshot),
+    size = 0.09, asp = 1.1
+  ) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(
+    title = "Rim Defense in League Context",
+    subtitle = "Defended FG% relative to opponent norm. Volume on X-axis.",
+    x = "Shots defended",
+    y = "Change in opponent FG%",
+    caption = "Source: NBA Stats (via hoopR) | Viz: @Rambzee_"
+  ) +
+  theme_caleb_celtics()
+```
+
+```{r rim_def_save_and_include, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Rim Defense in League Context", out.width="\\linewidth"}
+out_file <- "fig_rim_def_context.png"
+
+p_rim <- p_rim +
+  theme(
+    plot.title   = element_text(size = 26, face = "bold", hjust = 0.5, color = TEXT_DARK),
+    plot.subtitle= element_text(size = 16, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 6)),
+    axis.title   = element_text(size = 22, face = "bold", color = TEXT_DARK),
+    axis.text    = element_text(size = 18, color = "#333333"),
+    plot.caption = element_text(size = 14, color = "#6e6e6e", hjust = 0, margin = margin(t = 6))
+  )
+
+ggsave(
+  filename = "fig_rim_def_context.png",
+  plot = p_rim,
+  width = 7.2, height = 4.6, units = "in",
+  dpi = 320,
+  bg = BG,
+  device = ragg::agg_png   # <- key: consistent text rendering
+)
+
+knitr::include_graphics(out_file)
+```
+
+Across all shot-types, Queta defends a high volume of shots while holding opponents ~3% below their normal efficiency. 
+
+## Interpretation 
+
+Opponent results back up the film and the tracking data. When Queta is the primary defender, shot efficiency drops below baseline, consistent with real rim protection rather than scheme-driven results. Those outcomes align with the on/off data, where Boston defends at a considerably higher level during his minutes.
+
+On-Off numbers should always be analyzed in-context, but the direction matters. With Queta on the floor, the Celtics are not simply holding ground defensively; they are gaining it. His minutes consistently align with defensive improvement and positive net results, reinforcing his positive impact.
+
+## Figure 3: Rebounding environment
+
+```{r fig_reb_env}
+reb_long <- reb_contest |>
+  mutate(reb_freq = reb_freq / 100) |>
+  select(range, reb_freq)
+
+ggplot(reb_long, aes(x = reorder(range, reb_freq), y = reb_freq)) +
+  geom_col(fill = CELTICS_GREEN, alpha = 0.95) +
+  coord_flip() +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "Rebounding environment",
+    subtitle = "Share of rebounds by number of contesting rebounders",
+    x = NULL, y = "Frequency",
+    caption = "Source: NBA.com | Viz: @Rambzee_"
+  ) +
+  theme_caleb_celtics()
+```
+
+Queta’s rebounding profile reflects his role within Boston’s defensive structure. Most of his rebounds come with zero or one contesting rebounder, with limited 2+ contested volume. That distribution is typical for a center operating behind strong point-of-attack defense and emphasizes his strong positioning and timing rather than pure box-out dominance.
+
+The takeaway is not that Queta is an elite defensive rebounder, but that his rebounding fits the Celtics ecosystem. He secures possessions relatively efficiently without compromising rim protection or defensive coverage.
+
+# Closing Summary
+
+Neemias Queta has taken a real step forward this season, marked by improved execution and consistency on both ends. Offensively, he has become a reliable play finisher, turning Boston’s creation into points through cuts, rolls, putbacks, and strong on- and off-ball screening. Defensively, his rim protection has stabilized, and Boston’s lineups have consistently performed better with him on the floor.
+
+In a season defined by frontcourt uncertainty, Queta has provided the Celtics with minutes they can trust. He has handled starter-level responsibility, sustained physicality, and tougher matchups without forcing schematic compromises or disrupting offensive flow.
+
+If this version of Queta holds, center minutes are no longer something Boston needs to manage around. They have a dependable big who brings athleticism, energy, and physicality that align directly with the Celtics’ identity.
