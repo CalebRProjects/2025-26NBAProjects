@@ -12,21 +12,21 @@ This report is structured around three central questions:
 # Data Sources
 The analysis integrates data from multiple public and proprietary sources:
 * NBA Stats API (via hoopR)
-- ShotChartDetail
-- Player and lineup dashboards
+  * ShotChartDetail
+  * Player and lineup dashboards
 
 * Synergy / SportsRadar
-** Play type usage and efficiency
+  * Play type usage and efficiency
 
 * Cleaning the Glass
-- Offensive overview metrics
-- On/off and Four Factors deltas
+  * Offensive overview metrics
+  * On/off and Four Factors deltas
 
 * Databallr
-- WOWY lineup splits (low leverage removed)
+  * WOWY lineup splits (low leverage removed)
 
 * CraftedNBA
-- Defensive impact metrics and percentiles
+  * Defensive impact metrics and percentiles
 
 All data is contextualized within the 2025–26 regular season.
 
