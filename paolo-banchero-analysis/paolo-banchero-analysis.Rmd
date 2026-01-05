@@ -1,0 +1,705 @@
+---
+title: "What is Going On With Paolo Banchero?"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: false
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center"
+)
+
+# Packages
+library(dplyr); library(tidyr); library(tibble)
+library(ggplot2); library(scales); library(knitr)
+library(kableExtra); library(stringr); library(hoopR)
+library(lubridate); library(showtext); library(ggrepel)
+library(readr)
+
+# Fonts
+font_add_google("Poppins", "poppins")
+showtext_auto()
+
+# Style
+BG        <- "#f6f4ef"
+TEXT_DARK <- "#141414"
+GRID      <- "#dedad3"
+
+theme_caleb_rmd <- function()
+{
+  theme_minimal(base_family = "poppins") +
+    theme(
+      plot.background  = element_rect(fill = BG, color = NA),
+      panel.background = element_rect(fill = BG, color = NA),
+      panel.grid.major = element_line(color = GRID, linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+      plot.title       = element_text(size = 18, face = "bold", hjust = 0.5, color = TEXT_DARK),
+      plot.subtitle    = element_text(size = 10, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 6)),
+      axis.title       = element_text(size = 12, face = "bold", color = TEXT_DARK),
+      axis.text        = element_text(size = 10, color = "#333333"),
+      legend.position  = "none",
+      plot.caption     = element_text(size = 8, color = "#6e6e6e", hjust = 0, margin = margin(t = 6)),
+      plot.margin      = margin(10, 12, 14, 12)
+    )
+}
+
+to_num <- function(x)
+{
+  suppressWarnings(as.numeric(gsub("[^0-9\\.-]", "", x)))
+}
+
+ordinal <- function(x)
+{
+  x <- as.integer(round(x))
+
+  if (x %% 100 %in% c(11, 12, 13)) {
+    return(paste0(x, "th"))
+  }
+
+  last <- x %% 10
+  suf <- ifelse(
+    last == 1, "st",
+    ifelse(last == 2, "nd",
+      ifelse(last == 3, "rd", "th")
+    )
+  )
+
+  paste0(x, suf)
+}
+
+pct_rank <- function(x, value)
+{
+  mean(x <= value, na.rm = TRUE) * 100
+}
+
+kbl_caleb <- function(df, caption, font_size = 9, scale_down = TRUE, digits = NULL)
+{
+  if (is.null(digits)) {
+    kb <- kableExtra::kbl(
+      df,
+      format = "latex",
+      booktabs = TRUE,
+      caption = caption
+    )
+  } else {
+    kb <- kableExtra::kbl(
+      df,
+      format = "latex",
+      booktabs = TRUE,
+      caption = caption,
+      digits = digits
+    )
+  }
+
+  latex_options <- c("striped", "hold_position")
+  if (isTRUE(scale_down)) latex_options <- c(latex_options, "scale_down")
+
+  kb %>%
+    kableExtra::kable_styling(
+      latex_options = latex_options,
+      font_size = font_size
+    )
+}
+```
+
+# Executive Summary
+
+Paolo Banchero is one of the league’s most physically gifted young forwards, but his offensive profile has reached a critical inflection point. Despite elite size, strength, and foul-drawing ability, Banchero is producing extremely poor jump-shooting efficiency while continuing to take a high volume of jump shots rather than getting downhill.
+
+This report evaluates whether Banchero’s current offensive role is aligned with his strengths and what that alignment means for Orlando’s offensive ceiling. The data shows a consistent pattern across play types, shot zones, and lineup contexts: Banchero is most effective when finishing advantages and least effective when tasked with sustained self-creation.
+
+Jump shots now account for a majority of his field-goal attempts despite being his least efficient scoring avenue. Meanwhile, Orlando’s offense performs more reliably with Franz Wagner’s presence than with Banchero’s, and lineups featuring Banchero without Wagner struggle to generate efficient offense.
+
+The goal of this report is not to diminish Banchero’s talent, but to determine the specific failures in his offensive usage and identify what must change for Orlando to build a sustainable offense around him.
+
+# Context for Concern
+
+Orlando’s offense has taken a meaningful step forward this season, stabilizing into an above-average unit following the addition of Desmond Bane and continued growth from Anthony Black and other young pieces. Improved shooting, secondary creation, and lineup flexibility have raised the Magic’s offensive floor and reduced their dependence on any single scorer.
+
+That improvement is critical in the evaluation of Paolo Banchero. The concern is not that Orlando’s offense collapses in his presence, it does not. It is that, within an offense that now generates better spacing and cleaner advantages, Banchero’s individual scoring efficiency frequently undermines those advantages rather than capitalizing on them.
+
+Among players with comparable usage, Banchero continues to rank near the bottom of the league in jump-shooting efficiency, self-created jumpers, and midrange attempts. These inefficiencies persist even in lineups featuring good shooting and secondary creation. The issue is not contextual scarcity but shot selection and role execution.
+
+The result is a measurable opportunity cost. In an offense that now has the tools to produce efficient looks, possessions ending in low-efficiency self-created jump shots are lost value. The central question is no longer whether Orlando can score despite Banchero’s inefficiency (it can), but whether continuing to allocate high-leverage possessions to those shots puts a major cap on their offensive ceiling.
+
+```{r helpers}
+season_used <- "2025-26"
+paolo_name  <- "Paolo Banchero"
+
+shots_dir <- file.path("data", "processed", "shots")
+dir.create(shots_dir, recursive = TRUE, showWarnings = FALSE)
+
+get_player_id <- function(season, player_name)
+{
+  league_stats <- hoopR::nba_leaguedashplayerstats(
+    season = season,
+    season_type = "Regular Season",
+    measure_type = "Base"
+  )$LeagueDashPlayerStats
+
+  player_id <- league_stats %>%
+    filter(PLAYER_NAME == player_name) %>%
+    slice_tail(n = 1) %>%
+    pull(PLAYER_ID) %>%
+    .[1]
+
+  if (length(player_id) == 0 || is.na(player_id)) {
+    stop("PLAYER_ID not found. Check season string or name.")
+  }
+
+  player_id
+}
+
+get_cached_shots <- function(player_id, season)
+{
+  path <- file.path(shots_dir, paste0("shots_", season, "_", player_id, ".csv"))
+
+  if (file.exists(path)) {
+    return(readr::read_csv(path, show_col_types = FALSE))
+  }
+
+  shotchart <- hoopR::nba_shotchartdetail(
+    season = season,
+    season_type = "Regular Season",
+    player_id = player_id,
+    team_id = 0,
+    context_measure_simple = "FGA"
+  )
+
+  shots <- shotchart$Shot_Chart_Detail %>%
+    mutate(
+      game_date = suppressWarnings(lubridate::mdy(as.character(GAME_DATE))),
+      game_date = if_else(
+        is.na(game_date),
+        suppressWarnings(lubridate::ymd(as.character(GAME_DATE))),
+        game_date
+      ),
+      x = suppressWarnings(as.numeric(LOC_X)),
+      y = suppressWarnings(as.numeric(LOC_Y)),
+      made = suppressWarnings(as.integer(SHOT_MADE_FLAG)),
+      shot_type = as.character(SHOT_TYPE),
+      shot_zone_basic = as.character(SHOT_ZONE_BASIC),
+      shot_zone_area = as.character(SHOT_ZONE_AREA),
+      shot_zone_range = as.character(SHOT_ZONE_RANGE),
+      action_type = as.character(ACTION_TYPE)
+    ) %>%
+    filter(!is.na(x), !is.na(y)) %>%
+    select(
+      game_date, x, y, made, shot_type,
+      shot_zone_basic, shot_zone_area, shot_zone_range, action_type
+    )
+
+  try(readr::write_csv(shots, path), silent = TRUE)
+  shots
+}
+
+add_standard_shot_zones <- function(shots)
+{
+  shots %>%
+    mutate(
+      x = suppressWarnings(as.numeric(x)),
+      y = suppressWarnings(as.numeric(y)),
+      made = suppressWarnings(as.numeric(made)),
+      r = sqrt(x^2 + y^2),
+      is_corner = abs(x) > 220 & y < 92,
+      is_3pt = (r >= 237.5 & y >= 92) | is_corner,
+      zone = case_when(
+        is_3pt & is_corner & x < 0 ~ "LC3",
+        is_3pt & is_corner & x > 0 ~ "RC3",
+        is_3pt & !is_corner & abs(x) <= 80 ~ "Top Key 3",
+        is_3pt & !is_corner & x < 0 ~ "LW3",
+        is_3pt & !is_corner & x > 0 ~ "RW3",
+        !is_3pt & r <= 60 ~ "Rim (0–5')",
+        !is_3pt & r <= 120 ~ "Paint (non-rim)",
+        !is_3pt & y < 92 & abs(x) >= 150 & x < 0 ~ "L Corner MR",
+        !is_3pt & y < 92 & abs(x) >= 150 & x > 0 ~ "R Corner MR",
+        !is_3pt & abs(x) >= 150 & x < 0 ~ "L Wing MR",
+        !is_3pt & abs(x) >= 150 & x > 0 ~ "R Wing MR",
+        TRUE ~ "Middle MR"
+      ),
+      zone = factor(
+        zone,
+        levels = c(
+          "LC3", "LW3", "Top Key 3", "RW3", "RC3",
+          "L Corner MR", "L Wing MR", "Middle MR", "R Wing MR", "R Corner MR",
+          "Paint (non-rim)", "Rim (0–5')"
+        )
+      )
+    )
+}
+
+zone_summary <- function(shots, min_fga = 12)
+{
+  shots %>%
+    add_standard_shot_zones() %>%
+    group_by(zone) %>%
+    summarise(
+      FGA = n(),
+      FGM = sum(made, na.rm = TRUE),
+      FG_PCT = ifelse(FGA > 0, FGM / FGA, NA_real_),
+      .groups = "drop"
+    ) %>%
+    filter(FGA >= min_fga) %>%
+    mutate(Share = FGA / sum(FGA)) %>%
+    arrange(zone)
+}
+
+plot_zone_tiles <- function(shots, title, min_fga = 12)
+{
+  zone_df <- zone_summary(shots, min_fga = min_fga) %>%
+    mutate(
+      group = case_when(
+        zone %in% c("LC3", "LW3", "Top Key 3", "RW3", "RC3") ~ "3PT",
+        zone %in% c("Rim (0–5')", "Paint (non-rim)") ~ "Paint",
+        TRUE ~ "Midrange"
+      ),
+      group = factor(group, levels = c("3PT", "Midrange", "Paint")),
+      label = paste0(percent(FG_PCT, 1), "\n(", FGA, ")")
+    )
+
+  ggplot(zone_df, aes(x = zone, y = group, fill = FG_PCT)) +
+    geom_tile(color = "white", linewidth = 0.6) +
+    geom_text(aes(label = label), size = 3.0, lineheight = 0.95) +
+    scale_fill_gradient2(
+      low = "red3",
+      mid = "orange",
+      high = "chartreuse4",
+      midpoint = 0.50,
+      labels = percent_format(accuracy = 1)
+    ) +
+    labs(
+      title = title,
+      subtitle = paste0(
+        "Color = FG%, label = FG% and attempts (min ", min_fga, " FGA/zone)"
+      ),
+      x = NULL,
+      y = NULL,
+      fill = "FG%",
+      caption = "Data: NBA API via hoopR (ShotChartDetail) | Viz: @Rambzee_"
+    ) +
+    theme_caleb_rmd() +
+    theme(plot.caption.position = "plot")
+}
+
+jump_splits_table <- function(shots, min_fga = 10)
+{
+  shots_tagged <- shots %>%
+    mutate(
+      st = tolower(shot_type),
+      at = tolower(action_type),
+      zb = tolower(shot_zone_basic),
+      zr = tolower(shot_zone_range),
+      is_jump = str_detect(zb, "jump") | str_detect(at, "jump"),
+      is_pullup = str_detect(at, "pullup") | str_detect(at, "pull-up"),
+      is_3 = str_detect(st, "3pt") | str_detect(zb, "3"),
+      is_mid_long = str_detect(zr, "16-24"),
+      is_mid_short = str_detect(zr, "8-16"),
+      bucket = case_when(
+        is_jump & is_pullup ~ "Pull-up jumpers",
+        is_jump & is_3 ~ "Other jumpers: 3PT",
+        is_jump & is_mid_long ~ "Other jumpers: long 2 (16–24)",
+        is_jump & is_mid_short ~ "Other jumpers: short 2 (8–16)",
+        TRUE ~ NA_character_
+      )
+    )
+
+  shots_tagged %>%
+    filter(!is.na(bucket)) %>%
+    group_by(bucket) %>%
+    summarise(
+      FGA = n(),
+      FGM = sum(made, na.rm = TRUE),
+      FG_PCT = FGM / FGA,
+      .groups = "drop"
+    ) %>%
+    filter(FGA >= min_fga) %>%
+    arrange(desc(FGA))
+}
+
+paolo_id    <- get_player_id(season_used, paolo_name)
+shots_paolo <- get_cached_shots(paolo_id, season_used)
+```
+
+# Shot Selection and Shot Quality
+
+Banchero’s shot profile shows a structural inefficiency as opposed to a temporary slump. Zone-based data shows a heavy concentration of attempts in midrange and non-rim two-point areas, along with a substantial volume of above-the-break threes. Meanwhile, his most efficient opportunities (rim finishes and selective catch-and-shoot threes) make up a smaller share of his attempts than expected for a player with his game-breaking physical tools.
+
+For a player whose primary advantages are strength, downhill pressure, and foul generation, the current shot mix places too many possessions in areas where he consistently under performs.
+
+```{r shot type synergy}
+shot_type_tbl <- tibble::tribble(
+  ~`Shot Type`, ~Share, ~FGA, ~`FG%`, ~`eFG%`, ~PPS, ~Rating,
+  "All FGA",    1.000,  407, 0.450, 0.480, 0.96, "Below Average",
+  "Jump Shots", 0.430,  175, 0.297, 0.369, 0.74, "Poor",
+  "Runners",    0.054,   22, 0.409, 0.409, 0.82, "Average",
+  "At Rim",     0.450,  183, 0.596, 0.596, 1.19, "Average"
+)
+
+shot_type_tbl %>%
+  mutate(
+    Share  = scales::percent(Share, accuracy = 0.1),
+    `FG%`  = scales::percent(`FG%`, accuracy = 0.1),
+    `eFG%` = scales::percent(`eFG%`, accuracy = 0.1)
+  ) %>%
+  kbl_caleb(
+    caption = "Paolo Banchero shot distribution and efficiency by shot type (2025–26)",
+    font_size = 9,
+    scale_down = FALSE
+  ) %>%
+  kableExtra::column_spec(1, bold = TRUE)
+```
+
+```{r shot_zone_tiles, fig.cap="Paolo Banchero shot chart by zone (2025–26)"}
+plot_zone_tiles(
+  shots = shots_paolo,
+  title = paste0(
+    "Paolo Banchero shot chart by zone (",
+    season_used,
+    ")"
+  ),
+  min_fga = 12
+)
+```
+
+```{r jump_splits_synergy, results = "asis"}
+jumper_dist_tbl <- tibble::tribble(
+  ~`Jump Shot Distance`, ~`Share of Jumpers`, ~FGA, ~`FG%`, ~`eFG%`, ~PPS, ~Rating,
+  "Short (<17 ft)",       0.114,  20, 0.400, 0.400, 0.80, "Good",
+  "Long 2 (17–<3PT)",     0.331,  58, 0.328, 0.328, 0.66, "Poor",
+  "3PT",                  0.554,  97, 0.258, 0.387, 0.77, "Poor"
+)
+
+jumper_dist_tbl %>%
+  mutate(
+    `Share of Jumpers` = scales::percent(`Share of Jumpers`, accuracy = 0.1),
+    `FG%`             = scales::percent(`FG%`, accuracy = 0.1),
+    `eFG%`            = scales::percent(`eFG%`, accuracy = 0.1)
+  ) %>%
+  kbl_caleb(
+    caption = "Paolo Banchero jump shooting efficiency by distance (2025–26)",
+    font_size = 9,
+    scale_down = FALSE
+  ) %>%
+  kableExtra::column_spec(1, bold = TRUE)
+```
+
+# Play Type Breakdown
+
+Breaking Banchero’s offense down by play type clarifies where his shot-selection issues emerge within Orlando’s scheme. Isolation and pick-and-roll ball-handler possessions account for a substantial share of his usage, yet both produce below-average points per possession relative to league norms. As the degree of self-creation increases, turnover rates rise and shooting efficiency declines sharply.
+
+In contrast, Banchero is consistently effective in transition and as a play finisher, particularly on spot-ups, cuts, and post-ups, here efficiency improves and turnovers decrease. These possessions place him in motion and allow him to attack already-tilted defenses rather than generate advantages from a standstill.
+
+Banchero is most effective when he is used as a downhill threat and advantage finisher. Instead, both his usage and Orlando’s offensive structure continue to emphasize isolation and on-ball creation, placing a disproportionate share of possessions into his least efficient scoring contexts.
+
+```{r data_tables, include=FALSE}
+play_types <- tibble::tribble(
+  ~play_type, ~poss, ~time_pct, ~time_pct_rank, ~pts, ~ppp, ~ppp_rank, ~ppp_rating,
+  ~fgm, ~fga, ~fg_pct, ~efg_pct, ~to_pct,
+  ~fg2m, ~fg2a, ~fg2_pct, ~fg3m, ~fg3a, ~fg3_pct,
+  "P&R Ball Handler", 115, 0.204, 0.56,  91, 0.791, 0.36, "Average",
+   28,  77, 0.364, 0.370, 0.157,
+   27,  64, 0.422,   1,  13, 0.077,
+  "Transition",       110, 0.195, 0.52, 136, 1.236, 0.74, "Very Good",
+   47,  76, 0.618, 0.638, 0.073,
+   44,  67, 0.657,   3,   9, 0.333,
+  "Isolation",         84, 0.149, 0.87,  68, 0.810, 0.37, "Average",
+   24,  63, 0.381, 0.389, 0.083,
+   23,  56, 0.411,   1,   7, 0.143,
+  "Spot-Up",           80, 0.142, 0.12,  84, 1.050, 0.51, "Good",
+   26,  65, 0.400, 0.523, 0.075,
+   10,  21, 0.476,  16,  44, 0.364,
+  "Post-Up",           55, 0.097, 0.70,  59, 1.073, 0.63, "Good",
+   18,  33, 0.545, 0.545, 0.182,
+   18,  33, 0.545,   0,   0, NA_real_,
+  "Cut",               30, 0.053, 0.27,  36, 1.200, 0.29, "Below Average",
+   16,  25, 0.640, 0.640, 0.067,
+   16,  25, 0.640,   0,   0, NA_real_,
+  "P&R Roll Man",      29, 0.051, 0.28,  20, 0.690, 0.11, "Poor",
+    4,  21, 0.190, 0.190, 0.069,
+    4,  15, 0.267,   0,   6, 0.000,
+  "Off Screen",        21, 0.037, 0.26,  14, 0.667, 0.12, "Poor",
+    5,  19, 0.263, 0.289, 0.048,
+    4,  13, 0.308,   1,   6, 0.167
+)
+
+ctg_off_overview <- tibble::tribble(
+  ~season, ~age, ~team, ~pos, ~gp, ~gs, ~min, ~mpg,
+  ~usage_rating, ~usage_pct, ~psa_rating, ~psa,
+  ~ast_pct_rating, ~ast_pct, ~ast_usg, ~tov_pct_rating, ~tov_pct,
+  "2022-23", 20.0, "ORL", "Forward", 72, 72, 2428, 33.7, 96, 0.281, 20, 105.7, 82, 0.171, 0.61, 34, 0.125,
+  "2023-24", 21.0, "ORL", "Big",     80, 80, 2798, 35.0, 99, 0.309, 17, 108.9, 96, 0.254, 0.82, 55, 0.124,
+  "2024-25", 22.0, "ORL", "Big",     46, 46, 1580, 34.4, 99, 0.343, 27, 111.3, 98, 0.263, 0.77, 72, 0.109,
+  "2025-26", 23.0, "ORL", "Forward", 25, 25,  832, 33.3, 86, 0.282, 46, 108.8, 81, 0.218, 0.77, 51, 0.115
+)
+
+ctg_onoff_fourfactors <- tibble::tribble(
+  ~season, ~age, ~team, ~min, ~diff_rank, ~net_onoff, ~net_onoff_rank,
+  ~off_ptsposs_rank, ~off_ptsposs_diff, ~off_efg_rank, ~off_efg_diff, ~off_tov_rank, ~off_tov_diff,
+  ~off_orb_rank, ~off_orb_diff, ~off_ftr_rank, ~off_ftr_diff,
+  ~def_ptsposs_rank, ~def_ptsposs_diff, ~def_efg_rank, ~def_efg_diff, ~def_tov_rank, ~def_tov_diff,
+  ~def_orb_rank, ~def_orb_diff, ~def_ftr_rank, ~def_ftr_diff,
+  "2022-23", 20.0, "ORL", 2428, 31, -4.0, -10,
+   77,  2.8, 77,  0.015, 64, -0.004, 24, -0.021, 84,  2.9,
+    5,  6.8,  6,  0.036, 44, -0.002, 44,  0.006, 33,  1.6,
+  "2023-24", 21.0, "ORL", 2798, 12, -9.1, -21,
+   22, -4.1, 18, -0.027, 72, -0.007, 14, -0.035, 67,  1.3,
+   12,  5.0, 15,  0.021, 49,  0.000, 45,  0.003, 21,  2.7,
+  "2024-25", 22.0, "ORL", 1580, 38, -2.7,  -7,
+   53, -0.3, 49, -0.004, 82, -0.012, 24, -0.021, 88,  3.2,
+   30,  2.4, 59, -0.005, 16, -0.015, 37,  0.008, 44,  0.6,
+  "2025-26", 23.0, "ORL",  832, 29, -4.2, -10,
+   53,  0.3, 76,  0.019, 38,  0.006, 16, -0.036, 76,  2.2,
+   22,  4.5, 35,  0.012, 23, -0.014, 35,  0.013, 47,  0.4
+)
+
+wowy_2026 <- tibble::tribble(
+  ~segment, ~min, ~off_rtg, ~off_diff, ~def_rtg, ~def_diff, ~net, ~team_3p, ~opp_3p,
+  "Wagner OFF, Banchero ON", 563, 117.3,  1.0, 120.7,  4.3, -3.3, 0.370, 0.346,
+  "Banchero OFF, Wagner ON", 478, 116.9,  0.5, 113.8, -2.6,  3.0, 0.309, 0.383,
+  "Both OFF",                299, 112.6, -3.8, 110.3, -6.1,  2.3, 0.283, 0.326,
+  "Both ON",                 268, 114.8, -1.6, 112.9, -3.5,  1.9, 0.358, 0.383
+)
+```
+
+```{r playtypes_table, results='asis'}
+play_tbl =
+  play_types %>%
+  transmute(
+    `Play Type` = play_type,
+    Poss = poss,
+    `Time%` = percent(time_pct, 0.1),
+    PPP = round(ppp, 3),
+    Rating = ppp_rating,
+    `FG%` = percent(fg_pct, 0.1),
+    `eFG%` = percent(efg_pct, 0.1),
+    `TOV%` = percent(to_pct, 0.1),
+    `2FG%` = percent(fg2_pct, 0.1),
+    `3FG%` = ifelse(is.na(fg3_pct), "-", percent(fg3_pct, 0.1))
+  )
+
+kbl_caleb(
+  play_tbl,
+  caption = "Paolo Banchero Play Type Efficiency (2025–26)",
+  font_size = 9
+) |>
+  column_spec(1, bold = TRUE) |>
+  column_spec(4, bold = TRUE)
+```
+
+# Usage Versus Efficiency
+
+League-wide context makes clear that his inefficiency is not an unavoidable byproduct of high usage. When offensive volume is plotted against shooting efficiency, Banchero occupies a precarious space with relatively high usage paired with SIGNIFICANTLY below-average efficiency.
+
+That profile is not sustainable for an offense built around him. Successful high-usage players either maintain efficiency at volume or compensate with elite playmaking gravity that elevates teammates. Banchero does neither with sufficient consistency. His scoring volume does not translate into efficient outcomes, nor does it reliably generate value that offsets those inefficiencies.
+
+On a roster that still lacks a surplus of spacing, each possession consumed by a low-efficiency self-created jumper carries offensive cost. Every low-efficiency jumper he takes displaces more efficient outcomes that the offense is increasingly capable of generating elsewhere.
+
+```{r usage_vs_efficiency, fig.cap="Usage vs True Shooting (league context)"}
+get_league_base <- function(season_used = "2025-26")
+{
+  hoopR::nba_leaguedashplayerstats(
+    season = season_used,
+    season_type = "Regular Season",
+    measure_type = "Base"
+  )$LeagueDashPlayerStats %>%
+    mutate(
+      MIN = to_num(MIN),
+      FGA = to_num(FGA),
+      FTA = to_num(FTA),
+      PTS = to_num(PTS)
+    ) %>%
+    mutate(
+      ts = ifelse((FGA + 0.44 * FTA) > 0, PTS / (2 * (FGA + 0.44 * FTA)), NA_real_),
+      fga_per_36 = ifelse(MIN > 0, FGA / (MIN / 36), NA_real_)
+    )
+}
+
+find_player_row <- function(df, query)
+{
+  hits <- df %>%
+    filter(stringr::str_detect(tolower(PLAYER_NAME), tolower(query)))
+
+  if (nrow(hits) == 0) return(NULL)
+
+  hits %>% slice_tail(n = 1)
+}
+
+plot_usage_vs_ts <- function(
+  season_used = "2025-26",
+  min_minutes = 400,
+  player_query = "Banchero",
+  team_color = "#0077C0"
+)
+{
+  league_df <- get_league_base(season_used) %>%
+    filter(!is.na(MIN), MIN >= min_minutes, !is.na(ts), !is.na(fga_per_36))
+
+  player_row <- find_player_row(league_df, player_query)
+  if (is.null(player_row)) {
+    stop("Player not found in Base dashboard after filters. Lower min_minutes or adjust query.")
+  }
+
+  ts_pctl <- pct_rank(league_df$ts, player_row$ts)
+
+  ggplot(league_df, aes(x = fga_per_36, y = ts)) +
+    geom_point(alpha = 0.22, size = 1.3) +
+    geom_point(data = player_row, color = team_color, size = 3.2) +
+    ggrepel::geom_text_repel(
+      data = player_row,
+      aes(label = PLAYER_NAME),
+      size = 3.0,
+      box.padding = 0.4,
+      seed = 42
+    ) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+    labs(
+      title = "Usage vs True Shooting",
+      subtitle = paste0(
+        "Regular Season ", season_used,
+        " | Min ", min_minutes, "+ minutes",
+        " | TS% percentile: ", ordinal(ts_pctl)
+      ),
+      x = "FGA per 36",
+      y = "TS%",
+      caption = "Data: NBA API via hoopR | Viz: @Rambzee_"
+    ) +
+    theme_caleb_rmd() +
+    theme(plot.caption.position = "plot")
+}
+
+plot_usage_vs_ts(
+  season_used = season_used,
+  min_minutes = 400,
+  player_query = "Banchero",
+  team_color = "#0077C0"
+)
+```
+
+# Lineup Context and the Franz Wagner Effect
+
+Lineup data reinforces the conclusion that Banchero does not currently elevate offensive ecosystems on his own. Orlando’s offense performs substantially better with Franz Wagner on the floor, regardless of Banchero’s presence. Lineups featuring Banchero without Wagner struggle to maintain efficiency, while Wagner-led units remain positive even in Banchero’s absence.
+
+When both players share the floor, the offense stabilizes but remains closer to league average than elite. This is not evidence that Wagner and Banchero are an incompatible pairing. Rather, Wagner’s rim-pressure, cutting, and connective passing provide support that absorbs and mitigates Banchero’s inefficiencies, allowing the offense to function despite them rather than because of them.
+
+This does not suggest a lack of talent from Banchero, but it does indicate that his current offensive approach requires significant support to function at an acceptable level.
+
+```{r ctg_overview_table, results='asis'}
+ctg_overview_tbl =
+  ctg_off_overview %>%
+  transmute(
+    Season = season,
+    GP = gp,
+    MPG = round(mpg, 1),
+    `Usage%` = percent(usage_pct, 0.1),
+    `AST%` = percent(ast_pct, 0.1),
+    `AST:USG` = round(ast_usg, 2),
+    `TOV%` = percent(tov_pct, 0.1)
+  )
+
+kbl_caleb(
+  ctg_overview_tbl,
+  caption = "Cleaning the Glass Offensive Overview",
+  font_size = 9,
+  scale_down = FALSE
+) |>
+  column_spec(1, bold = TRUE)
+```
+
+```{r ctg_onoff_table, results = "asis"}
+onoff_tbl <- ctg_onoff_fourfactors %>%
+  transmute(
+    Season               = season,
+    Minutes              = scales::comma(min),
+    Net                   = net_onoff,
+    `OFF Pts/Poss diff`  = off_ptsposs_diff,
+    `OFF eFG% diff`      = percent(off_efg_diff, accuracy = 0.1),
+    `OFF TOV% diff`      = percent(off_tov_diff, accuracy = 0.1),
+    `OFF ORB% diff`      = percent(off_orb_diff, accuracy = 0.1),
+    `OFF FTr diff`       = round(off_ftr_diff, 1),
+    `DEF Pts/Poss diff`  = def_ptsposs_diff,
+    `DEF eFG% diff`      = percent(def_efg_diff, accuracy = 0.1),
+    `DEF TOV% diff`      = percent(def_tov_diff, accuracy = 0.1)
+  )
+
+onoff_tbl %>%
+  kbl_caleb(
+    caption = "CTG On/Off Four Factors Deltas (Paolo on court vs off court)",
+    font_size = 8
+  ) %>%
+  kableExtra::column_spec(1, bold = TRUE)
+```
+
+```{r wowy_table, results = "asis"}
+wowy_tbl <- wowy_2026 %>%
+  transmute(
+    Segment    = segment,
+    MIN        = min,
+    OFF        = sprintf("%.1f (%+.1f)", off_rtg, off_diff),
+    DEF        = sprintf("%.1f (%+.1f)", def_rtg, def_diff),
+    NET        = sprintf("%+.1f", net),
+    `Team 3P%` = percent(team_3p, accuracy = 0.1),
+    `Opp 3P%`  = percent(opp_3p, accuracy = 0.1)
+  )
+
+wowy_tbl %>%
+  kbl_caleb(
+    caption = "Databallr WOWY Mode (Low Leverage Removed): Banchero and Wagner",
+    font_size = 9
+  ) %>%
+  kableExtra::column_spec(1, bold = TRUE) %>%
+  kableExtra::column_spec(5, bold = TRUE)
+```
+
+# Defensive Impact
+
+Defensively, Banchero is often assumed to provide compensatory value that makes up for his offensive inefficiency. The data suggests a more limited and role-specific impact. He is physically capable and positionally sound within Orlando’s team-defense, but his value is highly concentrated.
+
+CraftedNBA metrics illustrate this profile clearly. Banchero performs well as a rim deterrent, ranking in the 84th percentile in rim defense impact and defending a solid share of opponent rim attempts (64th percentile). His foul profile is also favorable, with a relative personal foul rate in the 80th percentile, allowing him to stay on the floor without excessive discipline costs.
+
+Outside of those areas, his impact flattens. Event generation is subpar: deflections (17th percentile), rim-adjusted defensive turnovers forced (44th percentile), and overall defensive playmaking are not his strong-suits. His defensive versatility scores similarly reflect limited effectiveness outside of rim-adjacent responsibilities, and his overall defensive impact metric (Crafted DPM, 40th percentile) indicates he's more in the realm of average than good.
+
+As a result, defense does not meaningfully offset the inefficiencies created by his current offensive role. Banchero provides value in specific defensive contexts, particularly as a secondary rim protector, but his overall impact remains driven overwhelmingly by how effective he is on the offensive end.
+
+```{r crafted-defensive-table}
+crafted_def_tbl <- tibble::tribble(
+  ~Metric,                         ~Value, ~Percentile,
+  "Deflections",                    1.4,     17,
+  "raDTOV",                        -0.1,     44,
+  "Defensive Rebounds",             0.0,     59,
+  "Rim Defense (pts saved)",        -8.9,     84,
+  "Rim Frequency Defended",          39,     64,
+  "Block Rate (BLK%)",               1.7,     60,
+  "Defensive Versatility",           33,     37,
+  "Relative Personal Fouls (rPF)",  -0.6,     80,
+  "Crafted DPM",                   -0.3,     40
+)
+
+crafted_def_tbl %>%
+  kbl_caleb(
+    caption = "Defensive impact indicators (CraftedNBA)",
+    font_size = 9,
+    scale_down = FALSE
+  ) %>%
+  kableExtra::column_spec(1, bold = TRUE) %>%
+  kableExtra::column_spec(3, bold = TRUE)
+```
+
+
+# Closing Assessment
+
+Paolo Banchero remains an extraordinary physical talent with the tools to anchor a high-level offense, but his current shot selection works against those strengths. Too many possessions end in low-efficiency self-created jump shots, even as Orlando’s offense now has the spacing and playmaking to support a more optimized role.
+
+Recent performance underscores both sides of that reality. Over his last five games, Banchero has averaged 24.6 points, 9.8 rebounds, and 6.2 assists with two stocks per game while shooting 52.1% from the field and 57.1% true shooting. That stretch is not sustainable. He has faced sub-par competition, shot far above his baseline from three, and continued to struggle at the free-throw line, but it illustrates what is possible when efficiency and playmaking begin to align.
+
+The question going forward is whether he can evolve into an overwhelming downhill, foul-drawing threat who uses jump shooting as a counter rather than a foundation. If not, his shot mix risks capping both his individual impact and the offense’s ceiling.
