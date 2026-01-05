@@ -16,7 +16,7 @@ The analysis integrates data from multiple public and proprietary sources:
 - Player and lineup dashboards
 
 * Synergy / SportsRadar
-- Play type usage and efficiency
+** Play type usage and efficiency
 
 * Cleaning the Glass
 - Offensive overview metrics
