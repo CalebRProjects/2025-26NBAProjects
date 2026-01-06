@@ -3,8 +3,6 @@ This project presents an in-depth analytical breakdown of Keon Ellis, focusing o
 
 The goal is to evaluate Ellis as a **playoff-viable rotation guard** whose value is driven by defense, efficiency, and connectivity rather than usage or shot volume.
 
----
-
 ## Key Questions Addressed
 
 - Why do lineups consistently perform better with Ellis on the floor?
@@ -12,22 +10,18 @@ The goal is to evaluate Ellis as a **playoff-viable rotation guard** whose value
 - What makes his defensive impact translate across roles and lineups?
 - Which team contexts maximize his value?
 
----
-
 ## Data Sources
 
-- **NBA API (via `hoopR`)**
-  - ShotChartDetail
-  - LeagueDashPlayerStats (Scoring, Defense, Base)
-- **Cleaning the Glass**
-  - On/Off impact
-  - Possession-based efficiency metrics
-- **Databallr**
-  - DARKO DPM
-  - RAPM
-  - Contextual offensive and defensive indicators
-
----
+* NBA API via `hoopR`
+  * ShotChartDetail
+  * LeagueDashPlayerStats (Scoring, Defense, Base)
+* Cleaning the Glass
+  * On/Off impact
+  * Possession-based efficiency metrics
+* Databallr
+  * DARKO DPM
+  * RAPM
+  * Contextual offensive and defensive indicators
 
 ## Analytical Focus
 
@@ -49,3 +43,6 @@ The goal is to evaluate Ellis as a **playoff-viable rotation guard** whose value
 - STOP%
 - Deflections and event creation
 - Defensive impact without scheme dependence
+
+# Author
+Caleb Ramsey - 
