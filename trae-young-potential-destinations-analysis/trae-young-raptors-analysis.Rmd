@@ -1,0 +1,838 @@
+---
+title: "Trae Young: Offensive Impact & Team Fit"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: false
+---
+
+```{r setup, include = FALSE}
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(hoopR)
+library(lubridate)
+library(showtext)
+library(sysfonts)
+library(ggrepel)
+library(stringr)
+library(forcats)
+library(janitor)
+library(glue)
+
+font_add_google("Poppins", "poppins")
+showtext_auto()
+
+theme_caleb <- function()
+{
+  theme_minimal(base_family = "poppins") +
+    theme(
+      plot.background  = element_rect(fill = "#f6f4ef", color = NA),
+      panel.background = element_rect(fill = "#f6f4ef", color = NA),
+      panel.grid.major = element_line(color = "#dedad3", linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+      plot.title       = element_text(size = 18, face = "bold", hjust = 0.5, color = "#141414"),
+      plot.subtitle    = element_text(size = 10, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 8)),
+      axis.title       = element_text(size = 12, face = "bold", color = "#141414"),
+      axis.text        = element_text(size = 10, color = "#333333"),
+      plot.caption     = element_text(size = 8, color = "#6e6e6e", hjust = 0, margin = margin(t = 8)),
+      plot.margin      = margin(10, 12, 14, 12),
+      legend.position  = "top"
+    )
+}
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  fig.width = 7.2,
+  fig.height = 4.6,
+  dpi = 300,
+  out.width = "100%"
+)
+```
+
+```{r synergy-playtype-data}
+library(dplyr)
+library(stringr)
+library(tibble)
+library(readr)
+library(purrr)
+
+# -------------------------
+# Helpers
+# -------------------------
+to_num <- function(x) readr::parse_number(as.character(x))
+
+is_num_token <- function(tok) {
+  stringr::str_detect(tok, "^[-]?[0-9,]*\\.?[0-9]+%?$")
+}
+
+parse_synergy_blob <- function(season, blob_text, play_types) {
+  toks <- stringr::str_split(stringr::str_squish(blob_text), "\\s+")[[1]]
+
+  first_num <- which(purrr::map_lgl(toks, is_num_token))[1]
+  toks <- toks[first_num:length(toks)]
+
+  # FIXED: POSS start = integer followed by a percent token (%TIME)
+  is_int_tok <- function(x) stringr::str_detect(x, "^[0-9,]+$")          # 933, 1,069
+  is_pct_tok <- function(x) stringr::str_detect(x, "^[0-9.]+%$")         # 47.5%, 99%
+  is_dec_tok <- function(x) stringr::str_detect(x, "^[0-9]*\\.[0-9]+$")  # 0.936, 1.043
+
+  # POSS start = int + percent + percent + int + decimal
+  poss_starts <- which(
+  is_int_tok(toks) &
+    dplyr::lead(is_pct_tok(toks), 1, default = FALSE) &
+    dplyr::lead(is_pct_tok(toks), 2, default = FALSE) &
+    dplyr::lead(is_int_tok(toks), 3, default = FALSE) &
+    dplyr::lead(is_dec_tok(toks), 4, default = FALSE)
+  )
+
+stopifnot(length(poss_starts) == length(play_types))
+poss_starts <- c(poss_starts, length(toks) + 1)
+
+  parse_one <- function(i) {
+    row <- toks[poss_starts[i]:(poss_starts[i + 1] - 1)]
+
+    poss     <- to_num(row[1])
+    pct_time <- to_num(row[2]) / 100
+    time_rk  <- to_num(row[3]) / 100
+    pts      <- to_num(row[4])
+    ppp      <- to_num(row[5])
+    ppp_rk   <- to_num(row[6]) / 100
+
+    j <- 7
+    rating_parts <- character(0)
+    while (j <= length(row) && !is_num_token(row[j])) {
+      rating_parts <- c(rating_parts, row[j])
+      j <- j + 1
+    }
+    ppp_rating <- paste(rating_parts, collapse = " ")
+
+    num_seq <- row[j:length(row)]
+    num_seq[num_seq == "-"] <- NA_character_
+    if (length(num_seq) < 14) num_seq <- c(num_seq, rep(NA_character_, 14 - length(num_seq)))
+
+    tibble::tibble(
+      season = season,
+      play_type_raw = play_types[i],
+      poss = poss,
+      pct_time = pct_time,
+      pct_time_rank = time_rk,
+      pts = pts,
+      ppp = ppp,
+      ppp_rank = ppp_rk,
+      ppp_rating = ppp_rating,
+      fg_made = to_num(num_seq[1]),
+      fg_att  = to_num(num_seq[2]),
+      fg_pct  = to_num(num_seq[3]) / 100,
+      efg_pct = to_num(num_seq[4]) / 100,
+      to_pct  = to_num(num_seq[8]) / 100,
+      fg2_made = to_num(num_seq[9]),
+      fg2_att  = to_num(num_seq[10]),
+      fg2_pct  = to_num(num_seq[11]) / 100,
+      fg3_made = to_num(num_seq[12]),
+      fg3_att  = to_num(num_seq[13]),
+      fg3_pct  = to_num(num_seq[14]) / 100
+    )
+  }
+
+  purrr::map_dfr(seq_along(play_types), parse_one)
+}
+
+
+# 2024-25 Playtypes
+blob_2024_25 <- "
+POSS %TIME %TIME RANK PTS PPP PPP RANK PPP RATING FG MADE FG ATT FG% EFG% PPS SSQ SSM TO% 2FG MADE 2FG ATT 2FG% 3FG MADE 3FG ATT 3FG%
+933 47.5% 99% 873 0.936 72% Very Good 277 665 41.7% 50.8% - - - 17.9% 156 340 45.9% 121 325 37.2%
+355 18.1% 42% 315 0.887 12% Poor 108 231 46.8% 55.8% - - - 27.0% 66 122 54.1% 42 109 38.5%
+203 10.3% 75% 163 0.803 33% Average 47 156 30.1% 33.7% - - - 8.9% 36 100 36.0% 11 56 19.6%
+135 6.9% 60% 115 0.852 38% Average 39 103 37.9% 43.2% - - - 15.6% 28 61 45.9% 11 42 26.2%
+123 6.3% 65% 115 0.935 97% Excellent 16 45 35.6% 40.0% - - - 25.2% 12 16 75.0% 4 29 13.8%
+116 5.9% 3% 121 1.043 55% Good 40 99 40.4% 53.0% - - - 6.9% 15 36 41.7% 25 63 39.7%
+"
+# 2023-24 Playtypes
+blob_2023_24 <- "
+POSS %TIME %TIME RANK PTS PPP PPP RANK PPP RATING FG MADE FG ATT FG% EFG% PPS SSQ SSM TO% 2FG MADE 2FG ATT 2FG% 3FG MADE 3FG ATT 3FG%
+646 45.6% 98% 631 0.977 80% Very Good 198 455 43.5% 53.0% - - - 17.8% 112 256 43.8% 86 199 43.2%
+207 14.6% 29% 223 1.077 39% Average 73 141 51.8% 59.2% - - - 17.9% 52 84 61.9% 21 57 36.8%
+179 12.6% 85% 173 0.966 59% Good 57 139 41.0% 49.6% - - - 11.7% 33 70 47.1% 24 69 34.8%
+140 9.9% 8% 140 1.000 46% Average 47 126 37.3% 48.8% - - - 4.3% 18 44 40.9% 29 82 35.4%
+93 6.6% 64% 78 0.839 34% Average 25 66 37.9% 42.4% - - - 15.1% 19 38 50.0% 6 28 21.4%
+90 6.4% 66% 57 0.633 73% Very Good 7 31 22.6% 25.8% - - - 38.9% 5 17 29.4% 2 14 14.3%
+"
+
+# 2022-23 Playtypes
+blob_2022_23 <- "
+POSS %TIME %TIME RANK PTS PPP PPP RANK PPP RATING FG MADE FG ATT FG% EFG% PPS SSQ SSM TO% 2FG MADE 2FG ATT 2FG% 3FG MADE 3FG ATT 3FG%
+927 47.2% 98% 867 0.935 67% Very Good 289 671 43.1% 48.2% - - - 15.7% 220 465 47.3% 69 206 33.5%
+367 18.7% 61% 358 0.975 21% Below Average 112 251 44.6% 50.2% - - - 15.3% 84 166 50.6% 28 85 32.9%
+254 12.9% 85% 238 0.937 58% Good 78 193 40.4% 44.0% - - - 11.0% 64 136 47.1% 14 57 24.6%
+176 9.0% 6% 187 1.063 61% Good 61 145 42.1% 53.4% - - - 7.4% 28 66 42.4% 33 79 41.8%
+111 5.7% 51% 101 0.910 94% Excellent 15 35 42.9% 47.1% - - - 36.0% 12 24 50.0% 3 11 27.3%
+55 2.8% 13% 43 0.782 25% Below Average 9 38 23.7% 26.3% - - - 10.9% 7 27 25.9% 2 11 18.2%
+"
+
+# 2021-22 Playtypes
+blob_2021_22 <- "
+POSS %TIME %TIME RANK PTS PPP PPP RANK PPP RATING FG MADE FG ATT FG% EFG% PPS SSQ SSM TO% 2FG MADE 2FG ATT 2FG% 3FG MADE 3FG ATT 3FG%
+1,069 51.4% 99% 1,036 0.969 81% Very Good 361 808 44.7% 52.2% - - - 15.2% 240 479 50.1% 121 329 36.8%
+336 16.2% 93% 330 0.982 72% Very Good 113 279 40.5% 47.3% - - - 7.7% 75 164 45.7% 38 115 33.0%
+280 13.5% 31% 304 1.086 43% Average 99 199 49.7% 56.8% - - - 15.0% 71 130 54.6% 28 69 40.6%
+143 6.9% 4% 192 1.343 97% Excellent 64 122 52.5% 65.2% - - - 4.9% 33 66 50.0% 31 56 55.4%
+114 5.5% 51% 112 0.982 97% Excellent 18 30 60.0% 65.0% - - - 38.6% 15 20 75.0% 3 10 30.0%
+77 3.7% 20% 77 1.000 73% Very Good 25 58 43.1% 48.3% - - - 11.7% 19 41 46.3% 6 17 35.3%
+"
+
+# 2020-21 Playtypes
+blob_2020_21 <- "
+POSS %TIME %TIME RANK PTS PPP PPP RANK PPP RATING FG MADE FG ATT FG% EFG% PPS SSQ SSM TO% 2FG MADE 2FG ATT 2FG% 3FG MADE 3FG ATT 3FG%
+905 56.2% 99% 887 0.980 77% Very Good 285 655 43.5% 49.4% - - - 14.5% 208 446 46.6% 77 209 36.8%
+235 14.6% 41% 216 0.919 17% Below Average 67 148 45.3% 49.3% - - - 20.9% 55 100 55.0% 12 48 25.0%
+142 8.8% 8% 148 1.042 58% Good 49 122 40.2% 50.8% - - - 6.3% 23 45 51.1% 26 77 33.8%
+125 7.8% 65% 133 1.064 83% Very Good 42 95 44.2% 50.0% - - - 8.0% 31 60 51.7% 11 35 31.4%
+95 5.9% 60% 91 0.958 96% Excellent 12 25 48.0% 56.0% - - - 36.8% 8 13 61.5% 4 12 33.3%
+69 4.3% 21% 56 0.812 29% Below Average 14 42 33.3% 38.1% - - - 20.3% 10 33 30.3% 4 9 44.4%
+"
+
+
+# Inputs
+synergy_inputs <- list(
+  "2024-25" = list(blob = blob_2024_25,
+                   pt   = c("P&R Ball Handler","Transition","Isolation","Handoffs","Misc Plays","Spot Up")),
+  "2023-24" = list(blob = blob_2023_24,
+                   pt   = c("P&R Ball Handler","Transition","Isolation","Spot Up","Handoffs","Misc Plays")),
+  "2022-23" = list(blob = blob_2022_23,
+                   pt   = c("P&R Ball Handler","Transition","Isolation","Spot Up","Misc Plays","Handoffs")),
+  "2021-22" = list(blob = blob_2021_22,
+                   pt   = c("P&R Ball Handler","Isolation","Transition","Spot Up","Misc Plays","Handoffs")),
+  "2020-21" = list(blob = blob_2020_21,
+                   pt   = c("P&R Ball Handler","Transition","Spot Up","Isolation","Misc Plays","Handoffs"))
+)
+
+# Unified dataset
+
+synergy_all <- purrr::imap_dfr(
+  synergy_inputs,
+  ~ parse_synergy_blob(.y, .x$blob, .x$pt)
+) %>%
+  mutate(
+    season = factor(season, levels = c("2020-21","2021-22","2022-23","2023-24","2024-25")),
+
+    # standardized play-type factor for plotting (consistent order)
+    play_type = factor(
+      play_type_raw,
+      levels = c("P&R Ball Handler","Isolation","Transition","Spot Up","Handoffs","Misc Plays")
+    )
+  ) %>%
+  arrange(season, desc(pct_time), desc(poss))
+```
+
+# Executive Summary
+Trae Young remains one of the league’s most polarizing offensive engines: a high-usage, high-gravity creator capable of organizing functional offense almost single-handedly. Across his career, teams built around him have finished top-10 offensively in three seasons (2020–21 through 2022–23) and top-12 in four of the last five.
+
+That ceiling comes with tradeoffs. Young’s defensive limitations and ball-dominant style impose strict lineup requirements. Spacing, rim protection, and secondary creation are prerequisites.
+
+This report evaluates where Trae Young’s offensive impact has historically scaled, where it has strained team construction, and whether a transition to Washington would amplify his strengths or reproduce the same structural constraints.
+
+# Career Profile
+```{r career-table}
+career_profile <- tibble::tribble(
+  ~Season, ~Age, ~MPG, ~PPG, ~AST, ~REB, ~FGA, ~`3PA`, ~FTA, ~`TS%`, ~TOV,
+  "2019–20", 21, 35.3, 29.6,  9.3, 4.3, 20.8, 9.5, 9.3, 0.595, 4.8,
+  "2020–21", 22, 33.7, 25.3,  9.4, 3.9, 17.7, 6.3, 8.7, 0.589, 4.1,
+  "2021–22", 23, 34.9, 28.4,  9.7, 3.7, 20.3, 8.0, 7.3, 0.603, 4.0,
+  "2022–23", 24, 34.8, 26.2, 10.2, 3.0, 19.0, 6.3, 8.8, 0.573, 4.1,
+  "2023–24", 25, 36.0, 25.7, 10.8, 2.8, 18.7, 8.7, 7.5, 0.572, 4.4,
+  "2024–25", 26, 36.0, 24.2, 11.6, 3.1, 18.1, 8.4, 7.4, 0.564, 4.7
+)
+
+kbl(
+  career_profile,
+  format = "latex",
+  booktabs = TRUE,
+  digits = 2,
+  caption = "Trae Young offensive profile, breakout and prime seasons (2019–2025)"
+) |>
+  kableExtra::kable_styling(
+    latex_options = c("striped", "hold_position"),
+    font_size = 10
+  ) |>
+  kableExtra::column_spec(1, bold = TRUE)
+```
+
+From 2019–20 through 2024–25, Young has lived firmly in offensive-engine territory, averaging roughly 26 points and 10 assists per game (Table 1). While raw production has remained stable, efficiency has dropped since its 2021–22 peak.
+
+# Offensive Identity
+
+## Usage Load & Efficiency
+```{r usage-ts-trend, fig.cap="Usage rate vs TS% by season (Trae Young)"}
+seasons <- c(
+  "2019-20","2020-21","2021-22",
+  "2022-23","2023-24","2024-25"
+)
+
+adv <- purrr::map_dfr(seasons, function(s) {
+  hoopR::nba_leaguedashplayerstats(
+    season = s,
+    season_type = "Regular Season",
+    measure_type = "Advanced"
+  )$LeagueDashPlayerStats %>%
+    janitor::clean_names() %>%
+    dplyr::filter(player_name == "Trae Young") %>%
+    dplyr::mutate(season = s)
+})
+
+to_num <- function(x) readr::parse_number(as.character(x))
+
+adv_clean <- adv %>%
+  dplyr::transmute(
+    season,
+    usg_raw = to_num(usg_pct),
+    ts_raw  = to_num(ts_pct),
+    season_lbl = gsub("-", "–", season)
+  ) %>%
+  dplyr::filter(!is.na(usg_raw), !is.na(ts_raw)) %>%
+  dplyr::mutate(
+    season = factor(season, levels = seasons),
+
+    # USG sometimes comes as 0.32 or 32.0. Normalize to 0–1.
+    usage = dplyr::if_else(usg_raw > 1, usg_raw / 100, usg_raw),
+
+    # TS sometimes comes as 0.58 or 58.0. Normalize to 0–1.
+    ts = dplyr::if_else(ts_raw > 1, ts_raw / 100, ts_raw)
+  ) %>%
+  dplyr::arrange(season)
+
+plot_long <- adv_clean %>%
+  dplyr::select(season, usage, ts) %>%
+  tidyr::pivot_longer(
+    cols = c(usage, ts),
+    names_to = "metric",
+    values_to = "value"
+  ) %>%
+  dplyr::mutate(
+    metric = factor(
+      metric,
+      levels = c("usage", "ts"),
+      labels = c("Usage Rate", "True Shooting")
+    )
+  )
+
+ref_lines <- tibble::tribble(
+  ~metric, ~y,
+  "Usage Rate",    0.32,
+  "True Shooting", 0.58
+) %>%
+  dplyr::mutate(metric = factor(metric, levels = levels(plot_long$metric)))
+
+ggplot(plot_long, aes(x = season, y = value, group = 1, color = metric)) +
+  geom_hline(
+    data = ref_lines,
+    aes(yintercept = y),
+    linetype = "dashed",
+    linewidth = 0.7,
+    alpha = 0.55,
+    inherit.aes = FALSE
+  ) +
+  geom_line(linewidth = 1.25) +
+  geom_point(size = 3.4) +
+  facet_wrap(~metric, ncol = 1, scales = "free_y") +
+  scale_color_manual(
+    values = c("Usage Rate" = "#000000", "True Shooting" = "#CE1141")
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 0.1),
+    expand = expansion(mult = c(0.05, 0.10))
+  ) +
+  labs(
+    title = "Offensive Load and Efficiency by Season",
+    subtitle = "2019-20 to 2024-25 | Dashed lines = Trae Young's baselines (32% USG, 58% TS).",
+    x = NULL,
+    y = NULL,
+    caption = "Data: NBA.com via hoopR | Viz: @Rambzee_"
+  ) +
+  theme_caleb() +
+  theme(legend.position = "none")
+```
+
+Young’s game is defined by extreme responsibility. Usage and efficiency peak together in 2021–22, when he combined a heavy workload with above-average scoring efficiency (Figure 1). Since then, both measures have trended downward, reflecting a shift toward more off-ball involvement without a corresponding efficiency gain. This tension, ball dominance versus efficiency, defines a major issue in any Trae-centric offense.
+
+## Shot Diet & Conversion
+```{r shooting-since-2019}
+shot_type_eff <- tibble::tribble(
+  ~season, ~shot_type, ~fg_pct, ~pps_pctile, ~pps, ~fg2_made, ~fg2_miss, ~fg3_made, ~fg3_miss,
+
+  "2019-20","All Jumpshots",    0.366, 71, 1.06, 27, 40, 205, 362,
+  "2019-20","C&S",              0.460, 96, 1.37,  1,  2,  45,  52,
+  "2019-20","Dribble jumpers",  0.351, 82, 1.00, 25, 36, 143, 274,
+  "2019-20","Runners",          0.486, 81, 0.97,154,163,  NA,  NA,
+  "2019-20","Rim",              0.532, 24, 1.06,159,140,  NA,  NA,
+
+  "2020-21","All Jumpshots",    0.376, 56, 1.02, 58, 62, 136, 260,
+  "2020-21","C&S",              0.379, 60, 1.14,  0,  1,  33,  53,
+  "2020-21","Dribble jumpers",  0.369, 70, 0.98, 54, 61, 102, 206,
+  "2020-21","Runners",          0.469, 66, 0.94,179,203,  NA,  NA,
+  "2020-21","Rim",              0.532, 26, 1.06,117,103,  NA,  NA,
+
+  "2021-22","All Jumpshots",    0.423, 85, 1.12,127,118, 233, 373,
+  "2021-22","C&S",              0.451, 96, 1.35,  0,  2,  37,  43,
+  "2021-22","Dribble jumpers",  0.419, 90, 1.10,122,112, 196, 329,
+  "2021-22","Runners",          0.459, 64, 0.92,161,190,  NA,  NA,
+  "2021-22","Rim",              0.561, 34, 1.12,193,151,  NA,  NA,
+
+  "2022-23","All Jumpshots",    0.364, 39, 0.96, 88,118, 155, 307,
+  "2022-23","C&S",              0.370, 58, 1.11,  0,  3,  37,  60,
+  "2022-23","Dribble jumpers",  0.358, 52, 0.93, 83,114, 118, 246,
+  "2022-23","Runners",          0.503, 74, 1.01,191,189,  NA,  NA,
+  "2022-23","Rim",              0.477,  7, 0.95,164,180,  NA,  NA,
+
+  "2023-24","All Jumpshots",    0.387, 68, 1.08, 44, 52, 175, 295,
+  "2023-24","C&S",              0.393, 73, 1.18,  0,  0,  42,  65,
+  "2023-24","Dribble jumpers",  0.387, 83, 1.07, 42, 51, 133, 226,
+  "2023-24","Runners",          0.457, 57, 0.91,106,126,  NA,  NA,
+  "2023-24","Rim",              0.505, 12, 1.01,108,106,  NA,  NA,
+
+  "2024-25","All Jumpshots",    0.345, 44, 0.99, 37, 62, 218, 422,
+  "2024-25","C&S",              0.322, 28, 0.96,  1,  2,  38,  80,
+  "2024-25","Dribble jumpers",  0.348, 70, 0.99, 34, 56, 178, 341,
+  "2024-25","Runners",          0.497, 72, 0.99,165,167,  NA,  NA,
+  "2024-25","Rim",              0.482,  9, 0.96,147,158,  NA,  NA
+) %>%
+  mutate(
+    season = factor(season, levels = c("2019-20","2020-21","2021-22","2022-23","2023-24","2024-25")),
+    shot_type = factor(
+      shot_type,
+      levels = c("All Jumpshots","C&S","Dribble jumpers","Runners","Rim")
+    ),
+    fg2_att = fg2_made + fg2_miss,
+    fg3_att = fg3_made + fg3_miss,
+    jump_3_share = if_else(!is.na(fg3_att) & !is.na(fg2_att) & (fg2_att + fg3_att) > 0,
+                           fg3_att / (fg2_att + fg3_att),
+                           NA_real_)
+  )
+
+shot_type_eff2 <- shot_type_eff %>%
+  mutate(
+    fg2_att = fg2_made + fg2_miss,
+    fg3_att = coalesce(fg3_made, 0) + coalesce(fg3_miss, 0),
+    att = fg2_att + fg3_att
+  )
+
+career_shot_profile <- shot_type_eff2 %>%
+  group_by(shot_type) %>%
+  summarise(
+    fg2_made = sum(fg2_made, na.rm = TRUE),
+    fg2_att  = sum(fg2_att,  na.rm = TRUE),
+    fg3_made = sum(coalesce(fg3_made, 0), na.rm = TRUE),
+    fg3_att  = sum(fg3_att,  na.rm = TRUE),
+
+    # attempt-weighted PPS and percentile
+    pps = weighted.mean(pps, att, na.rm = TRUE),
+    pps_pctile = round(weighted.mean(pps_pctile, att, na.rm = TRUE)),
+
+    .groups = "drop"
+  ) %>%
+  mutate(
+    fg_pct = (fg2_made + fg3_made) / (fg2_att + fg3_att),
+    jump_3_share = if_else(
+      (fg2_att + fg3_att) > 0,
+      fg3_att / (fg2_att + fg3_att),
+      NA_real_
+    )
+  )
+
+career_shot_profile2 <- shot_type_eff2 %>%
+  group_by(shot_type) %>%
+  summarise(
+    fg2_made = sum(fg2_made, na.rm = TRUE),
+    fg2_att  = sum(fg2_att,  na.rm = TRUE),
+    fg3_made = sum(coalesce(fg3_made, 0), na.rm = TRUE),
+    fg3_att  = sum(fg3_att,  na.rm = TRUE),
+
+    pps = weighted.mean(pps, att, na.rm = TRUE),
+    pps_pctile = round(weighted.mean(pps_pctile, att, na.rm = TRUE)),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    fg2_pct = if_else(fg2_att > 0, fg2_made / fg2_att, NA_real_),
+    fg3_pct = if_else(fg3_att > 0, fg3_made / fg3_att, NA_real_),
+    fg_pct  = (fg2_made + fg3_made) / (fg2_att + fg3_att),
+    jump_3_share = if_else(
+      (fg2_att + fg3_att) > 0,
+      fg3_att / (fg2_att + fg3_att),
+      NA_real_
+    )
+  )
+
+career_shot_profile2 %>%
+  transmute(
+    `Shot Type` = shot_type,
+    `FG%`  = percent(fg_pct, 0.1),
+    `2FG%` = if_else(fg2_att > 0, percent(fg2_pct, 0.1), ""),
+    `3P%`  = if_else(fg3_att > 0, percent(fg3_pct, 0.1), ""),
+    `2PA` = fg2_att,
+    `3PA` = fg3_att,
+    `3 Share` = if_else(
+      shot_type %in% c("All Jumpshots","C&S","Dribble jumpers"),
+      percent(jump_3_share, 0.1),
+      ""
+    )
+  ) %>%
+  knitr::kable(
+    booktabs = TRUE,
+    caption = "Trae Young shot-type efficiency, 2019–20 through 2024–25"
+  ) %>%
+  kableExtra::kable_styling(latex_options = c("striped","hold_position"), font_size = 9) %>%
+  kableExtra::column_spec(1, bold = TRUE)
+```
+
+Young’s offense is heavily jump-shot driven, which is consistent with his size and role. From 2019–20 through 2024–25, roughly 80% of his jump shots are threes (Table 2), tying his efficiency directly to spacing and rim finishing around him.
+
+```{r shot-type-fg-trend, fig.height=5.0, fig.cap="Shot type FG% over time (dashed = career weighted baseline)."}
+# Raptors palette (modern)
+RAP_RED   <- "#CE1141"
+RAP_BLACK<- "#000000"
+RAP_SILV <- "#A1A1A4"
+RAP_GOLD <- "#B4975A"
+
+# Map play types to Wizards-flavored colors
+pt_cols_raptors <- c(
+  "P&R Ball Handler" = RAP_RED,     # engine
+  "Isolation"        = RAP_BLACK,   # burden
+  "Transition"       = "#1B9E77",   # free points
+  "Spot Up"          = RAP_GOLD,    # scalable efficiency
+  "Handoffs"         = "#7570B3",   # connective
+  "Misc Plays"       = RAP_SILV
+  )
+
+fg_trend <- shot_type_eff %>%
+  dplyr::filter(shot_type != "All Jumpshots") %>%
+  mutate(
+    season = factor(season, levels = c("2019-20","2020-21","2021-22","2022-23","2023-24","2024-25")),
+    att = (fg2_made + fg2_miss) + (coalesce(fg3_made, 0) + coalesce(fg3_miss, 0)),
+    shot_type = factor(shot_type, levels = c("C&S","Dribble jumpers","Runners","Rim"))
+  )
+
+fg_baselines <- fg_trend %>%
+  group_by(shot_type) %>%
+  summarise(
+    fg_base = weighted.mean(fg_pct, w = att, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+ggplot(fg_trend, aes(x = season, y = fg_pct, group = 1)) +
+  geom_hline(
+    data = fg_baselines,
+    aes(yintercept = fg_base),
+    linetype = "dashed",
+    linewidth = 0.6,
+    alpha = 0.55,
+    color = RAP_SILV,
+    inherit.aes = FALSE
+  ) +
+  geom_line(linewidth = 1.15, color = RAP_RED) +
+  geom_point(size = 3.0, color = RAP_BLACK) +
+  facet_wrap(~shot_type, ncol = 2) +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 0.1),
+    expand = expansion(mult = c(0.06, 0.10))
+  ) +
+  scale_x_discrete(
+    labels = function(x) stringr::str_replace(x, "^20", "'")
+  ) +
+  labs(
+    title = "Trae Young: Shot-Type FG% Trends",
+    subtitle = "Dashed line = 2019–2025 FG% baseline for that shot type",
+    x = NULL,
+    y = "Field Goal Percentage",
+    caption = "Source: Synergy/SportsRadar | Viz: @Rambzee_"
+  ) +
+  theme_caleb() +
+  theme(
+    plot.title = element_text(color = RAP_RED)
+  )
+```
+
+Shot-type trends reinforce this volatility. Relative to his career baselines, Young’s jump-shot efficiency fluctuates year to year (Figure 2), while his floater game remains a stable source of value. He is not a plug-and-play scorer; his efficiency depends on a spacing environment around him.
+
+## Play-Type Portfolio
+```{r career-play-types}
+# Ensure ordering
+synergy_all <- synergy_all %>%
+  mutate(
+    season = factor(season, levels = c("2020-21","2021-22","2022-23","2023-24","2024-25")),
+    play_type = factor(
+      play_type,
+      levels = c("P&R Ball Handler","Isolation","Transition","Spot Up","Handoffs","Misc Plays")
+    )
+  )
+
+career_pt_summary <- synergy_all %>%
+  group_by(play_type) %>%
+  summarise(
+    Seasons = n_distinct(season),
+    Poss = sum(poss, na.rm = TRUE),
+    `Avg %Time` = weighted.mean(pct_time, w = poss, na.rm = TRUE),
+    `Avg PPP`   = weighted.mean(ppp,      w = poss, na.rm = TRUE),
+    `Avg TO%`   = weighted.mean(to_pct,   w = poss, na.rm = TRUE),
+    # 3P% weighted by 3PA. If fg3_att is missing in some rows, this will safely ignore NAs.
+    `Avg 3P%`   = weighted.mean(fg3_pct,  w = fg3_att, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(`Avg %Time`)) %>%
+  mutate(
+    `Avg %Time` = percent(`Avg %Time`, accuracy = 0.1),
+    `Avg TO%`   = percent(`Avg TO%`,   accuracy = 0.1),
+    `Avg 3P%`   = percent(`Avg 3P%`,   accuracy = 0.1),
+    `Avg PPP`   = round(`Avg PPP`, 3)
+  )
+
+kbl(
+  career_pt_summary,
+  format = "latex",
+  booktabs = TRUE,
+  caption = "Trae Young Play-Type Profile (2020–21 to 2024–25 | Source: Synergy/SportsRadar)",
+  align = "lrrrrrr"
+) |>
+  kableExtra::kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"),
+    font_size = 9
+  ) |>
+  kableExtra::column_spec(1, bold = TRUE) |>
+  kableExtra::column_spec(2:7, width = "1.5cm")
+```
+
+Young’s offensive ecosystem is dominated by pick-and-roll ball handling. Over the five-season sample, P&R possessions account for roughly half of his tracked usage, far outweighing any other play type (Table 3). This concentration explains why roster fit is fundamentally a pick-and-roll problem rather than a general scoring one.
+
+```{r play-type-plots}
+pnr_trend <- synergy_all %>%
+  filter(play_type == "P&R Ball Handler") %>%
+  select(season, poss, pct_time, ppp, to_pct) %>%
+  mutate(
+    season = factor(season, levels = levels(synergy_all$season))
+  ) %>%
+  pivot_longer(
+    cols = c(pct_time, ppp, to_pct),
+    names_to = "metric",
+    values_to = "value"
+  ) %>%
+  mutate(
+    metric = factor(
+      metric,
+      levels = c("pct_time", "ppp", "to_pct"),
+      labels = c("Usage Share (%Time)", "Efficiency (PPP)", "Turnovers (TO%)")
+    )
+  )
+
+plot_pnr_trend_raptors <- ggplot(pnr_trend, aes(x = season, y = value, group = 1)) +
+  geom_line(linewidth = 1.2, color = RAP_RED) +
+  geom_point(size = 2.5, color = RAP_BLACK) +
+  facet_wrap(~metric, ncol = 1, scales = "free_y") +
+  labs(
+    title = "Trae Young P&R Ball Handler Trend",
+    subtitle = "How he has played out of his signature play-type over the years",
+    x = NULL, y = NULL,
+    caption = "Source: Synergy/SportsRadar | Viz: @Rambzee_"
+  ) +
+  theme_caleb() +
+  theme(
+    plot.title = element_text(color = RAP_RED)
+  )
+
+plot_pnr_trend_raptors
+
+plot_usage_stack_raptors <- synergy_all %>%
+  group_by(season) %>%
+  mutate(pct_time_norm = pct_time / sum(pct_time, na.rm = TRUE)) %>%
+  ungroup() %>%
+  ggplot(aes(x = season, y = pct_time_norm, fill = play_type)) +
+  geom_col(width = 0.72, alpha = 0.95) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  scale_fill_manual(values = pt_cols_raptors) +
+  labs(
+    title = "Trae Young Play-Type Usage Over Time",
+    subtitle = "% of possessions by Synergy play type",
+    x = NULL, y = "% Time",
+    fill = NULL,
+    caption = "Source: Synergy/SportsRadar | Viz: @Rambzee_"
+  ) +
+  theme_caleb() +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(color = RAP_RED)
+  )
+
+plot_usage_stack_raptors
+```
+
+While the volume of P&R usage has remained stable, efficiency and turnover rates within that play type have fluctuated season-over-season. Young's usage is intentionally concentrated around early advantage creation, placing a premium on lineups that can finish possessions effectively.
+
+## Structural Weaknesses
+```{r net-rating-table}
+on_off_summary <- tibble::tribble(
+  ~Metric,           ~On,   ~Off,  ~`On-Off`,
+  "Offensive Rating", 118.1, 112.0,  6.2,
+  "Defensive Rating", 117.7, 114.5,  3.1,
+  "Net Rating",         0.4,  -2.6,  3.0,
+  "Team TS%",          58.9,  55.8,  3.1,
+  "Turnover Rate%",    13.3,  14.1, -0.8,
+  "Offensive REB%",    27.2,  26.5,  0.7
+)
+
+on_off_summary %>%
+  mutate(
+    On      = round(On, 1),
+    Off     = round(Off, 1),
+    `On-Off` = round(`On-Off`, 1)
+  ) %>%
+  knitr::kable(
+    booktabs = TRUE,
+    caption = "Trae Young On–Off Impact, 2020–21 through 2024–25 (Low-Leverage Removed)"
+  ) %>%
+  kableExtra::kable_styling(
+    latex_options = c("striped", "hold_position"),
+    font_size = 9
+  ) %>%
+  kableExtra::column_spec(1, bold = TRUE)
+
+```
+
+On–off data captures the tradeoff clearly: Young lifts offensive efficiency, but much of that gain is offset defensively (Table 4), leaving narrow net margins even when the offense performs well.
+
+```{r crafted-offensive-metrics}
+crafted_offense <- tibble::tribble(
+  ~Stat,               ~Value,   ~Percentile,
+  "True Shooting%",    "57.2%",   "50",
+  "Shot Quality (SQ)", "68.3",    "84",
+  "Free Throw Rate",   "46.8%",   "95",
+  "3P Attempt Rate",   "45.4%",   "54",
+  "Offensive Rebounds","1.4",     "65",
+  "Careless TOV%",     "8.2%",    "57",
+  "Offensive Load",    "64.7",    "99",
+  "Creation",          "14.9",    "99",
+  "Portability",       "6.4",     "73",
+  "Passer Rating",     "90.1",    "98",
+  "Crafted OPM",       "3.5",     "97"
+)
+
+crafted_off_tbl <- crafted_offense %>%
+  mutate(
+    value_num = readr::parse_number(as.character(Value)),
+    Value = case_when(
+      str_detect(Stat, "%|Rate|Shooting") ~ scales::percent(value_num / 100, accuracy = 0.1),
+      TRUE ~ format(round(value_num, 1), nsmall = 1)
+    )
+  ) %>%
+  select(Stat, Value, Percentile)
+
+knitr::kable(
+  crafted_off_tbl,
+  format = "latex",
+  booktabs = TRUE,
+  caption = "Trae Young Crafted Offensive Metrics (Percentiles vs NBA Guards)"
+) %>%
+  kableExtra::kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"),
+    font_size = 9
+  ) %>%
+  kableExtra::column_spec(1, bold = TRUE) %>%
+  kableExtra::column_spec(3, bold = TRUE)
+```
+```{r crafted-defensive-metrics}
+crafted_def <- tibble::tribble(
+  ~Stat,            ~Value, ~Percentile,
+  "Deflections",     1.7,   25,
+  "Disruptive TOs (raDTOV)", 0.5, 83,
+  "Defensive Rebounds", -1.8, 3,
+  "Versatility",   21.3,  27,
+  "Personal Fouls (rPF)", -0.7, 84,
+  "Crafted DPM",   -2.7,   0
+)
+
+crafted_def_tbl <- crafted_def %>%
+  mutate(
+    value_num = readr::parse_number(as.character(Value)),
+    Value_fmt = case_when(
+      stringr::str_detect(Stat, "%|Rate|Frequency") ~ scales::percent(value_num / 100, accuracy = 0.1),
+      TRUE ~ format(round(value_num, 1), nsmall = 1)
+    )
+  ) %>%
+  transmute(
+    Stat,
+    Value = Value_fmt,
+    Percentile
+  )
+
+knitr::kable(
+  crafted_def_tbl,
+  format = "latex",
+  booktabs = TRUE,
+  caption = "Trae Young Crafted Defensive Metrics (Percentiles vs NBA Guards)"
+) %>%
+  kableExtra::kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"),
+    font_size = 9
+  ) %>%
+  kableExtra::column_spec(1, bold = TRUE) %>%
+  kableExtra::column_spec(3, bold = TRUE) 
+```
+
+The CraftedNBA profile quantifies this imbalance. Young grades as an elite creator with extreme offensive load and passing value, ranking near the top of the league offensively (Table 5). Defensively, he remains a consistent liability (Table 6). While his activity has improved in recent seasons, particularly in passing lanes, physical limitations cap his defensive impact.
+
+As a result, teams built around Young must win structurally. Defensive insulation, shooting volume, and secondary creation are requirements.
+
+# What Trae Provides
+## What you are buying
+* Elite primary playmaking
+* Pick-and-roll orchestration
+* Shot-quality elevation for teammates
+* Late-clock offensive organization
+
+## What must be supplied
+* Point-of-attack and rim protection
+* High-volume, high-accuracy shooting
+* A secondary creator to relieve possession pressure
+
+# Team Context: Toronto Raptors
+## Scottie Barnes - Two-Way Hub and Backbone
+
+Scottie Barnes is instantly the most complete two-way partner Trae Young has ever played with. Offensively, he pairs high offensive load (42.6, 88th percentile), strong creation (87th percentile), and elite portability (91st percentile) with league-average efficiency. Defensively, he grades as a high-impact, multi-positional presence, ranking in the 87th percentile in CraftedDPM with strong rim activity, elite versatility, and disciplined fouling.
+
+Barnes’ defensive range is critical. His ability to switch, rotate, and provide interior support allows Toronto to absorb Young’s point-of-attack limitations without extreme schematic concessions. Offensively, Young simplifies Barnes’ role into a consistent connective hub; defensively, Barnes stabilizes the structure behind him.
+
+## Brandon Ingram - Shot-Making Relief
+
+Brandon Ingram takes on sustained creation responsibility, ranking in the 88th percentile in offensive load and 86th percentile in creation. While his efficiency sits near league average, his defensive impact is often overlooked; Ingram grades as a strong secondary rim presence, ranking in the 80th percentile in rim defense while providing length on the wing.
+
+Next to Young, Ingram’s value scales on both ends. Trae absorbs primary initiation, allowing Ingram to attack advantages more often, rather than manufacture them, while his length and rim support help reduce backline stress and offset the defensive tradeoffs inherent to Trae-led lineups.
+
+## RJ Barrett - Physical Wing Defense and Downhill Pressure
+
+RJ Barrett brings a level of physicality often absent from Trae Young–led lineups. Offensively, he applies consistent rim pressure, reflected in a strong free-throw rate (31.5%, 76th percentile) while carrying a high offensive load (43.6, 89th percentile). Defensively, he provides real wing size and activity, ranking in the 77th percentile in rim defense with solid rebounding impact.
+
+In a Trae-centered offense, that defensive value scales. With Young handling primary creation, Barrett can conserve energy for matchups, rebounding, and help defense, allowing his physical tools to offset some of Trae’s point-of-attack limitations rather than adding to them.
+
+## Collin Murray-Boyles - Defensive Event Creation and Offensive Containment
+
+Even in his rookie season, Murray-Boyles is already a disruptive defensive piece, ranking in the 93rd percentile in deflections and the 79th percentile in passing-lane turnovers. Offensively, his inefficiency is largely developmental, driven by low shot quality (36.6, 18th percentile) and a high careless turnover rate (11.9%, 11th percentile).
+
+Alongside Trae Young, Murray-Boyles can focus on screening, cutting, and offensive rebounding while sustaining defensive pressure. His ability to generate defensive events helps offset possessions Trae cannot consistently contest.
+
+## Jamal Shead - Point-of-Attack Defense and Guard Depth
+
+Jamal Shead’s defensive pressure is tailor-made to coexist with Trae Young. He ranks in the 97th percentile in disruptive turnovers and the 75th percentile in deflections, giving Toronto a true point-of-attack defender to deploy against elite guards. Offensively, Shead struggles when tasked with primary creation but thrives as a as a connecting piece
+
+With Young on the floor, Shead’s defensive value is unlocked. Trae handles offensive orchestration, while Shead absorbs the toughest defensive assignments, preserving lineup balance and insulating Young from his most damaging matchups.
+
+## Why This Works Structurally
+
+Toronto is uniquely positioned to absorb Trae Young’s defensive limitations. Barnes provides switchability and backline organization, Ingram and Barrett add size and rim support on the wings, Murray-Boyles and Shead generate defensive events, and Young centralizes offensive creation. This is a structurally sound Raptors team, as they can trade defensive responsibility across multiple positions while allowing Trae to do what he does best: run the offense.
