@@ -36,3 +36,8 @@ All data is contextualized within the 2025–26 regular season.
 * Orlando’s offense can function around these inefficiencies, but doing so introduces a real opportunity cost in high-leverage possessions.
 * Defensive impact is role-specific and concentrated, providing value near the rim but not enough to offset offensive inefficiencies.
 * Optimizing Banchero’s role does not require reducing his importance -- only reallocating how his possessions are used.
+
+# Author
+Caleb Ramsey
+Statistics & Sports Media and Analytics
+Virginia Tech
