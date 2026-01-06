@@ -38,6 +38,4 @@ All data is contextualized within the 2025–26 regular season.
 * Optimizing Banchero’s role does not require reducing his importance -- only reallocating how his possessions are used.
 
 # Author
-Caleb Ramsey
-Statistics & Sports Media and Analytics
-Virginia Tech
+Caleb Ramsey - Statistics & Sports Media and Analytics (Virginia Tech)
