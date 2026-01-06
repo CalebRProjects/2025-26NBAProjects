@@ -9,7 +9,11 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
 
 library(tidyverse)
 library(readxl)
@@ -21,47 +25,53 @@ library(showtext)
 library(sysfonts)
 library(ggrepel)
 
-# Fonts (safe for xelatex)
 font_add_google("Poppins", "poppins")
 showtext_auto()
 
-# Utah Jazz colors (modern palette approximations)
+# Utah Jazz palette
 JAZZ_NAVY   <- "#002B5C"
 JAZZ_YELLOW <- "#F9A01B"
 JAZZ_GREEN  <- "#00471B"
-BG          <- "#f6f4ef"
-TEXT_DARK   <- "#141414"
-GRID        <- "#dedad3"
 
-theme_caleb_jazz <- function() {
+BG        <- "#f6f4ef"
+TEXT_DARK <- "#141414"
+GRID      <- "#dedad3"
+
+theme_caleb_jazz <- function()
+{
   theme_minimal(base_family = "poppins") +
     theme(
       plot.background  = element_rect(fill = BG, color = NA),
       panel.background = element_rect(fill = BG, color = NA),
       panel.grid.major = element_line(color = GRID, linewidth = 0.35),
       panel.grid.minor = element_blank(),
-      plot.title    = element_text(size = 18, face = "bold", hjust = 0.5, color = TEXT_DARK),
-      plot.subtitle = element_text(size = 10, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 6)),
-      axis.title    = element_text(size = 12, face = "bold", color = TEXT_DARK),
-      axis.text     = element_text(size = 10, color = "#333333"),
+      plot.title = element_text(size = 18, face = "bold", hjust = 0.5, color = TEXT_DARK),
+      plot.subtitle = element_text(
+        size = 10, hjust = 0.5, color = "#2f2f2f",
+        margin = margin(b = 6)
+      ),
+      axis.title = element_text(size = 12, face = "bold", color = TEXT_DARK),
+      axis.text = element_text(size = 10, color = "#333333"),
       legend.position = "none",
-      plot.caption  = element_text(size = 8, color = "#6e6e6e", hjust = 0, margin = margin(t = 6)),
-      plot.margin   = margin(10, 12, 14, 12)
+      plot.caption = element_text(
+        size = 8, color = "#6e6e6e", hjust = 0,
+        margin = margin(t = 6)
+      ),
+      plot.margin = margin(10, 12, 14, 12)
     )
 }
 
-# ---- DATA PATH ----
 playtype_path <- "KeyonteGeorgePlaytypeTable.xlsx"
 ```
 
 # Executive Summary
 
 **Season context:** 
-```{r}
-season_ctx <- tribble(
+```{r season-context}
+season_ctx <- tibble::tribble(
   ~Season, ~MPG, ~PPG, ~FGA, ~FG_PCT, ~`3PA`, ~`3P_PCT`, ~FTA, ~FT_PCT, ~AST, ~TO,
-  "2024–25", 31.5, 16.8, 13.7, .391, 7.6, .343, 6.1, .818, 5.6, 2.7,
-  "2025–26", 34.4, 24.6, 16.8, .455, 7.0, .374, 7.4, .903, 6.8, 3.4
+  "2024–25", 31.5, 16.8, 13.7, 0.391, 7.6, 0.343, 6.1, 0.818, 5.6, 2.7,
+  "2025–26", 34.4, 24.6, 16.8, 0.455, 7.0, 0.374, 7.4, 0.903, 6.8, 3.4
 )
 
 kbl(
@@ -71,12 +81,12 @@ kbl(
   digits = 2,
   caption = "Season context: counting stats comparison"
 ) |>
-  kable_styling(
+  kableExtra::kable_styling(
     latex_options = c("striped", "hold_position"),
     font_size = 10
   ) |>
-  column_spec(1, bold = TRUE) |>
-  column_spec(2:13, width = "1.2cm")
+  kableExtra::column_spec(1, bold = TRUE) |>
+  kableExtra::column_spec(2:ncol(season_ctx), width = "1.2cm")
 ```
 
 **Scoring spikes:** 9x 30-point games (6 total in first two seasons); 3x 35+ (39, 37, 37).
@@ -89,30 +99,35 @@ kbl(
 
 # Data
 
-```{r load_playtype}
-pt_raw <- read_excel(playtype_path) |>
-  clean_names()
+```{r load-playtype}
+pt_raw <- readxl::read_excel(playtype_path) %>%
+  janitor::clean_names()
 
-# Convert percents to proportions for formatting, keep PPP numeric
-pt <- pt_raw |>
+# Convert percents to proportions. Keep PPP numeric.
+pt <- pt_raw %>%
   mutate(
     poss = readr::parse_number(poss),
     ppp  = readr::parse_number(ppp),
     percent_time = readr::parse_number(percent_time) / 100,
-    across(c(fg_pct, efg_pct, ts_pct, to_pct, ft_pct, sf_pct, score_pct, fg2_pct, fg3_pct),
-           ~ readr::parse_number(.x) / 100),
-    tsa = readr::parse_number(tsa),
+    across(
+      c(
+        fg_pct, efg_pct, ts_pct, to_pct, ft_pct,
+        sf_pct, score_pct, fg2_pct, fg3_pct
+      ),
+      ~ readr::parse_number(.x) / 100
+    ),
+    tsa      = readr::parse_number(tsa),
     fta_fga = readr::parse_number(fta_fga),
     pa3_fga = readr::parse_number(pa3_fga)
   )
 
-# Weighted averages for reference lines
-w_ppp  <- weighted.mean(pt$ppp, w = pt$poss, na.rm = TRUE)
+# Weighted averages (reference lines)
+w_ppp  <- weighted.mean(pt$ppp,  w = pt$poss, na.rm = TRUE)
 w_time <- weighted.mean(pt$percent_time, w = pt$poss, na.rm = TRUE)
 ```
 
-```{r table_snapshot}
-pt_small <- pt |>
+```{r table-snapshot}
+pt_small <- pt %>%
   transmute(
     Play = playtype,
     Poss = poss,
@@ -123,7 +138,7 @@ pt_small <- pt |>
     `TO%` = to_pct,
     `FTA/FGA` = fta_fga,
     `3PA/FGA` = pa3_fga
-  ) |>
+  ) %>%
   arrange(desc(`Time%`))
 
 kbl(
@@ -131,17 +146,17 @@ kbl(
   format = "latex",
   booktabs = TRUE,
   caption = "Play-type snapshot (Keyonte George, 2025–26)"
-) |>
-  kable_styling(
+) %>%
+  kableExtra::kable_styling(
     latex_options = c("striped", "hold_position", "scale_down"),
     font_size = 9
-  ) |>
-  column_spec(1, bold = TRUE) |>
-  column_spec(4, bold = TRUE)
+  ) %>%
+  kableExtra::column_spec(1, bold = TRUE) %>%
+  kableExtra::column_spec(4, bold = TRUE)
 ```
 
-```{r table_splits}
-pt_splits <- pt |>
+```{r table-splits}
+pt_splits <- pt %>%
   transmute(
     Play = playtype,
     Poss = poss,
@@ -151,7 +166,7 @@ pt_splits <- pt |>
     `2FG%` = fg2_pct,
     `3P%` = fg3_pct,
     `3PA/FGA` = pa3_fga
-  ) |>
+  ) %>%
   arrange(desc(Poss))
 
 kbl(
@@ -159,24 +174,38 @@ kbl(
   format = "latex",
   booktabs = TRUE,
   caption = "Shot profile by play type"
-) |>
-  kable_styling(
+) %>%
+  kableExtra::kable_styling(
     latex_options = c("striped", "hold_position", "scale_down"),
     font_size = 9
-  ) |>
-  column_spec(1, bold = TRUE)
+  ) %>%
+  kableExtra::column_spec(1, bold = TRUE)
 ```
 
 # Figure 1: Efficiency by play type (PPP)
 
 ```{r plot_ppp}
-ggplot(pt, aes(x = ppp, y = reorder(playtype, ppp))) +
-  geom_point(aes(size = poss), color = JAZZ_GREEN, alpha = 0.95) +
-  geom_vline(xintercept = w_ppp, linetype = "dashed", color = JAZZ_NAVY, linewidth = 0.9) +
+pt_plot <- pt %>%
+  mutate(playtype = forcats::fct_reorder(playtype, ppp))
+
+ggplot(pt_plot, aes(x = ppp, y = playtype)) +
+  geom_point(
+    aes(size = poss),
+    color = JAZZ_GREEN,
+    alpha = 0.95
+  ) +
+  geom_vline(
+    xintercept = w_ppp,
+    linetype = "dashed",
+    color = JAZZ_NAVY,
+    linewidth = 0.9
+  ) +
   scale_size(range = c(2, 8)) +
   labs(
     title = "Efficiency by play type (PPP)",
-    subtitle = glue::glue("Size: Volume | Dashed line: Avg PPP ({round(w_ppp, 2)})."),
+    subtitle = glue::glue(
+      "Point size = volume | Dashed line = weighted avg PPP ({round(w_ppp, 2)})"
+    ),
     x = "Points per possession (PPP)",
     y = NULL,
     caption = "Source: Synergy/SportsRadar | Viz: @Rambzee_"
@@ -186,16 +215,24 @@ ggplot(pt, aes(x = ppp, y = reorder(playtype, ppp))) +
 
 # Figure 2: Frequency by play type (%Time)
 
-```{r plot_time}
-ggplot(pt, aes(x = reorder(playtype, percent_time), y = percent_time)) +
-  geom_col(fill = JAZZ_NAVY, alpha = 0.92) +
+```{r plot-time}
+pt_plot <- pt %>%
+  mutate(playtype = forcats::fct_reorder(playtype, percent_time))
+
+ggplot(pt_plot, aes(x = playtype, y = percent_time)) +
+  geom_col(
+    fill = JAZZ_NAVY,
+    alpha = 0.92
+  ) +
   coord_flip() +
-  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1)
+  ) +
   labs(
     title = "Play-type frequency",
     subtitle = "Share of offensive possessions by play type",
     x = NULL,
-    y = "%Time",
+    y = "% of possessions",
     caption = "Source: Synergy/SportsRadar | Viz: @Rambzee_"
   ) +
   theme_caleb_jazz()
@@ -203,13 +240,26 @@ ggplot(pt, aes(x = reorder(playtype, percent_time), y = percent_time)) +
 
 # Figure 3: Value map (Usage vs PPP)
 
-```{r plot_value_map}
+```{r plot-value-map}
 ggplot(pt, aes(x = percent_time, y = ppp)) +
-  geom_vline(xintercept = w_time, linetype = "dashed", color = "#4b4b4b", linewidth = 0.7) +
-  geom_hline(yintercept = w_ppp,  linetype = "dashed", color = "#4b4b4b", linewidth = 0.7) +
-  geom_point(aes(size = poss), color = JAZZ_GREEN, alpha = 0.75) +
-
-  geom_label_repel(
+  geom_vline(
+    xintercept = w_time,
+    linetype = "dashed",
+    color = "#4b4b4b",
+    linewidth = 0.7
+  ) +
+  geom_hline(
+    yintercept = w_ppp,
+    linetype = "dashed",
+    color = "#4b4b4b",
+    linewidth = 0.7
+  ) +
+  geom_point(
+    aes(size = poss),
+    color = JAZZ_GREEN,
+    alpha = 0.75
+  ) +
+  ggrepel::geom_label_repel(
     aes(label = playtype),
     size = 3.0,
     seed = 42,
@@ -226,14 +276,12 @@ ggplot(pt, aes(x = percent_time, y = ppp)) +
     label.size = 0.15,
     label.r = unit(0.12, "lines")
   ) +
-
-  scale_x_continuous(labels = percent_format(accuracy = 1)) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
   scale_size(range = c(2, 7)) +
-
   labs(
     title = "Usage vs Efficiency (Play-Types)",
     subtitle = glue::glue(
-      "Size: Volume | Dashed lines: Avg % Time ({percent(w_time, 0.1)}) and PPP ({round(w_ppp, 2)})."
+      "Size: Volume | Dashed lines: Avg % Time ({scales::percent(w_time, 0.1)}) and PPP ({round(w_ppp, 2)})."
     ),
     x = "%Time",
     y = "PPP",
@@ -243,7 +291,7 @@ ggplot(pt, aes(x = percent_time, y = ppp)) +
 ```
 
 # On/Off Context
-```{r}
+```{r on-off}
 wowy <- tibble::tribble(
   ~Split, ~MIN, ~OFF_RTG, ~DEF_RTG, ~NET_RTG, ~OFF_TS, ~OFF_TOV, ~OFF_ORB, ~DEF_TS, ~DEF_TOV, ~DEF_ORB,
   "On",   999,  118.7,    125.3,    -6.6,     60.1,   14.9,     30.0,     62.3,   12.0,     26.7,
@@ -264,7 +312,7 @@ wowy_delta <- tibble::tibble(
   DEF_ORB = -0.1
 )
 
-wowy_tbl <- bind_rows(wowy, wowy_delta)
+wowy_tbl <- dplyr::bind_rows(wowy, wowy_delta)
 
 knitr::kable(
   wowy_tbl,
@@ -272,11 +320,11 @@ knitr::kable(
   booktabs = TRUE,
   digits = 1,
   caption = "Databallr WOWY (2025–26): team performance with Keyonte George ON vs OFF"
-) |>
+) %>%
   kableExtra::kable_styling(
     latex_options = c("striped", "hold_position", "scale_down"),
     font_size = 9
-  ) |>
+  ) %>%
   kableExtra::column_spec(1, bold = TRUE)
 ```
 
@@ -305,5 +353,3 @@ knitr::kable(
 
 # Final Summary
 Keyonte George’s 2025–26 leap is driven by legit scoring growth. His top-line production (24.6 PPG on 45.5/37.4/90.3 splits with 6.8 AST) is supported by a play-type mix where high-value buckets pop: Spot Ups and Cuts are areas of elite efficiency in his game, while high-volume creator reps in PnR and Isolation remain solid enough to sustain primary usage. The tradeoff is defensive. On-off splits show a major offensive lift with him on the floor (+9.9 OFF RTG, +4.8 TS%), but an equally severe defensive collapse (+9.7 DEF RTG, +4.7 opponent TS%), leaving the net close to neutral. The All-Star argument is simple: the offense is real; the swing factor is whether Utah can scheme and insulate the defense.
-
-
