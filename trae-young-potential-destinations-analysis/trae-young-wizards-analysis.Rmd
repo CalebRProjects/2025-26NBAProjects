@@ -9,22 +9,25 @@ output:
 ---
 
 ```{r setup, include = FALSE}
-library(dplyr)
-library(tidyr)
-library(readr)
-library(ggplot2)
-library(scales)
-library(knitr)
-library(kableExtra)
-library(hoopR)
-library(lubridate)
-library(showtext)
-library(sysfonts)
-library(ggrepel)
-library(stringr)
-library(forcats)
-library(janitor)
-library(glue)
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  fig.width = 7.2,
+  fig.height = 4.6,
+  dpi = 300,
+  out.width = "100%"
+)
+
+library(dplyr); library(tidyr); library(tibble)
+library(purrr); library(stringr); library(readr)
+library(ggplot2); library(scales); library(knitr)
+library(kableExtra); library(showtext); library(sysfonts)
+library(ggrepel); library(forcats); library(janitor)
+library(glue); library(hoopR); library(lubridate)
+library(purrr)
 
 font_add_google("Poppins", "poppins")
 showtext_auto()
@@ -46,60 +49,59 @@ theme_caleb <- function()
       legend.position  = "top"
     )
 }
-
-knitr::opts_chunk$set(
-  echo = FALSE,
-  message = FALSE,
-  warning = FALSE,
-  fig.pos = "H",
-  fig.align = "center",
-  fig.width = 7.2,
-  fig.height = 4.6,
-  dpi = 300,
-  out.width = "100%"
-)
 ```
 
 ```{r synergy-playtype-data}
-library(dplyr)
-library(stringr)
-library(tibble)
-library(readr)
-library(purrr)
-
-# -------------------------
 # Helpers
-# -------------------------
-to_num <- function(x) readr::parse_number(as.character(x))
+to_num <- function(x)
+{
+  readr::parse_number(as.character(x))
+}
 
-is_num_token <- function(tok) {
+is_num_token <- function(tok)
+{
   stringr::str_detect(tok, "^[-]?[0-9,]*\\.?[0-9]+%?$")
 }
 
-parse_synergy_blob <- function(season, blob_text, play_types) {
-  toks <- stringr::str_split(stringr::str_squish(blob_text), "\\s+")[[1]]
+parse_synergy_blob <- function(season, blob_text, play_types)
+{
+  toks <- blob_text %>%
+    stringr::str_squish() %>%
+    stringr::str_split("\\s+") %>%
+    purrr::pluck(1)
 
   first_num <- which(purrr::map_lgl(toks, is_num_token))[1]
   toks <- toks[first_num:length(toks)]
 
-  # FIXED: POSS start = integer followed by a percent token (%TIME)
-  is_int_tok <- function(x) stringr::str_detect(x, "^[0-9,]+$")          # 933, 1,069
-  is_pct_tok <- function(x) stringr::str_detect(x, "^[0-9.]+%$")         # 47.5%, 99%
-  is_dec_tok <- function(x) stringr::str_detect(x, "^[0-9]*\\.[0-9]+$")  # 0.936, 1.043
+  is_int_tok <- function(x)
+  {
+    stringr::str_detect(x, "^[0-9,]+$")
+  }
+
+  is_pct_tok <- function(x)
+  {
+    stringr::str_detect(x, "^[0-9.]+%$")
+  }
+
+  is_dec_tok <- function(x)
+  {
+    stringr::str_detect(x, "^[0-9]*\\.[0-9]+$")
+  }
 
   # POSS start = int + percent + percent + int + decimal
   poss_starts <- which(
-  is_int_tok(toks) &
-    dplyr::lead(is_pct_tok(toks), 1, default = FALSE) &
-    dplyr::lead(is_pct_tok(toks), 2, default = FALSE) &
-    dplyr::lead(is_int_tok(toks), 3, default = FALSE) &
-    dplyr::lead(is_dec_tok(toks), 4, default = FALSE)
+    is_int_tok(toks) &
+      dplyr::lead(is_pct_tok(toks), 1, default = FALSE) &
+      dplyr::lead(is_pct_tok(toks), 2, default = FALSE) &
+      dplyr::lead(is_int_tok(toks), 3, default = FALSE) &
+      dplyr::lead(is_dec_tok(toks), 4, default = FALSE)
   )
 
-stopifnot(length(poss_starts) == length(play_types))
-poss_starts <- c(poss_starts, length(toks) + 1)
+  stopifnot(length(poss_starts) == length(play_types))
+  poss_starts <- c(poss_starts, length(toks) + 1)
 
-  parse_one <- function(i) {
+  parse_one <- function(i)
+  {
     row <- toks[poss_starts[i]:(poss_starts[i + 1] - 1)]
 
     poss     <- to_num(row[1])
@@ -111,15 +113,20 @@ poss_starts <- c(poss_starts, length(toks) + 1)
 
     j <- 7
     rating_parts <- character(0)
+
     while (j <= length(row) && !is_num_token(row[j])) {
       rating_parts <- c(rating_parts, row[j])
       j <- j + 1
     }
+
     ppp_rating <- paste(rating_parts, collapse = " ")
 
     num_seq <- row[j:length(row)]
     num_seq[num_seq == "-"] <- NA_character_
-    if (length(num_seq) < 14) num_seq <- c(num_seq, rep(NA_character_, 14 - length(num_seq)))
+
+    if (length(num_seq) < 14) {
+      num_seq <- c(num_seq, rep(NA_character_, 14 - length(num_seq)))
+    }
 
     tibble::tibble(
       season = season,
@@ -206,31 +213,38 @@ POSS %TIME %TIME RANK PTS PPP PPP RANK PPP RATING FG MADE FG ATT FG% EFG% PPS SS
 
 # Inputs
 synergy_inputs <- list(
-  "2024-25" = list(blob = blob_2024_25,
-                   pt   = c("P&R Ball Handler","Transition","Isolation","Handoffs","Misc Plays","Spot Up")),
-  "2023-24" = list(blob = blob_2023_24,
-                   pt   = c("P&R Ball Handler","Transition","Isolation","Spot Up","Handoffs","Misc Plays")),
-  "2022-23" = list(blob = blob_2022_23,
-                   pt   = c("P&R Ball Handler","Transition","Isolation","Spot Up","Misc Plays","Handoffs")),
-  "2021-22" = list(blob = blob_2021_22,
-                   pt   = c("P&R Ball Handler","Isolation","Transition","Spot Up","Misc Plays","Handoffs")),
-  "2020-21" = list(blob = blob_2020_21,
-                   pt   = c("P&R Ball Handler","Transition","Spot Up","Isolation","Misc Plays","Handoffs"))
+  "2024-25" = list(
+    blob = blob_2024_25,
+    pt = c("P&R Ball Handler", "Transition", "Isolation", "Handoffs", "Misc Plays", "Spot Up")
+  ),
+  "2023-24" = list(
+    blob = blob_2023_24,
+    pt = c("P&R Ball Handler", "Transition", "Isolation", "Spot Up", "Handoffs", "Misc Plays")
+  ),
+  "2022-23" = list(
+    blob = blob_2022_23,
+    pt = c("P&R Ball Handler", "Transition", "Isolation", "Spot Up", "Misc Plays", "Handoffs")
+  ),
+  "2021-22" = list(
+    blob = blob_2021_22,
+    pt = c("P&R Ball Handler", "Isolation", "Transition", "Spot Up", "Misc Plays", "Handoffs")
+  ),
+  "2020-21" = list(
+    blob = blob_2020_21,
+    pt = c("P&R Ball Handler", "Transition", "Spot Up", "Isolation", "Misc Plays", "Handoffs")
+  )
 )
 
 # Unified dataset
-
 synergy_all <- purrr::imap_dfr(
   synergy_inputs,
   ~ parse_synergy_blob(.y, .x$blob, .x$pt)
 ) %>%
   mutate(
-    season = factor(season, levels = c("2020-21","2021-22","2022-23","2023-24","2024-25")),
-
-    # standardized play-type factor for plotting (consistent order)
+    season = factor(season, levels = c("2020-21", "2021-22", "2022-23", "2023-24", "2024-25")),
     play_type = factor(
       play_type_raw,
-      levels = c("P&R Ball Handler","Isolation","Transition","Spot Up","Handoffs","Misc Plays")
+      levels = c("P&R Ball Handler", "Isolation", "Transition", "Spot Up", "Handoffs", "Misc Plays")
     )
   ) %>%
   arrange(season, desc(pct_time), desc(poss))
@@ -245,8 +259,8 @@ This report evaluates where Trae Young’s offensive impact has historically sca
 
 # Career Profile
 ```{r career-table}
-career_profile <- tibble::tribble(
-  ~Season, ~Age, ~MPG, ~PPG, ~AST, ~REB, ~FGA, ~`3PA`, ~FTA, ~`TS%`, ~TOV,
+career_profile_raw <- tibble::tribble(
+  ~Season, ~Age, ~MPG, ~PPG, ~AST, ~REB, ~FGA, ~`3PA`, ~FTA, ~TS, ~TOV,
   "2019–20", 21, 35.3, 29.6,  9.3, 4.3, 20.8, 9.5, 9.3, 0.595, 4.8,
   "2020–21", 22, 33.7, 25.3,  9.4, 3.9, 17.7, 6.3, 8.7, 0.589, 4.1,
   "2021–22", 23, 34.9, 28.4,  9.7, 3.7, 20.3, 8.0, 7.3, 0.603, 4.0,
@@ -255,17 +269,35 @@ career_profile <- tibble::tribble(
   "2024–25", 26, 36.0, 24.2, 11.6, 3.1, 18.1, 8.4, 7.4, 0.564, 4.7
 )
 
-kbl(
+career_profile <- career_profile_raw %>%
+  pivot_longer(
+    cols = -Season,
+    names_to = "Stat",
+    values_to = "Value"
+  ) %>%
+  mutate(
+    Value = case_when(
+      Stat == "TS" ~ scales::percent(Value, accuracy = 0.1),
+      TRUE ~ as.character(round(Value, 1))
+    )
+  ) %>%
+  pivot_wider(
+    names_from = Stat,
+    values_from = Value
+  ) %>%
+  rename(`TS%` = TS)
+
+knitr::kable(
   career_profile,
   format = "latex",
   booktabs = TRUE,
-  digits = 2,
-  caption = "Trae Young offensive profile, breakout and prime seasons (2019–2025)"
-) |>
+  caption = "Trae Young offensive profile, breakout and prime seasons (2019–2025)",
+  escape = FALSE
+  ) %>%
   kableExtra::kable_styling(
-    latex_options = c("striped", "hold_position"),
+    latex_options = c("striped", "hold_position", "scale_down"),
     font_size = 10
-  ) |>
+  ) %>%
   kableExtra::column_spec(1, bold = TRUE)
 ```
 
@@ -275,50 +307,64 @@ From 2019–20 through 2024–25, Young has lived firmly in offensive-engine ter
 
 ## Usage Load & Efficiency
 ```{r usage-ts-trend, fig.cap="Usage rate vs TS% by season (Trae Young)"}
+```{r usage-ts-trend, fig.cap="Usage rate vs TS% by season (Trae Young)"}
+
+# Seasons of interest
+
 seasons <- c(
-  "2019-20","2020-21","2021-22",
-  "2022-23","2023-24","2024-25"
+  "2019-20", "2020-21", "2021-22",
+  "2022-23", "2023-24", "2024-25"
 )
 
-adv <- purrr::map_dfr(seasons, function(s) {
-  hoopR::nba_leaguedashplayerstats(
-    season = s,
-    season_type = "Regular Season",
-    measure_type = "Advanced"
-  )$LeagueDashPlayerStats %>%
-    janitor::clean_names() %>%
-    dplyr::filter(player_name == "Trae Young") %>%
-    dplyr::mutate(season = s)
-})
+# Helpers
 
-to_num <- function(x) readr::parse_number(as.character(x))
+to_num <- function(x)
+{
+  readr::parse_number(as.character(x))
+}
+
+# Pull Advanced dashboard data (Trae Young)
+
+adv <- purrr::map_dfr(
+  seasons,
+  function(season_i)
+  {
+    hoopR::nba_leaguedashplayerstats(
+      season = season_i,
+      season_type = "Regular Season",
+      measure_type = "Advanced"
+    )$LeagueDashPlayerStats |>
+      janitor::clean_names() |>
+      dplyr::filter(player_name == "Trae Young") |>
+      dplyr::mutate(season = season_i)
+  }
+)
+
+# Clean and normalize metrics: USG% and TS% sometimes arrive as 0–1 or 0–100
 
 adv_clean <- adv %>%
   dplyr::transmute(
     season,
     usg_raw = to_num(usg_pct),
-    ts_raw  = to_num(ts_pct),
-    season_lbl = gsub("-", "–", season)
+    ts_raw  = to_num(ts_pct)
   ) %>%
-  dplyr::filter(!is.na(usg_raw), !is.na(ts_raw)) %>%
+  dplyr::filter(!is.na(usg_raw), !is.na(ts_raw)) |>
   dplyr::mutate(
     season = factor(season, levels = seasons),
-
-    # USG sometimes comes as 0.32 or 32.0. Normalize to 0–1.
     usage = dplyr::if_else(usg_raw > 1, usg_raw / 100, usg_raw),
-
-    # TS sometimes comes as 0.58 or 58.0. Normalize to 0–1.
-    ts = dplyr::if_else(ts_raw > 1, ts_raw / 100, ts_raw)
+    ts    = dplyr::if_else(ts_raw  > 1, ts_raw  / 100, ts_raw)
   ) %>%
   dplyr::arrange(season)
 
-plot_long <- adv_clean %>%
-  dplyr::select(season, usage, ts) %>%
+# Reshape for faceted time-series plotting (tidyr)
+
+plot_long <- adv_clean |>
+  dplyr::select(season, usage, ts) |>
   tidyr::pivot_longer(
     cols = c(usage, ts),
     names_to = "metric",
     values_to = "value"
-  ) %>%
+  ) |>
   dplyr::mutate(
     metric = factor(
       metric,
@@ -327,12 +373,17 @@ plot_long <- adv_clean %>%
     )
   )
 
-ref_lines <- tibble::tribble(
-  ~metric, ~y,
-  "Usage Rate",    0.32,
-  "True Shooting", 0.58
-) %>%
-  dplyr::mutate(metric = factor(metric, levels = levels(plot_long$metric)))
+# Reference baselines (career context)
+
+ref_lines <- tibble::tibble(
+  metric = factor(
+    c("Usage Rate", "True Shooting"),
+    levels = levels(plot_long$metric)
+  ),
+  y = c(0.32, 0.58)
+)
+
+# Plot: Usage vs efficiency over time
 
 ggplot(plot_long, aes(x = season, y = value, group = 1, color = metric)) +
   geom_hline(
@@ -420,48 +471,32 @@ shot_type_eff <- tibble::tribble(
                            NA_real_)
   )
 
+# Normalize row-level attempts
 shot_type_eff2 <- shot_type_eff %>%
   mutate(
-    fg2_att = fg2_made + fg2_miss,
-    fg3_att = coalesce(fg3_made, 0) + coalesce(fg3_miss, 0),
-    att = fg2_att + fg3_att
+    fg3_made = tidyr::replace_na(fg3_made, 0),
+    fg3_miss = tidyr::replace_na(fg3_miss, 0),
+    fg2_att  = fg2_made + fg2_miss,
+    fg3_att  = fg3_made + fg3_miss,
+    att      = fg2_att + fg3_att
   )
 
+# Aggregate to career shot-type level
+#    (attempt-weighted PPS + percentile)
 career_shot_profile <- shot_type_eff2 %>%
   group_by(shot_type) %>%
   summarise(
     fg2_made = sum(fg2_made, na.rm = TRUE),
     fg2_att  = sum(fg2_att,  na.rm = TRUE),
-    fg3_made = sum(coalesce(fg3_made, 0), na.rm = TRUE),
+    fg3_made = sum(fg3_made, na.rm = TRUE),
     fg3_att  = sum(fg3_att,  na.rm = TRUE),
-
-    # attempt-weighted PPS and percentile
-    pps = weighted.mean(pps, att, na.rm = TRUE),
+    pps        = weighted.mean(pps, att, na.rm = TRUE),
     pps_pctile = round(weighted.mean(pps_pctile, att, na.rm = TRUE)),
-
     .groups = "drop"
-  ) %>%
-  mutate(
-    fg_pct = (fg2_made + fg3_made) / (fg2_att + fg3_att),
-    jump_3_share = if_else(
-      (fg2_att + fg3_att) > 0,
-      fg3_att / (fg2_att + fg3_att),
-      NA_real_
-    )
   )
 
-career_shot_profile2 <- shot_type_eff2 %>%
-  group_by(shot_type) %>%
-  summarise(
-    fg2_made = sum(fg2_made, na.rm = TRUE),
-    fg2_att  = sum(fg2_att,  na.rm = TRUE),
-    fg3_made = sum(coalesce(fg3_made, 0), na.rm = TRUE),
-    fg3_att  = sum(fg3_att,  na.rm = TRUE),
-
-    pps = weighted.mean(pps, att, na.rm = TRUE),
-    pps_pctile = round(weighted.mean(pps_pctile, att, na.rm = TRUE)),
-    .groups = "drop"
-  ) %>%
+# Derive efficiency + shot mix
+career_shot_profile <- career_shot_profile %>%
   mutate(
     fg2_pct = if_else(fg2_att > 0, fg2_made / fg2_att, NA_real_),
     fg3_pct = if_else(fg3_att > 0, fg3_made / fg3_att, NA_real_),
@@ -473,25 +508,30 @@ career_shot_profile2 <- shot_type_eff2 %>%
     )
   )
 
-career_shot_profile2 %>%
+# Output table
+career_shot_profile %>%
   transmute(
-    `Shot Type` = shot_type,
-    `FG%`  = percent(fg_pct, 0.1),
-    `2FG%` = if_else(fg2_att > 0, percent(fg2_pct, 0.1), ""),
-    `3P%`  = if_else(fg3_att > 0, percent(fg3_pct, 0.1), ""),
-    `2PA` = fg2_att,
-    `3PA` = fg3_att,
+    `Shot Type` = as.character(shot_type),
+    `FG%`  = scales::percent(fg_pct, accuracy = 0.1),
+    `2FG%` = if_else(fg2_att > 0, scales::percent(fg2_pct, accuracy = 0.1), ""),
+    `3P%`  = if_else(fg3_att > 0, scales::percent(fg3_pct, accuracy = 0.1), ""),
+    `2PA`  = fg2_att,
+    `3PA`  = fg3_att,
     `3 Share` = if_else(
-      shot_type %in% c("All Jumpshots","C&S","Dribble jumpers"),
-      percent(jump_3_share, 0.1),
+      shot_type %in% c("All Jumpshots", "C&S", "Dribble jumpers"),
+      scales::percent(jump_3_share, accuracy = 0.1),
       ""
     )
   ) %>%
   knitr::kable(
+    format = "latex",
     booktabs = TRUE,
     caption = "Trae Young shot-type efficiency, 2019–20 through 2024–25"
   ) %>%
-  kableExtra::kable_styling(latex_options = c("striped","hold_position"), font_size = 9) %>%
+  kableExtra::kable_styling(
+    latex_options = c("striped", "hold_position"),
+    font_size = 9
+  ) %>%
   kableExtra::column_spec(1, bold = TRUE)
 ```
 
@@ -827,5 +867,6 @@ Alex Sarr is the most natural schematic fit alongside Trae Young. Offensively, 7
 Defensively, Sarr provides rim protection largely absent from Trae Young’s career in Atlanta. He ranks in the 92nd percentile in rim defense, faces rim attempts at a top-three frequency, and posts an elite block rate. While Young introduces point-of-attack risk, Sarr’s interior presence helps mitigate that exposure.
 
 ## Why This Is a Development Accelerant
+
 
 Washington’s young core is not short on tools; it is short on structure. Johnson benefits from protected shot quality, George and Carrington from reduced decision load, Coulibaly from offensive definition, and Sarr from role clarity. Trae Young’s value lies in resolving those tensions. He reduces creation burden for young guards and wings, clarifies offensive lanes, and anchors a coherent pick-and-roll ecosystem. The outcome is not immediate winning, but accelerated development for a roster in need of structure and advantage creation.
