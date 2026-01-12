@@ -1,0 +1,654 @@
+---
+title: "Michael Porter Jr.: Offensive Value, Constraints, and Warriors Fit"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: false
+header-includes:
+  - \usepackage{placeins}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  fig.width = 7.2,
+  fig.height = 4.6,
+  dpi = 300,
+  out.width = "100%"
+)
+
+library(dplyr); library(tidyr); library(tibble)
+library(stringr); library(readr); library(purrr)
+library(ggplot2); library(scales); library(knitr)
+library(kableExtra); library(janitor); library(forcats)
+library(showtext); library(sysfonts)
+library(readxl)
+
+font_add_google("Poppins", "poppins")
+showtext_auto()
+
+theme_caleb <- function()
+{
+  theme_minimal(base_family = "poppins") +
+    theme(
+      plot.background  = element_rect(fill = "#f6f4ef", color = NA),
+      panel.background = element_rect(fill = "#f6f4ef", color = NA),
+      panel.grid.major = element_line(color = "#dedad3", linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+      plot.title       = element_text(size = 18, face = "bold", hjust = 0.5, color = "#141414"),
+      plot.subtitle    = element_text(size = 10, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 8)),
+      axis.title       = element_text(size = 12, face = "bold", color = "#141414"),
+      axis.text        = element_text(size = 10, color = "#333333"),
+      plot.caption     = element_text(size = 8, color = "#6e6e6e", hjust = 0, margin = margin(t = 8)),
+      plot.margin      = margin(10, 12, 14, 12),
+      legend.position  = "top"
+    )
+}
+
+NETS_BLACK <- "#000000"
+NETS_WHITE <- "#FFFFFF"
+NETS_GRAY  <- "#8A8D8F"   # official Nets gray
+NETS_DARK  <- "#2C2C2C"   # charcoal accent
+
+COL_RED   <- NETS_BLACK   # primary bars / lines
+COL_BLACK <- NETS_BLACK
+COL_SILV  <- NETS_GRAY
+COL_GOLD  <- NETS_DARK
+
+to_num <- function(x) readr::parse_number(as.character(x))
+pct01  <- function(x) if_else(is.na(x), NA_real_, if_else(x > 1, x/100, x))
+as_pct01 <- function(x) {
+  z <- readr::parse_number(as.character(x))
+  dplyr::case_when(
+    is.na(z) ~ NA_real_,
+    z > 1 ~ z / 100,
+    TRUE ~ z
+  )
+}
+```
+
+```{r paths}
+# Uploaded file paths (edit if you move files)
+crafted_path <- "C:/Users/caleb/Downloads/MPJ_CraftedNBA_OffAndDef_2026.xlsx"
+pt_path      <- "C:/Users/caleb/Downloads/MPJ_Playtype_Eff_2026.xlsx"
+shoot_path   <- "C:/Users/caleb/Downloads/MPJ_Shooting_Career.xlsx"
+```
+
+```{r load-data}
+# Helper: read first sheet safely
+read_first_sheet <- function(path)
+{
+  sh <- readxl::excel_sheets(path)[1]
+  readxl::read_excel(path, sheet = sh)
+}
+
+crafted_raw <- read_first_sheet(crafted_path)
+
+# Playtype: file is expected to have sheet "MPJ_Playtype_Eff_2026"
+pt_sheet <- if ("MPJ_Playtype_Eff_2026" %in% readxl::excel_sheets(pt_path)) "MPJ_Playtype_Eff_2026" else readxl::excel_sheets(pt_path)[1]
+pt_raw   <- readxl::read_excel(pt_path, sheet = pt_sheet)
+
+# Shooting: file is expected to have sheet "Career Shooting Numbers"
+shoot_sheet <- if ("Career Shooting Numbers" %in% readxl::excel_sheets(shoot_path)) "Career Shooting Numbers" else readxl::excel_sheets(shoot_path)[1]
+shoot_raw   <- readxl::read_excel(shoot_path, sheet = shoot_sheet)
+```
+
+# Executive Summary
+Entering the season, Michael Porter Jr. was widely viewed as a scorer whose value depended heavily on elite creation around him. Many questioned whether his production in Denver was inseparable from Nikola Jokić, while others pointed to injuries and limited self-creation as factors that would cap his impact in an expanded role. Few expected him to thrive as a primary offensive option in Brooklyn.
+
+Instead, Porter has exceeded those expectations across the board. Through 29 games this season, he is averaging 25.9 points, 7.4 rebounds, and 3.4 assists per game, all career highs, while shooting 49% from the field, 40% from three, and 83% from the line (62.4% TS). This production has not come through inefficient volume or short-term variance, but through sustained shot-making at scale.
+
+Porter has proven to be a legitimate high-volume, high-efficiency wing scorer whose offensive value translates beyond a Jokic-centered system. While he is not a primary offensive engine in the traditional sense, his shooting gravity, movement scoring, and ability to get clean looks regardless of coverage make him an offensive amplifier in virtually any offensive environment.
+
+# Player Profile (2025–26 snapshot)
+```{r roster-inputs}
+nets_2026 <- tibble::tribble(
+  ~Player, ~Pos, ~MP, ~`3PA`, ~`3P%`, ~PTS, ~AST, ~TRB,
+  "Michael Porter Jr.", "SF", 33.1, 9.4, .397, 25.9, 3.4, 7.4,
+  "Nic Claxton",        "C",  29.9, 0.4, .167, 13.3, 4.1, 7.7,
+  "Noah Clowney",       "PF", 28.4, 6.5, .325, 13.1, 1.9, 3.9,
+  "Terance Mann",       "SG", 26.2, 2.6, .313,  8.0, 3.8, 3.5,
+  "Cam Thomas",         "SG", 25.4, 5.4, .355, 19.6, 2.4, 1.8,
+  "Egor Dёmin",         "PG", 24.7, 6.2, .389, 10.5, 3.5, 3.3,
+  "Ziaire Williams",    "SF", 22.6, 5.1, .313,  9.1, 0.7, 2.4,
+  "Tyrese Martin",      "SG", 19.5, 4.2, .322,  7.4, 2.2, 3.0,
+  "Danny Wolf",         "PF", 19.3, 3.0, .355,  7.5, 1.9, 4.0,
+  "Drake Powell",       "SG", 18.1, 2.1, .327,  5.8, 1.7, 1.6,
+  "Day'Ron Sharpe",     "C",  17.6, 0.8, .214,  7.5, 2.4, 5.9,
+  "Nolan Traoré",       "PG", 15.7, 2.3, .324,  4.3, 2.1, 1.2
+)
+
+warriors_2026 <- tibble::tribble(
+  ~Player, ~Pos, ~MP, ~`3PA`, ~`3P%`, ~PTS, ~AST, ~TRB,
+  "Stephen Curry",         "PG", 32.2, 12.1, .394, 28.7, 4.7, 3.8,
+  "Jimmy Butler",          "SF", 31.4,  2.1, .384, 19.6, 4.9, 5.5,
+  "Brandin Podziemski",    "SG", 27.1,  4.5, .395, 11.9, 3.3, 4.5,
+  "Draymond Green",        "PF", 27.0,  4.4, .340,  8.7, 5.5, 5.8,
+  "De'Anthony Melton",     "PG", 20.5,  4.3, .300,  9.7, 1.7, 2.4,
+  "Al Horford",            "C",  19.4,  4.4, .352,  6.9, 1.8, 4.8,
+  "Will Richard",          "SG", 19.0,  3.1, .383,  7.5, 1.1, 2.7,
+  "Quinten Post",          "PF", 18.2,  4.5, .343,  8.1, 1.5, 3.9,
+  "Buddy Hield",           "SG", 17.4,  4.4, .329,  7.5, 1.4, 2.5,
+  "Pat Spencer",           "PG", 15.1,  1.8, .364,  6.1, 3.2, 2.2,
+  "Trayce Jackson-Davis",  "C",  12.9,  0.0, NA,    4.6, 1.0, 3.9,
+  "Gary Payton II",        "SG", 12.4,  1.1, .275,  4.9, 1.7, 3.3
+)
+```
+
+```{r roster-tables}
+kbl(nets_2026, format="latex", booktabs=TRUE,
+    caption="Brooklyn Nets 2026 production snapshot"
+) %>% kable_styling(latex_options=c("striped","hold_position","scale_down"), font_size=8)
+```
+
+This season, Michael Porter Jr. has played for an underwhelming Brooklyn Nets team largely focused on developing young talent. Despite that context, MPJ has emerged as the team’s only consistent source of offense. In his 961 minutes on the floor, the Nets post a +0.6 net rating (118.3 ORTG, 117.7 DRTG). With him off the court, they crater to –10.7 (105.5 ORTG, 116.2 DRTG).
+
+Porter’s presence lifts team efficiency by roughly +5 percentage points in true shooting, reduces turnover rate, and stabilizes offensive execution without imposing a defensive tax. He is not carrying the offense through on-ball creation, but he is providing a consistent source of shot-making. 
+
+# Offensive Value
+```{r crafted-clean-and-off}
+# Expecting crafted_raw columns like OFF_STAT / DEF_STAT / VALUE / PERCENTILE.
+# If your column names differ, open crafted_raw %>% names() and tweak below.
+
+crafted_names <- names(crafted_raw)
+
+# Try to standardize
+crafted <- crafted_raw %>%
+  janitor::clean_names()
+
+# Heuristic: find stat label column
+stat_col <- if ("unnamed_0" %in% names(crafted)) "unnamed_0" else names(crafted)[1]
+
+crafted_off <- crafted %>%
+  filter(if ("off_stat" %in% names(crafted)) off_stat == 1 else TRUE) %>%
+  transmute(
+    Stat = .data[[stat_col]],
+    Value_num = to_num(value),
+    Percentile = as.integer(percentile)
+  ) %>%
+  mutate(
+    Value = case_when(
+      str_detect(Stat, "TS%|3PAr|cTOV%|Rate|%") ~ scales::percent(Value_num/100, accuracy = 0.1),
+      TRUE ~ format(round(Value_num, 1), nsmall = 1)
+    )
+  ) %>%
+  select(Stat, Value, Percentile)
+
+crafted_def <- crafted %>%
+  filter(if ("def_stat" %in% names(crafted)) def_stat == 1 else TRUE) %>%
+  transmute(
+    Stat = .data[[stat_col]],
+    Value_num = to_num(value),
+    Percentile = as.integer(percentile)
+  ) %>%
+  mutate(
+    Value = case_when(
+      str_detect(Stat, "Rate|%") ~ scales::percent(Value_num/100, accuracy = 0.1),
+      TRUE ~ format(round(Value_num, 1), nsmall = 1)
+    )
+  ) %>%
+  select(Stat, Value, Percentile)
+```
+
+## Synergy: Play Types
+
+\FloatBarrier
+
+```{r playtype-clean}
+pt <- pt_raw %>%
+  janitor::clean_names()
+
+# helper to safely pick the right column
+pick_col <- function(df, candidates) {
+  hit <- intersect(candidates, names(df))
+  if (length(hit) == 0)
+    stop("Missing expected column. Tried: ", paste(candidates, collapse = ", "))
+  hit[1]
+}
+
+play_col <- pick_col(pt, c("stat","play","play_type"))
+poss_col <- pick_col(pt, c("poss","possessions"))
+time_col <- pick_col(pt, c("percent_time","pct_time","time"))
+ppp_col  <- pick_col(pt, c("ppp"))
+tov_col  <- pick_col(pt, c("to_percent","to","to_pct","tov","tov_pct"))
+
+pt_tbl <- pt %>%
+  transmute(
+    Play  = .data[[play_col]],
+    Poss  = to_num(.data[[poss_col]]),
+    pct_time = as_pct01(.data[[time_col]]),
+    PPP   = to_num(.data[[ppp_col]]),
+    TO    = as_pct01(.data[[tov_col]])
+  ) %>%
+  arrange(desc(pct_time)) %>%
+  mutate(
+    `Avg %Time` = scales::percent(pct_time, 0.1),
+    `Avg PPP`   = round(PPP, 3),
+    `Avg TO%`   = scales::percent(TO, 0.1)
+  ) %>%
+  select(Play, Poss, `Avg %Time`, `Avg PPP`, `Avg TO%`)
+
+```
+
+```{r playtype-table}
+kbl(pt_tbl,
+    format = "latex",
+    booktabs = TRUE,
+    caption = "Michael Porter Jr. Play-Type Profile (Synergy, 2025–26)"
+) %>%
+  kable_styling(latex_options = c("striped","hold_position","scale_down"), font_size = 9) %>%
+  column_spec(1, bold = TRUE)
+```
+
+```{r playtype-usage-plot, fig.cap="MPJ play-type usage share (2025–26)."}
+pt_cols_var <- c(
+  "Spot Up"    = "#000000",  # primary
+  "Handoffs"   = "#1A1A1A",  # primary
+  "Transition" = "#3A3A3A",  # secondary
+  "Off Screen" = "#8B9096",  # support
+  "Cut"        = "#c6cfd4"   # cleanup
+)
+
+pt_plot <- pt_tbl %>%
+  mutate(
+    pct_time = readr::parse_number(`Avg %Time`) / 100
+  ) %>%
+  arrange(desc(pct_time)) %>%
+  mutate(
+    Play = factor(Play, levels = Play),  # lock order
+    label = scales::percent(pct_time, accuracy = 0.1),
+    label_col = if_else(Play %in% c("Transition"), "#141414", "white")
+  )
+
+ggplot(pt_plot, aes(x = Play, y = pct_time, fill = Play)) +
+  geom_col(width = 0.68, alpha = 0.95) +
+  geom_text(
+  aes(label = label),
+  vjust = -0.35,
+  size = 3.6,
+  family = "poppins",
+  color = "#141414"
+  ) +
+  scale_color_identity() +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1),
+    expand = expansion(mult = c(0, 0.12))
+  ) +
+  scale_fill_manual(values = pt_cols_var) +
+  labs(
+    title = "Where MPJ Gets His Possessions",
+    subtitle = "Top five play types by usage share (best actions)",
+    x = NULL,
+    y = "% of tracked possessions",
+    caption = "Source: Synergy/SportsRadar | Viz: @Rambzee_"
+  ) +
+  theme_caleb() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(color = COL_RED),
+    axis.text.x = element_text(size = 11)
+  )
+```
+
+Porter Jr.’s play-type diet (Figure 1) is exactly what you would expect from a high-value off-ball scorer. His usage is concentrated in play-finishing actions, with the bulk of his offense coming from spot-ups and handoffs, supplemented by off-screen movement and transition opportunities. He generates over 1.0 PPP across all of his most-used play types, ranking as an elite transition scorer (78th percentile) and off-screen threat (81st percentile). Across his primary actions, he consistently grades in the upper echelon (60th percentile or better), underscoring both efficiency and portability rather than scheme-dependent production.
+
+```{r shooting-summary}
+shoot <- shoot_raw %>%
+  rename_with(~ gsub("\\.0$", "", .x)) %>%   # 2020.0 -> 2020
+  janitor::clean_names()                     # 2020 -> x2020
+
+shoot_tbl <- shoot %>%
+  rename(
+    s2019_20 = x2020,
+    s2020_21 = x2021,
+    s2021_22 = x2022,
+    s2022_23 = x2023,
+    s2023_24 = x2024,
+    s2024_25 = x2025,
+    s2025_26 = x2026
+  )
+
+# Round + format: FG% rows get 1 decimal, counts get 0 decimals
+shoot_tbl_clean <- shoot_tbl %>%
+  mutate(is_fg_pct_row = stringr::str_detect(tolower(year), "fg%")) %>%
+  mutate(
+    across(
+      where(is.numeric),
+      ~ dplyr::if_else(is_fg_pct_row, round(.x, 1), round(.x, 0))
+    )
+  ) %>%
+  mutate(
+    across(
+      where(is.numeric),
+      ~ dplyr::if_else(
+        is_fg_pct_row,
+        scales::number(.x, accuracy = 0.1),
+        scales::number(.x, accuracy = 1)
+      )
+    )
+  ) %>%
+  select(-is_fg_pct_row)
+
+fg_tbl <- shoot_tbl_clean %>%
+  dplyr::filter(stringr::str_detect(tolower(year), "fg%")) %>%
+  dplyr::mutate(
+    Zone = stringr::str_remove(year, "\\s*fg%") |> stringr::str_trim()
+  ) %>%
+  dplyr::select(
+    Zone,
+    s2019_20,
+    s2020_21,
+    s2021_22,
+    s2022_23,
+    s2023_24,
+    s2024_25,
+    s2025_26
+  )
+
+```
+
+## Shooting Profile (Career & 2025-26) 
+
+\FloatBarrier
+
+```{r shooting-head-table}
+kableExtra::kbl(
+  fg_tbl,
+  format = "latex",
+  booktabs = TRUE,
+  caption = "MPJ Shooting Efficiency by Zone (FG\\%, Career by Season)",
+  col.names = c(
+    "Zone",
+    "19--20","20--21","21--22","22--23","23--24","24--25","25--26"
+  ),
+  align = "lrrrrrrr"
+) %>%
+  kableExtra::kable_styling(
+    latex_options = c("striped","HOLD_position","scale_down"),
+    font_size = 8
+  ) %>%
+  kableExtra::column_spec(1, bold = TRUE) 
+```
+
+MPJ’s shooting efficiency is broadly in line with the rest of his career. He’s having an excellent finishing season, converting 79% of his shots in the restricted area. The biggest red flag is corner shooting: he’s at just 16% on left-corner threes and 31% on right-corner threes, which would both be career lows. That said, he has only 42 total corner attempts to this point, and many of those looks have come with more degree of difficulty than what he typically saw in Denver. Overall, he’s still hitting 39% from three on the season, which remains an elite mark.
+
+# Strengths / Tradeoffs
+```{r crafted-percentile-plot, fig.height= 3.8, fig.width = 7.0, fig.cap="CraftedNBA percentiles (Offense vs Defense)."}
+crafted_plot_df <- bind_rows(
+  crafted_off %>% mutate(side = "Offense"),
+  crafted_def %>% mutate(side = "Defense")
+) %>%
+  mutate(
+    Percentile = as.numeric(Percentile),
+    tier = case_when(
+      Percentile >= 97 ~ "97-100",
+      Percentile >= 93 ~ "93-96",
+      Percentile >= 88 ~ "88-92",
+      Percentile >= 80 ~ "80-87",
+      Percentile >= 70 ~ "70-79",
+      Percentile >= 60 ~ "60-69",
+      Percentile >= 50 ~ "50-59",
+      Percentile >= 30 ~ "30-49",
+      TRUE             ~ "<30"
+    ),
+    tier = factor(
+      tier,
+      levels = c("97-100","93-96","88-92","80-87","70-79","60-69","50-59","30-49","<30")
+    )
+  )
+
+pct_cols <- c(
+  "97-100" = "#0B4F2D",
+  "93-96"  = "#146B3A",
+  "88-92"  = "#1F8F4C",
+  "80-87"  = "#43A95C",
+  "70-79"  = "#6FC16F",
+  "60-69"  = "#9EDC7D",
+  "50-59"  = "#E6E68A",
+  "30-49"  = "#E2B07A",
+  "<30"    = "#C26A5A"
+)
+
+plot_one_side <- function(df, side_name) {
+
+  df2 <- df %>%
+    filter(side == side_name) %>%
+    arrange(Percentile) %>%
+    mutate(Stat = factor(Stat, levels = unique(Stat)))
+
+  ggplot(df2, aes(x = Percentile, y = Stat, fill = tier)) +
+    geom_col(alpha = 0.95) +
+    geom_text(
+      aes(label = Percentile),
+      hjust = -0.2,
+      size = 3.1,
+      color = "#2B2B2B",
+      family = "poppins"
+    ) +
+    geom_vline(xintercept = 50, linetype = "dashed", color = "#CFCFCF", linewidth = 0.4) +
+    scale_fill_manual(values = pct_cols, drop = FALSE) +
+    scale_x_continuous(limits = c(0, 110), breaks = seq(0, 100, 20)) +
+    labs(
+      title = paste0("MPJ: CraftedNBA Percentiles (", side_name, ")"),
+      subtitle = if (side_name == "Offense")
+        "Percentile shading reflects relative value"
+      else
+        "Percentile shading reflects relative value",
+      x = "Percentile",
+      y = NULL,
+      fill = NULL,
+      caption = "Source: CraftedNBA | Viz: @Rambzee_"
+    ) +
+    theme_caleb() +
+    theme(legend.position = "none")
+}
+
+p_off <- plot_one_side(crafted_plot_df, "Offense")
+p_def <- plot_one_side(crafted_plot_df, "Defense")
+
+p_off
+p_def
+```
+
+CraftedNBA context (useful indicators, not gospel) reinforces just how strong Michael Porter Jr.’s offensive profile is. He grades out in the 80th percentile or better across every major play-finishing and portability metric, underscoring his value as a high-level off-ball scorer. Most notably, he sits in the 84th percentile in true shooting (TS%) while carrying a high offensive load (82nd percentile), a difficult efficiency–volume combo.
+
+While he’s averaging a career-high 3.4 assists, Porter is still a below-average passer overall, which is entirely acceptable given his role. His value is not in creation for others, but in elite shot-making and spacing gravity as a complementary offensive weapon.
+
+Defensively, MPJ has been a serviceable rather than impactful. He shows decent versatility and rim protection, but ranks near the bottom of the league in overall defensive impact (18th percentile in CraftedDPM). Context matters, though: Brooklyn’s defensive infrastructure has been poor, which likely suppresses his on/off and impact-based metrics. In a more structured team-defense environment, Porter projects as a competent defender rather than a liability.
+
+# Takeaways
+## What MPJ Brings
+* Elite off-ball scoring. High-volume, high-efficiency shooter across spot-ups, handoffs, off-screens, and transition.
+* Spacing gravity. Defenses stay attached without the ball, creating advantage by presence alone.
+* Scalable offense. Efficiency holds or improves next to better creators.
+
+## What MPJ Needs
+* Primary offensive initiation to set the table and shift defenses.
+* Ball movement and pace to maximize movement shooting.
+* High-quality screening to consistently access handoffs and off-screen actions.
+* Strong point-of-attack defense to keep him in a team-defense role rather than stress matchups.
+
+# Team Fit: Why MPJ Is a Near-Perfect Match in Golden State
+```{r warriors}
+kbl(warriors_2026, format="latex", booktabs=TRUE,
+    caption="Golden State Warriors 2026 production snapshot"
+) %>% kable_styling(latex_options=c("striped","hold_position","scale_down"), font_size=8)
+```
+
+```{r 3pt-context-plot, fig.cap="3-point volume vs accuracy: Nets vs Warriors."}
+ctx <- bind_rows(
+  nets_2026 %>% mutate(Team = "Nets"),
+  warriors_2026 %>% mutate(Team = "Warriors")
+) %>%
+  mutate(
+    `3P%` = as.numeric(`3P%`),
+    `3PA` = as.numeric(`3PA`)
+  )
+
+# 2) Build a player_id lookup from NBA Stats (season just needs to include these guys)
+#    If your season string differs, change "2025-26" to whatever you're using.
+players <- hoopR::nba_leaguedashplayerstats(
+  season = "2025-26",
+  season_type = "Regular Season",
+  measure_type = "Base"
+)$LeagueDashPlayerStats %>%
+  janitor::clean_names() %>%
+  transmute(
+    player_id   = as.character(player_id),
+    player_name = player_name
+  ) %>%
+  distinct()
+
+name_key <- function(x) {
+  x |>
+    stringr::str_to_lower() |>
+    stringr::str_replace_all("[[:punct:]]", " ") |>
+    stringr::str_replace_all("\\b(jr|sr|ii|iii|iv|v)\\b", "") |>
+    stringr::str_squish()
+}
+
+players_keyed <- players %>%
+  mutate(name_key = name_key(player_name))
+
+ctx_img <- ctx %>%
+  mutate(
+    `3P%` = as.numeric(`3P%`),
+    `3PA` = as.numeric(`3PA`),
+    name_key = name_key(Player)
+  ) %>%
+  left_join(players_keyed %>% select(name_key, player_id), by = "name_key") %>%
+  mutate(
+    headshot = if_else(
+      !is.na(player_id),
+      paste0("https://cdn.nba.com/headshots/nba/latest/1040x760/", player_id, ".png"),
+      NA_character_
+    )
+  )
+
+ggplot(ctx_img) +
+  ggimage::geom_image(
+    aes(x = `3PA`, y = `3P%`, image = headshot),
+    size = 0.09,
+    asp = 1.1
+  ) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+  labs(
+    title = "Shooting Environment Comparison",
+    subtitle = "Nets vs Warriors",
+    x = "3PA per game",
+    y = "3P%",
+    caption = "Source: BBall Reference & NBA headshots | Viz: @Rambzee_"
+  ) +
+  theme_caleb() +
+  theme(
+    plot.title = element_text(color = COL_RED)
+  )
+```
+
+```{r projected-lineup, fig.cap="Warriors Projected Starting 5 w/ MPJ"}
+lineup <- tibble::tibble(
+  Player = c(
+    "Stephen Curry",
+    "Jimmy Butler",
+    "Michael Porter Jr.",
+    "Draymond Green",
+    "Quinten Post"
+  ),
+  Pos = c("PG", "SG", "SF", "PF", "C"),
+  x   = 1:5,
+  y   = 1
+) %>%
+  mutate(name_key = name_key(Player))
+
+name_key <- function(x) {
+  x |>
+    stringr::str_to_lower() |>
+    stringr::str_replace_all("[[:punct:]]", " ") |>
+    stringr::str_replace_all("\\b(jr|sr|ii|iii|iv|v)\\b", "") |>
+    stringr::str_squish()
+}
+
+players_keyed <- players %>%
+  mutate(name_key = name_key(player_name))
+
+lineup_img <- lineup %>%
+  left_join(
+    players_keyed %>% select(name_key, player_id),
+    by = "name_key"
+  ) %>%
+  mutate(
+    headshot = if_else(
+      !is.na(player_id),
+      paste0(
+        "https://cdn.nba.com/headshots/nba/latest/1040x760/",
+        player_id,
+        ".png"
+      ),
+      NA_character_
+    )
+  )
+
+ggplot(lineup_img, aes(x = x, y = y)) +
+  geom_point(
+    shape = 21,
+    size = 20,
+    fill = "#1D428A",      # Warriors blue ring
+    color = "#f6f4ef",
+    stroke = 1.4
+  ) +
+  ggimage::geom_image(
+    aes(image = headshot),
+    size = 0.15,
+    asp = 1.1
+  ) +
+  geom_text(
+    aes(label = Player),
+    y = 0.9,
+    size = 3.4,
+    family = "poppins",
+    fontface = "bold"
+  ) +
+  geom_text(
+    aes(label = Pos),
+    y = 1.1,
+    size = 3.6,
+    family = "poppins",
+    color = "#6e6e6e"
+  ) +
+  scale_x_continuous(limits = c(0.5, 5.5)) +
+  scale_y_continuous(limits = c(0.6, 1.4)) +
+  labs(
+    title = "Projected Warriors Starting Lineup",
+    subtitle = "Steph – Jimmy – MPJ – Draymond – Post",
+    caption = "Viz: @Rambzee_"
+  ) +
+  theme_caleb() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(color = "#1D428A")
+  )
+```
+
+* Stephen Curry: Burden Relief 
+
+MPJ provides much-needed elite off-ball shooting gravity next to Steph, similar in function to peak Klay Thompson. Defenses cannot load up on Curry, over-help, or survive aggressive switching without consequence. That gravity reduces the need for Steph to manufacture offense every possession, lowers the frequency of extreme scoring nights just to stay competitive, and smooths the Warriors’ offensive volatility.
+
+* Jimmy Butler: Scoring Pressure Reduction
+
+Butler now has reduced pressure to force offense or carry extended scoring stretches. MPJ absorbs a large scoring responsibility without needing the ball, allowing Butler to attack selectively, punish mismatches, and conserve energy for late-game and playoff contexts, where he is most effective. This also aligns with how Butler is most willing to play offense at this stage of his career.
+
+* Draymond Green: Offensive Connectivity 
+
+MPJ enhances Draymond’s value as a facilitator. His shooting gravity cleans up short-roll reads, discourages help from the corners, and increases the efficiency of handoff and split actions. With fewer defenders able to cheat into the paint, Golden State’s orchestration becomes far more intuitive and decisive. Porter also adds a legitimate defensive rebounding presence, helping end possessions, and has shown the ability to be a solid team defender which should only be helped by an already strong Warriors team-defense.
+
+* Overall Impact: Stability, Hierarchy, and Fewer Droughts
+
+MPJ immediately slots in as a clear 2nd–3rd offensive option, reducing the need for secondary players such as Melton, Podz, Hield to overextend their roles. The Warriors’ offense has been extremely bipolar, prone to long scoring droughts and reliance on hot shooting streaks. Porter’s portable skill set dramatically lowers the likelihood of those stretches, raising the team’s offensive floor while simultaneously elevating its ceiling.
