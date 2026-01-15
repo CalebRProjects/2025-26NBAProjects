@@ -1,0 +1,568 @@
+---
+title: "Peyton Watson: Jump-Shooting Leap + Defensive Value (2025–26)"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  bookdown::pdf_document2:
+    latex_engine: xelatex
+    toc: false
+params:
+  season_label: "2025–26"
+  player_name: "Peyton Watson"
+  team_label: "Denver Nuggets"
+  min_gp_note: "Split context: last 8 games without Jokic (user-provided), full season otherwise."
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+# Global chunk options
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  fig.width = 7.2,
+  fig.height = 4.6,
+  dpi = 300,
+  out.width = "100%"
+)
+
+# Libraries
+library(dplyr); library(tidyr); library(readr)
+library(ggplot2); library(scales); library(knitr)
+library(kableExtra); library(lubridate); library(stringr)
+library(janitor); library(readxl); library(showtext)
+library(sysfonts)
+
+# Fonts + plot theme
+font_add_google("Poppins", "poppins")
+showtext_auto()
+
+BG        <- "#f6f4ef"
+TEXT_DARK <- "#141414"
+GRID      <- "#dedad3"
+
+DEN_NAVY <- "#0E2240" 
+DEN_GOLD <- "#FEC524" 
+DEN_RED  <- "#8B2131"
+DEN_LTBL <- "#1D428A" 
+DEN_SKY  <- "#5BC0EB" 
+
+theme_caleb <- function()
+  {
+  theme_minimal(base_family = "poppins") +
+    theme(
+      plot.background  = element_rect(fill = BG, color = NA),
+      panel.background = element_rect(fill = BG, color = NA),
+      panel.grid.major = element_line(color = GRID, linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+      plot.title       = element_text(size = 18, face = "bold", hjust = 0.5, color = TEXT_DARK),
+      plot.subtitle    = element_text(size = 10, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 8)),
+      axis.title       = element_text(size = 12, face = "bold", color = TEXT_DARK),
+      axis.text        = element_text(size = 10, color = "#333333"),
+      plot.caption     = element_text(size = 8, color = "#6e6e6e", hjust = 0, margin = margin(t = 8)),
+      plot.margin      = margin(10, 12, 14, 12),
+      legend.position  = "top"
+    )
+  }
+
+# File paths
+path_cs   <- "Peyton Watson C&S Data.xlsx"
+path_dist <- "Peyton Watson Shot Distance Data.xlsx"
+path_def  <- "Peyton Watson Defense Data.xlsx"
+
+# Helpers
+to_num <- function(x)
+  {
+  suppressWarnings(as.numeric(gsub("[^0-9.-]", "", as.character(x))))
+  }
+
+pct01 <- function(x)
+  {
+  # Accept either 0–1 or 0–100 inputs.
+  x <- to_num(x)
+  ifelse(is.na(x), NA_real_, ifelse(x > 1, x / 100, x))
+  }
+
+stop_if_missing <- function(path)
+  {
+  if (!file.exists(path)) {
+    stop(
+      paste0(
+        "Missing file: ", path, "\n",
+        "Place the .xlsx files in the SAME folder as this Rmd, or update path_* in setup."
+      ),
+      call. = FALSE
+    )
+  }
+}
+
+# Validate inputs (Fail safe)
+invisible(lapply(c(path_cs, path_dist, path_def), stop_if_missing))
+```
+
+# Executive Summary
+
+This season, Peyton Watson has fully broken out as a clear positive rotation player, with extended stretches of genuinely high-level production. On the year, he’s averaging 13.9 points, 5 rebounds, 1.8 assists, 1 steal, and 1 block on 51/41/74 splits, but the numbers undersell the growth. Watson has played with real confidence, turning the corner three into a staple of his game. Defenses now have to close hard, and he’s punished that attention. His handle is tighter, his reads are quicker, and he’s become an absolute weapon in transition.
+
+What stands out most is how comfortably his game has scaled. Watson was always viewed as a long-term project, but his commitment to development has paid off across the board. Alongside Nikola Jokić, he’s thrived as an athletic connector who can defend, space the floor, and attack closeouts without hijacking possessions. Without Jokić, he’s shown another gear: handling more on-ball responsibility, attacking in pick-and-roll, and generating offense when plays are run for him. That versatility has turned him from a role piece into a legitimate offensive option for Denver.
+
+Defensively, this season hasn’t quite matched the peak disruption of his first two years, but the context matters. Watson has taken on a heavier offensive load while covering for absences from Christian Braun, Aaron Gordon, and Cam Johnson, all within a Nuggets defense that has been inconsistent overall. Even so, the foundation remains. When Denver needs stops, Watson can still sit down, compete, and guard at a high level. The tenacious defender is still there, now paired with an offensive game that is far more complete than anyone expected this quickly.
+
+```{r load-data, include=FALSE}
+# Read + clean raw inputs
+cs_raw   <- readxl::read_excel(path_cs)   %>% janitor::clean_names()
+dist_raw <- readxl::read_excel(path_dist) %>% janitor::clean_names()
+def_raw  <- readxl::read_excel(path_def)  %>% janitor::clean_names()
+
+# Parsing helpers
+to_num <- function(x)
+  {
+  suppressWarnings(as.numeric(gsub("[^0-9.-]", "", as.character(x))))
+  }
+
+pct01 <- function(x)
+  {
+  z <- to_num(x)
+  ifelse(is.na(z), NA_real_, ifelse(z > 1, z / 100, z))
+  }
+
+# Season sort key
+season_order <- function(x)
+  {
+  yr <- suppressWarnings(as.numeric(stringr::str_extract(as.character(x), "^\\d{4}")))
+  ifelse(is.na(yr), 9999, yr)
+  }
+
+
+# C&S table
+cs <- cs_raw %>%
+  transmute(
+    season     = as.character(season),
+    shot_type  = stringr::str_squish(as.character(shot_type)),
+    time_share = pct01(percent_time),
+    fg_pct     = pct01(fg_percent),
+    efg_pct    = pct01(e_fg_percent),
+    pts        = to_num(pts),
+    fgm        = to_num(fgm),
+    fga        = to_num(fga)
+  ) %>%
+  transmute(
+    season,
+    shot_type,
+    time_share,
+    pts,
+    fgm_fga = paste0(fgm, "/", fga),
+    fg_pct,
+    efg_pct
+  )
+
+# Shot distance table
+dist <- dist_raw %>%
+  dplyr::rename(corner_3_fg_percent = cortner_3_fg_percent) %>%  # fix typo
+  transmute(
+    season = as.character(season),
+    age    = to_num(age),
+
+    ra_fgm = to_num(ra_fgm),
+    ra_fga = to_num(ra_fga),
+    ra_fg_percent = pct01(ra_fg_percent),
+
+    paint_non_ra_fgm = to_num(paint_non_ra_fgm),
+    paint_non_ra_fga = to_num(paint_non_ra_fga),
+    paint_non_ra_fg_percent = pct01(paint_non_ra_fg_percent),
+
+    midrange_fgm = to_num(midrange_fgm),
+    midrange_fga = to_num(midrange_fga),
+    midrange_fg_percent = pct01(midrange_fg_percent),
+
+    corner_3_fgm = to_num(corner_3_fgm),
+    corner_3_fga = to_num(corner_3_fga),
+    corner_3_fg_percent = pct01(corner_3_fg_percent),
+
+    atb3_fgm = to_num(atb3_fgm),
+    atb3_fga = to_num(atb3_fga),
+    atb3_fg_percent = pct01(atb3_fg_percent),
+
+    x3fgm = to_num(x3fgm),
+    x3fga = to_num(x3fga),
+    x3fg_percent = pct01(x3fg_percent)
+  )
+
+# Defense table
+def <- def_raw %>%
+  transmute(
+    season   = as.character(season),
+    age      = to_num(age),
+    position = as.character(position),
+    gp       = to_num(gp),
+    g        = to_num(g),
+
+    freq_pct = pct01(freq_percent),
+    dfgm     = to_num(dfgm),
+    dfga     = to_num(dfga),
+    dfg_pct  = pct01(dfg_percent),
+
+    fg_pct   = pct01(fg_percent),
+    diff_pct = pct01(diff_percent)
+  )
+```
+
+# Results
+
+## Jump-shooting leap
+
+### A. Catch-and-shoot profile
+
+```{r cs-table, tbl.cap="Catch-and-shoot summary by season. Time share, FG%, eFG%."}
+# Format C&S table for report
+cs_tbl <- cs %>%
+  arrange(season_order(season), shot_type) %>%
+  mutate(
+    time_share = scales::percent(time_share, accuracy = 1),
+    fg_pct     = scales::percent(fg_pct, accuracy = 0.1),
+    efg_pct    = scales::percent(efg_pct, accuracy = 0.1)
+  )
+
+knitr::kable(cs_tbl, booktabs = TRUE) %>%
+  kableExtra::kable_styling(
+    latex_options = c("scale_down", "striped", "HOLD_position")
+  )
+```
+
+```{r cs-efg-plot, fig.cap="Catch-and-shoot eFG% by shot type and season."}
+# Plot prep: stable season ordering (supports "25-26" or "2025-26")
+season_start_year <- function(x)
+  {
+  x <- as.character(x)
+
+  # "2025-26" -> 2025
+  y4 <- suppressWarnings(as.integer(stringr::str_extract(x, "^\\d{4}")))
+
+  # "25-26" -> 2025
+  y2 <- suppressWarnings(as.integer(stringr::str_extract(x, "^\\d{2}")))
+  y2 <- ifelse(is.na(y2), NA_integer_, 2000L + y2)
+
+  dplyr::coalesce(y4, y2, 9999L)
+  }
+
+season_lvls <- cs %>%
+  distinct(season) %>%
+  mutate(ord = season_start_year(season)) %>%
+  arrange(ord) %>%
+  pull(season) %>%
+  as.character()
+
+cs_plot <- cs %>%
+  filter(!is.na(efg_pct)) %>%
+  mutate(season = factor(season, levels = season_lvls))
+
+# Visualization: C&S eFG% trends by shot type
+ggplot(cs_plot, aes(x = season, y = efg_pct, group = shot_type)) +
+  geom_line(linewidth = 1.15, alpha = 0.95, color = DEN_NAVY) +
+  geom_point(size = 2.8, color = DEN_GOLD) +
+  facet_wrap(~shot_type, scales = "free_y") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    title = "Peyton Watson’s catch-and-shoot leap",
+    subtitle = "Efficiency trending upward with expanded role in Denver",
+    x = NULL,
+    y = "eFG%",
+    caption = "Source: Synergy/SportsRadar | Viz: @Rambzee_"
+  ) +
+  theme_caleb()
+```
+
+While the mix of Watson’s catch-and-shoot looks has shifted slightly from last season, the defining change is efficiency. Across both guarded and unguarded catch-and-shoot attempts, his eFG% has risen sharply this year.
+
+The gains are most striking on contested looks. After struggling to convert guarded catch-and-shoot attempts last season, Watson is now finishing them at an elite rate, improving by more than 20 percentage points. Watson has shown real growth in his balance, shot mechanics, and confidence rather than simple shifting his shot selection. Unguarded looks show a similar step forward (+9% this season), reinforcing that this is not a narrow improvement tied to shot quality alone. Defenses are closing harder, and Watson is punishing them more consistently.
+
+### B. Shot distance composition and makes
+
+```{r dist-share-plot, fig.cap="Shot volume share by distance zone (FGA share within each season)."}
+# Helpers: season ordering 
+season_start_year <- function(x)
+  {
+  x <- as.character(x)
+
+  y4 <- suppressWarnings(as.integer(stringr::str_extract(x, "^\\d{4}")))
+  y2 <- suppressWarnings(as.integer(stringr::str_extract(x, "^\\d{2}")))
+  y2 <- ifelse(is.na(y2), NA_integer_, 2000L + y2)
+
+  dplyr::coalesce(y4, y2, 9999L)
+  }
+
+# Season levels: lock factor order from dist
+season_lvls_dist <- dist %>%
+  distinct(season) %>%
+  mutate(ord = season_start_year(season)) %>%
+  arrange(ord) %>%
+  pull(season) %>%
+  as.character()
+
+
+# Reshape: wide -> long using tidyr
+dist_long <- dist %>%
+  select(
+    season,
+    ra_fga, ra_fg_percent,
+    paint_non_ra_fga, paint_non_ra_fg_percent,
+    midrange_fga, midrange_fg_percent,
+    corner_3_fga, corner_3_fg_percent,
+    atb3_fga, atb3_fg_percent
+  ) %>%
+  tidyr::pivot_longer(
+    cols = -season,
+    names_to = c("zone", ".value"),
+    names_pattern = "^(.*)_(fga|fg_percent)$"
+  ) %>%
+  mutate(
+    zone = dplyr::recode(
+      zone,
+      ra = "Restricted Area",
+      paint_non_ra = "Non-RA paint",
+      midrange = "Midrange",
+      corner_3 = "Corner 3",
+      atb3 = "Above-the-break 3"
+    ),
+    zone = factor(
+      zone,
+      levels = c("Restricted Area", "Non-RA paint", "Midrange", "Corner 3", "Above-the-break 3")
+    ),
+    season = factor(season, levels = season_lvls_dist)
+  )
+
+# Transform: compute within-season FGA share
+dist_share <- dist_long %>%
+  group_by(season) %>%
+  mutate(
+    total_fga = sum(fga, na.rm = TRUE),
+    share = if_else(total_fga > 0, fga / total_fga, NA_real_)
+  ) %>%
+  ungroup()
+
+# Plot: stacked share by distance zone
+denver_zone_pal <- c(
+  "Restricted Area"      = DEN_GOLD,
+  "Non-RA paint"         = DEN_RED,
+  "Midrange"             = DEN_SKY,
+  "Corner 3"             = DEN_LTBL,
+  "Above-the-break 3"    = DEN_NAVY
+)
+
+ggplot(dist_share, aes(x = season, y = share, fill = zone)) +
+  geom_col(width = 0.7) +
+  scale_fill_manual(values = denver_zone_pal, drop = FALSE) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    title = "Where the shots come from",
+    subtitle = "Share of attempts by distance bucket",
+    x = NULL,
+    y = "Share of FGA",
+    fill = NULL,
+    caption = "Source: NBA.com | Viz: @Rambzee_"
+  ) +
+  theme_caleb()
+```
+
+```{r zone-trend-3, fig.cap="Zone FG% trends (dashed = career baseline for that zone).", fig.height=4.4, fig.width=7.4}
+# Season ordering: lock discrete axis order
+season_lvls <- dist %>%
+  distinct(season) %>%
+  mutate(ord = season_start_year(season)) %>%
+  arrange(ord) %>%
+  pull(season) %>%
+  as.character()
+
+# Build zone-level series (Rim, Non-RA Paint, Overall 3)
+zone_trend <- dist %>%
+  mutate(season = factor(season, levels = season_lvls)) %>%
+  transmute(
+    season,
+
+    # Rim (Restricted Area)
+    rim_fgm = ra_fgm,
+    rim_fga = ra_fga,
+    rim_fg  = ra_fg_percent,
+
+    # Paint, non-RA
+    paint_fgm = paint_non_ra_fgm,
+    paint_fga = paint_non_ra_fga,
+    paint_fg  = paint_non_ra_fg_percent,
+
+    # Overall 3 = corner + above-the-break
+    three_fgm = coalesce(corner_3_fgm, 0) + coalesce(atb3_fgm, 0),
+    three_fga = coalesce(corner_3_fga, 0) + coalesce(atb3_fga, 0),
+    three_fg  = if_else(three_fga > 0, three_fgm / three_fga, NA_real_)
+  ) %>%
+  tidyr::pivot_longer(
+    cols = -season,
+    names_to = c("zone", ".value"),
+    names_pattern = "^(rim|paint|three)_(fgm|fga|fg)$"
+  ) %>%
+  mutate(
+    zone = dplyr::recode(
+      zone,
+      rim   = "Rim",
+      paint = "Non-RA Paint",
+      three = "Overall 3"
+    ),
+    zone = factor(zone, levels = c("Rim", "Non-RA Paint", "Overall 3"))
+  )
+
+# Career baselines: attempt-weighted FG% per zone
+baselines <- zone_trend %>%
+  group_by(zone) %>%
+  summarise(
+    baseline = if_else(
+      sum(fga, na.rm = TRUE) > 0,
+      sum(fgm, na.rm = TRUE) / sum(fga, na.rm = TRUE),
+      NA_real_
+    ),
+    .groups = "drop"
+  )
+
+zone_trend <- zone_trend %>%
+  left_join(baselines, by = "zone")
+
+# Plot: zone FG% over time + dashed baseline
+ggplot(zone_trend, aes(x = season, y = fg, group = 1)) +
+  geom_hline(
+    aes(yintercept = baseline),
+    linetype = "dashed",
+    linewidth = 0.9,
+    alpha = 0.75
+  ) +
+  geom_line(linewidth = 1.1, color = DEN_NAVY) +
+  geom_point(size = 2.6, color = DEN_GOLD) +
+  facet_wrap(~zone, scales = "free_y", ncol = 3) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    title = paste0(params$player_name, ": Zone FG% Trends"),
+    subtitle = "Dashed line = career baseline for that zone",
+    x = NULL,
+    y = "Field Goal Percentage",
+    caption = "Source: NBA.com | Viz: @Rambzee_"
+  ) +
+  theme_caleb()
+```
+
+Figure 2 shows that Watson’s offensive growth is not driven by a dramatic shift in shot selection. His overall shot diet has remained largely the same across seasons, with a similar balance between rim attempts, non-RA paint touches, and three-point volume. The change comes from his shot making, not usage. Figure 3 highlights where those gains are concentrated: finishing at the rim has jumped substaintially, non-RA paint efficiency has rebounded after a dip last season, and three-point efficiency has climbed well above his prior baseline. 
+
+Together, the data points to improved touch, confidence, and decision-making rather than him forcing up shots with Nuggets down key players. Watson is getting to the same spots, but he is converting them at a much higher rate, reinforcing the idea that this leap is skill-driven and sustainable rather than a temporary byproduct of role alone.
+
+## Defensive value
+
+```{r def-table, tbl.cap="Defense summary by season (Watson as closest defender within 6 ft). Freq% is share of opponent attempts in the sample. Diff (pp) = Opponent FG% minus expected FG% from the dataset (negative = held opponents below expectation)."}
+# Helpers
+as_rate01 <- function(x)
+  {
+  x <- suppressWarnings(as.numeric(x))
+  dplyr::if_else(!is.na(x) & x > 1, x / 100, x)
+}
+
+season_order <- function(x)
+  {
+  x <- as.character(x)
+  y4 <- suppressWarnings(as.integer(stringr::str_extract(x, "^\\d{4}")))
+  y2 <- suppressWarnings(as.integer(stringr::str_extract(x, "^\\d{2}")))
+
+  dplyr::if_else(
+    !is.na(y4),
+    y4,
+    dplyr::if_else(
+      is.na(y2),
+      9999L,
+      dplyr::if_else(y2 >= 70L, 1900L + y2, 2000L + y2)
+    )
+  )
+}
+
+# Clean defense data
+def_clean <- def_raw %>%
+  dplyr::mutate(
+    season   = as.character(season),
+    age      = suppressWarnings(as.numeric(age)),
+    gp       = suppressWarnings(as.integer(gp)),
+    g        = suppressWarnings(as.integer(g)),
+    dfgm     = suppressWarnings(as.numeric(dfgm)),
+    dfga     = suppressWarnings(as.numeric(dfga)),
+    freq_pct = as_rate01(freq_percent),
+    dfg_pct  = as_rate01(dfg_percent),
+    fg_pct   = as_rate01(fg_percent),
+    diff_pp  = suppressWarnings(as.numeric(diff_percent))
+  ) %>%
+  dplyr::select(season, age, position, gp, g, freq_pct, dfgm, dfga, dfg_pct, fg_pct, diff_pp)
+
+# SECTION: Table output 
+def_tbl <- def_clean %>%
+  dplyr::arrange(season_order(season)) %>%
+  dplyr::mutate(
+    freq_pct = scales::percent(freq_pct, accuracy = 0.1),
+    dfg_pct  = scales::percent(dfg_pct,  accuracy = 0.1),
+    fg_pct   = scales::percent(fg_pct,   accuracy = 0.1),
+    diff_pp  = sprintf("%+.1f", diff_pp)
+  )
+
+kableExtra::kbl(def_tbl, booktabs = TRUE, format = "latex",
+  caption = paste(
+    "Defense summary by season (Watson as closest defender within 6 ft).",
+    "Freq% = share of opponent attempts.",
+    "Diff (pp) = Opponent FG% minus expected FG% (negative = better defense)."
+  )
+) %>%
+  kableExtra::kable_styling(latex_options = c("scale_down", "striped", "HOLD_position"))
+```
+
+```{r def-diff-plot, fig.cap="Opponent FG% impact by season (Diff%)."}
+# Plot dataset (ordered season factor)
+def_plot <- def_clean %>%
+  dplyr::arrange(season_order(season)) %>%
+  dplyr::mutate(season = factor(season, levels = unique(season)))
+
+# Plot (Diff in percentage points)
+ggplot(def_plot, aes(x = season, y = diff_pp, group = 1)) +
+  geom_hline(yintercept = 0, linewidth = 0.8, linetype = "dashed", color = "#777777") +
+  geom_line(linewidth = 1.4, color = DEN_NAVY) +
+  geom_point(size = 3.2, color = DEN_GOLD) +
+  scale_y_continuous(
+    breaks = scales::pretty_breaks(5),
+    labels = function(x) paste0(x, " FG%")
+  ) +
+  labs(
+    title = "Defensive shot impact by season",
+    subtitle = "Opponent FG% vs expected when Watson is the closest defender (<6 ft)",
+    x = NULL,
+    y = "Opponent shooting impact (FG% vs expected)",
+    caption = "Source: NBA.com | Viz: @Rambzee_"
+  ) +
+  theme_caleb()
+```
+
+Table 2 and Figure 4 illustrate how Watson’s defensive impact has evolved alongside his expanding offensive role. Early in his career, he graded as a borderline elite defender with his tenacity and athleticism allowing him to consistently hold opponents well below expectation when he was the closest defender. As his responsibilities have grown, that gap has narrowed, but the context matters. Watson is now defending a wider mix of actions, guarding tougher assignments, and doing so within a Denver defense strained by injuries and lineup instability. The change reflects usage and team environment as much as individual decline.
+
+His CraftedNBA defensive profile reinforces that Watson remains a strong overall defender despite those shifts. High marks in block rate (93rd percentile), deflections, and especially versatility (97th percentile) point to impact across positions and play types rather than reliance on a single defensive role. Watson is asked to switch, rotate, and cover ground, not simply deter shots at the rim. In that context, along with his solid foul discipline, all signs indicate a defender who is still adding value. He's just doing it in a broader, more demanding role than earlier in his career.
+
+## Context stretch without Jokic 
+
+The stretch without Nikola Jokić has thrust Peyton Watson into the spotlight, and so far, he’s answered it. Through eight games, Denver is 6-3, with Watson taking on a much larger offensive role while maintaining nearly identical efficiency. He’s averaging 23.9 points, 6.7 rebounds, and 3.1 assists on 51/43/73 shooting (61.6% TS), doing it with more defensive attention and far fewer easy looks created for him.
+
+What stands out isn’t just the scoring jump, but how cleanly it’s coming. The shooting gains shown earlier (confidence from the corners, reliable catch-and-shoot reps, and decisiveness attacking closeouts) have continued through this stretch, along with an improved handle. Defenses are forced to close harder now, and Watson has consistently punished them, whether that’s with a pull-up, a straight-line drive, or a simple read when help arrives. The game has slowed down for him.
+
+The comparison point matters. With Jokić on the floor this season, Watson has averaged 10.7 points per game on essentially the same efficiency (61.3% TS). He's shooting with more volume, but continuing to make shots. With Jokić expected to remain out into late January, this stretch is still unfolding, but Watson has already shown he can handle expanded minutes and responsibility without sacrificing efficiency or composure.
+
+# The Tough Decision
+
+With how well Peyton Watson has been playing, it would be a disservice not to address the looming question this offseason. His growth has moved past the point of internal development chatter and into real league-wide value. Watson isn’t just a young role player on a cheap deal anymore. He’s the type of wing teams would love to incorporate into their future plans, and he’ll be near the top of a lot of offseason wish lists.
+
+That emergence creates an imposing financial problem for Denver. The Nuggets are already operating near the luxury-tax line, with long-term money committed to Nikola Jokić, Jamal Murray, Aaron Gordon, Cam Johnson, and now Christian Braun. Braun’s extension includes poison-pill provisions that effectively remove him from any short-term flexibility and lock Denver into its current salary structure. With Watson set to hit restricted free agency this summer, any meaningful raise pushes the Nuggets beyond the second apron, where roster-building penalties become severe.
+
+There are theoretical paths to keeping both Braun and Watson, but they are narrow, expensive, and increasingly unlikely under the current CBA. Watson’s breakout is a fantastic development for an alrerady stacked Nuggets roster. Denver developed his value exactly as planned, and now that success demands a difficult offseason decision.
+
+# Limitations
+
+Jump-shooting splits are inherently sensitive to sample size, particularly by shot zone and contest level, and should be interpreted as directional indicators rather than objective measures of shooting talent. Defensive impact metrics often overlook team context and fail to entirely capture individual defensive quality, while they do help give an idea of a players defense overall, it's important to keep a healthy amount of skepticism.
