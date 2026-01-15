@@ -101,7 +101,7 @@ stop_if_missing <- function(path)
   }
 }
 
-# Validate inputs (Fail safe)
+# Validate inputs (Fail-safe)
 invisible(lapply(c(path_cs, path_dist, path_def), stop_if_missing))
 ```
 
@@ -279,7 +279,7 @@ ggplot(cs_plot, aes(x = season, y = efg_pct, group = shot_type)) +
 
 While the mix of Watson’s catch-and-shoot looks has shifted slightly from last season, the defining change is efficiency. Across both guarded and unguarded catch-and-shoot attempts, his eFG% has risen sharply this year.
 
-The gains are most striking on contested looks. After struggling to convert guarded catch-and-shoot attempts last season, Watson is now finishing them at an elite rate, improving by more than 20 percentage points. Watson has shown real growth in his balance, shot mechanics, and confidence rather than simple shifting his shot selection. Unguarded looks show a similar step forward (+9% this season), reinforcing that this is not a narrow improvement tied to shot quality alone. Defenses are closing harder, and Watson is punishing them more consistently.
+The gains are most striking on contested looks. After struggling to convert guarded catch-and-shoot attempts last season, Watson is now finishing them at an elite rate, improving by more than 20 percentage points. Watson has shown real growth in his balance, shot mechanics, and confidence rather than simply shifting his shot selection. Unguarded looks show a similar step forward (+9% this season), reinforcing that this is not a narrow improvement tied to shot quality alone. Defenses are closing harder, and Watson is punishing them more consistently.
 
 ### B. Shot distance composition and makes
 
@@ -451,13 +451,13 @@ ggplot(zone_trend, aes(x = season, y = fg, group = 1)) +
   theme_caleb()
 ```
 
-Figure 2 shows that Watson’s offensive growth is not driven by a dramatic shift in shot selection. His overall shot diet has remained largely the same across seasons, with a similar balance between rim attempts, non-RA paint touches, and three-point volume. The change comes from his shot making, not usage. Figure 3 highlights where those gains are concentrated: finishing at the rim has jumped substaintially, non-RA paint efficiency has rebounded after a dip last season, and three-point efficiency has climbed well above his prior baseline. 
+Figure 2 shows that a dramatic shift in shot selection does not drive Watson’s offensive growth. His overall shot diet has remained largely the same across seasons, with a similar balance between rim attempts, non-RA paint touches, and three-point volume. The change comes from his shot-making, not usage. Figure 3 highlights where those gains are concentrated: finishing at the rim has jumped substantially, non-RA paint efficiency has rebounded after a dip last season, and three-point efficiency has climbed well above his prior baseline. 
 
-Together, the data points to improved touch, confidence, and decision-making rather than him forcing up shots with Nuggets down key players. Watson is getting to the same spots, but he is converting them at a much higher rate, reinforcing the idea that this leap is skill-driven and sustainable rather than a temporary byproduct of role alone.
+Together, the data points to improved touch, confidence, and decision-making rather than him forcing up shots with the Nuggets down key players. Watson is reaching the same spots, but he is converting them at a much higher rate, reinforcing the idea that this leap is skill-driven and sustainable rather than a temporary byproduct of the role alone.
 
 ## Defensive value
 
-```{r def-table, tbl.cap="Defense summary by season (Watson as closest defender within 6 ft). Freq% is share of opponent attempts in the sample. Diff (pp) = Opponent FG% minus expected FG% from the dataset (negative = held opponents below expectation)."}
+```{r def-table, tbl.cap="Defense summary by season (Watson as closest defender within 6 ft). Freq% is the share of opponent attempts in the sample. Diff (pp) = Opponent FG% minus expected FG% from the dataset (negative = held opponents below expectation)."}
 # Helpers
 as_rate01 <- function(x)
   {
@@ -549,7 +549,7 @@ His CraftedNBA defensive profile reinforces that Watson remains a strong overall
 
 ## Context stretch without Jokic 
 
-The stretch without Nikola Jokić has thrust Peyton Watson into the spotlight, and so far, he’s answered it. Through eight games, Denver is 6-3, with Watson taking on a much larger offensive role while maintaining nearly identical efficiency. He’s averaging 23.9 points, 6.7 rebounds, and 3.1 assists on 51/43/73 shooting (61.6% TS), doing it with more defensive attention and far fewer easy looks created for him.
+The stretch without Nikola Jokić has thrust Peyton Watson into the spotlight, and so far, he’s answered it. Through nine games, Denver is 6-3, with Watson taking on a much larger offensive role while maintaining nearly identical efficiency. He’s averaging 23.9 points, 6.7 rebounds, and 3.1 assists on 51/43/73 shooting (61.6% TS), doing it with more defensive attention and far fewer easy looks created for him.
 
 What stands out isn’t just the scoring jump, but how cleanly it’s coming. The shooting gains shown earlier (confidence from the corners, reliable catch-and-shoot reps, and decisiveness attacking closeouts) have continued through this stretch, along with an improved handle. Defenses are forced to close harder now, and Watson has consistently punished them, whether that’s with a pull-up, a straight-line drive, or a simple read when help arrives. The game has slowed down for him.
 
@@ -561,8 +561,8 @@ With how well Peyton Watson has been playing, it would be a disservice not to ad
 
 That emergence creates an imposing financial problem for Denver. The Nuggets are already operating near the luxury-tax line, with long-term money committed to Nikola Jokić, Jamal Murray, Aaron Gordon, Cam Johnson, and now Christian Braun. Braun’s extension includes poison-pill provisions that effectively remove him from any short-term flexibility and lock Denver into its current salary structure. With Watson set to hit restricted free agency this summer, any meaningful raise pushes the Nuggets beyond the second apron, where roster-building penalties become severe.
 
-There are theoretical paths to keeping both Braun and Watson, but they are narrow, expensive, and increasingly unlikely under the current CBA. Watson’s breakout is a fantastic development for an alrerady stacked Nuggets roster. Denver developed his value exactly as planned, and now that success demands a difficult offseason decision.
+There are theoretical paths to keeping both Braun and Watson, but they are narrow, expensive, and increasingly unlikely under the current CBA. Watson’s breakout is a fantastic development for an already stacked Nuggets roster. Denver developed its value exactly as planned, and now that success demands a difficult offseason decision.
 
 # Limitations
 
-Jump-shooting splits are inherently sensitive to sample size, particularly by shot zone and contest level, and should be interpreted as directional indicators rather than objective measures of shooting talent. Defensive impact metrics often overlook team context and fail to entirely capture individual defensive quality, while they do help give an idea of a players defense overall, it's important to keep a healthy amount of skepticism.
+Jump-shooting splits are inherently sensitive to sample size, particularly by shot zone and contest level, and should be interpreted as directional indicators rather than objective measures of shooting talent. Defensive impact metrics often overlook team context and fail to entirely capture individual defensive quality. While they do help give an idea of a player's defense overall, it's important to keep a healthy amount of skepticism.
