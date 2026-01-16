@@ -15,7 +15,7 @@ The goal of this project is:
 - Place his rebounding alongside similarly sized peers using REB/36 to determine whether his weakness on the glass is stylistic, situational, or structural.  
 
 3. Translate player traits into roster rules.
-- Use lineup evidence—particularly JJJ with and without Zach Edey—to clarify what Memphis would need at center and on the perimeter if JJJ is the franchise’s long-term defensive anchor.
+- Use lineup evidence, particularly JJJ with and without Zach Edey, to clarify what Memphis would need at center and on the perimeter if JJJ is the franchise’s long-term defensive anchor.
 
 
 # Method & Data  
