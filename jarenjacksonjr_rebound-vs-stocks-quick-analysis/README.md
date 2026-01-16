@@ -1,21 +1,59 @@
 # Overview
-This short report analyzes an unusual statistical tendency in Jaren Jackson Jr.’s game: the frequency with which he records more combined steals and blocks (“stocks”) than total rebounds in a game. The idea was inspired by a discussion on the Numbers On The Board podcast and serves as a lens to highlight the unique trade-offs in Jackson’s defensive profile.
+This project examines Jaren Jackson Jr.’s defensive profile through a specific and unusual lens: the frequency with which his **stocks (steals + blocks)** exceed his rebounds, and what that pattern reveals about his value, his limitations, and how Memphis should build around him.  
 
-Jaren Jackson Jr. is an elite defensive playmaker, particularly as a shot blocker and event generator, but has long been a subpar rebounder for his position. By isolating games where his stocks exceed his rebounds, the analysis captures how often his defensive impact manifests through disruption rather than possession-ending rebounding.
+The analysis is motivated by recent reporting that the Grizzlies front office is open to moving on from Ja Morant and reshaping the roster around Jaren Jackson Jr. and their young core. Rather than treating this as a hypothetical, the project tests whether a JJJ-centered future is structurally sound based on how he actually impacts games and lineups.  
+
+The work combines game-level data, rebounding distributions, peer comparisons, and early lineup signals to move from individual player traits to team-building implications in a potential post–Morant era.
 
 # Purpose
-The goal of this analysis is not to argue that stocks are more valuable than rebounds, nor to suggest that rebounding deficiencies are irrelevant. Instead, it aims to contextualize Jackson’s defensive value by showing how frequently his impact shows up in events rather than control of the glass, and how that pattern has persisted across seasons and postseason play.
+The goal of this project is:  
 
-# Method & Data
-* Game logs were pulled across all regular seasons and playoffs in Jackson’s career (via hoopR).
-* For each game, total steals and blocks were summed into a single “stocks” metric.
-* Games where STL + BLK > REB were isolated and analyzed by season and game context.
-* Summary tables and full game logs were produced for transparency and reproducibility.
+1. Quantify a defining pattern.
+- Measure how often JJJ records more stocks than rebounds, and track how that changes over time across regular season and playoffs. This clarifies whether his defensive identity is anecdotal or persistent.  
+
+2. Evaluate his rebounding profile in context.
+- Place his rebounding alongside similarly sized peers using REB/36 to determine whether his weakness on the glass is stylistic, situational, or structural.  
+
+3. Translate player traits into roster rules.
+- Use lineup evidence—particularly JJJ with and without Zach Edey—to clarify what Memphis would need at center and on the perimeter if JJJ is the franchise’s long-term defensive anchor.
+
+
+# Method & Data  
+
+## Player Game Logs  
+- Sourced from the NBA API via `hoopR`.  
+- Includes all regular-season games across JJJ’s career and playoffs where relevant to stocks analysis.  
+- Key derived metrics:  
+  - **Stocks = STL + BLK**  
+  - Game-level indicator for **Stocks > Rebounds**  
+  - Rebounding “buckets” (≤3, ≥5, ≥7 rebounds) to capture volatility rather than averages.  
+
+## Peer Context (REB/36)  
+- Seasonal peer datasets of players **6'8"+** meeting minimum games/minutes thresholds.  
+- Standardized REB/36 columns across seasons.  
+- JJJ is highlighted against the full distribution each year to show where he consistently falls relative to his size cohort.  
+
+## Lineup Evidence  
+- Manually entered WOWY-style indicators comparing:  
+  - **JJJ + Zach Edey**  
+  - **JJJ on, Edey off**  
+- Focus on net rating, offensive/defensive efficiency, and especially **offensive and defensive rebounding rates (ORB% / DORB allowed)** to connect individual traits to team outcomes in a young, evolving roster.
 
 # Why This Matters
-For most bigs, games with more stocks than rebounds are rare outliers. For Jaren Jackson Jr., they occur with enough frequency to be descriptive rather than anecdotal. This pattern reinforces the idea that his defensive value is built around rim deterrence, shot blocking, and disruption—often at the expense of rebounding positioning.
+## For Player Evaluation  
+JJJ is not a traditional big. His value shows up through rim deterrence, shot contests, and event creation rather than rebounding. Treating him like a conventional center obscures both his elite upside and his real constraints.  
 
-Understanding this trade-off helps frame roster construction and scheme decisions around him. Jackson’s teams must account for his rebounding limitations while maximizing the defensive upside created by his event generation.
+## For Team Construction  
+The data suggests a clear trade-off that matters if Memphis centers its future around him:  
+- JJJ is most valuable when he can roam as a helper and disrupter.  
+- That role requires a **true rebound anchor at the 5** to finish possessions he creates.  
+- Early evidence with Zach Edey shows how dramatically team outcomes can shift when that coverage exists.  
+
+## For a Post–Morant Grizzlies Build  
+If Memphis moves toward a JJJ-led future with younger players like Edey, Jaylen Wells, Cedric Coward, and Cam Spencer, this analysis clarifies what must be true for that plan to work:  
+- **Rebounding coverage at center is non-negotiable.**  
+- **Perimeter lineups must bring POA defense and shooting gravity.**  
+- **Creation must come from a different archetype**
 
 # Authors
 Caleb Ramsey - Statistics & Sports Media and Analytics (Virginia Tech)
