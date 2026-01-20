@@ -31,9 +31,9 @@ All data reflects the 2025–26 regular season.
 
 * At the rim, he ranks second among players defending at least five shots per game, holding opponents to 51.2% versus an expected 63.3%.
 
-* His defensive on/off swing (~–15.3) is comparable to the type of impact usually associated with offensive superstars, just on defense.
+* His defensive on/off swing (~-15.3) is comparable to the type of impact usually associated with offensive superstars, just on defense.
 
-* Chet Holmgren is excellent, but his defensive on/off (~–0.3) shows a very different team dependency profile than Gobert’s.
+* Chet Holmgren is excellent, but his defensive on/off (~-0.3) shows a very different team dependency profile than Gobert’s.
 
 * Wembanyama’s candidacy is complicated by his likely failure to meet the games threshold.
 
