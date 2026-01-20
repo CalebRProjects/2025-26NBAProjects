@@ -38,4 +38,4 @@ All data reflects the 2025–26 regular season.
 * Wembanyama’s candidacy is complicated by his likely failure to meet the games threshold.
 
 # Author
-Caleb Ramsey — Statistics & Sports Media & Analytics (Virginia Tech)
+Caleb Ramsey - Statistics & Sports Media & Analytics (Virginia Tech)
