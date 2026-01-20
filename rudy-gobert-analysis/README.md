@@ -21,7 +21,7 @@ The analysis integrates multiple NBA data endpoints:
   * Shot volume defended and expected FG models
 * Databallr for team on/off ratings (minutes-based)
 
-All data reflects the 2025–26 regular season.
+All data reflects the 2025-26 regular season.
 
 # Key Takeaways
 
