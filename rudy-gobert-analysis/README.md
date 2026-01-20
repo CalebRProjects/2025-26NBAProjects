@@ -1,6 +1,6 @@
 # Overview
 
-This report evaluates Rudy Gobert’s defensive impact during the 2025–26 NBA season and assesses the strength of his Defensive Player of the Year case. While Gobert’s game has long been familiar, the season provides a clear test of how much his presence actually shapes his team. Minnesota’s defense looks fundamentally different with him on the floor versus off it, and this report analyzes that.
+This report evaluates Rudy Gobert’s defensive impact during the 2025-26 NBA season and assesses the strength of his Defensive Player of the Year case. While Gobert’s game has long been familiar, the season provides a clear test of how much his presence actually shapes his team. Minnesota’s defense looks fundamentally different with him on the floor versus off it, and this report analyzes that.
 
 The report examines Gobert’s rim protection and team on/off impact to determine whether his value is still elite by modern defensive standards or simply reputational. Rather than relying on blocks or reputation alone, the focus is on volume defended, efficiency allowed, and team context.
 
