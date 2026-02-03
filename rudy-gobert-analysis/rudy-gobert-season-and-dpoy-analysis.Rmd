@@ -16,72 +16,94 @@ header-includes:
 ---
 
 ```{r setup, include = FALSE}
+# Libraries
 library(dplyr)
 library(tidyr)
 library(ggplot2)
 library(scales)
 library(knitr)
+
 library(janitor)
 library(readxl)
+
 library(stringr)
 library(forcats)
 
-# Timberwolves palette (simple)
-
+# Timberwolves palette
 MIN_NAVY  <- "#0C2340"
 MIN_LAKE  <- "#236192"
 MIN_GREEN <- "#78BE20"
 
-theme_caleb <- function() {
-theme_minimal() +
-theme(
-plot.background = element_rect(fill = "#f6f4ef", color = NA),
-panel.background = element_rect(fill = "#f6f4ef", color = NA),
-panel.grid.major = element_line(color = "#dedad3", linewidth = 0.35),
-panel.grid.minor = element_blank(),
-plot.title = element_text(size = 18, face = "bold", hjust = 0.5),
-plot.subtitle = element_text(size = 10, hjust = 0.5, margin = margin(b = 8)),
-axis.title = element_text(size = 12, face = "bold"),
-axis.text  = element_text(size = 10),
-plot.caption = element_text(size = 8, hjust = 0),
-legend.position = "top"
-)
+theme_caleb <- function()
+{
+  theme_minimal() +
+    theme(
+      plot.background  = element_rect(fill = "#f6f4ef", color = NA),
+      panel.background = element_rect(fill = "#f6f4ef", color = NA),
+      panel.grid.major = element_line(color = "#dedad3", linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+      plot.title       = element_text(size = 18, face = "bold", hjust = 0.5),
+      plot.subtitle    = element_text(size = 10, hjust = 0.5, margin = margin(b = 8)),
+      axis.title       = element_text(size = 12, face = "bold"),
+      axis.text        = element_text(size = 10),
+      plot.caption     = element_text(size = 8, hjust = 0),
+      legend.position  = "top"
+    )
 }
 
+# Rmd chunk defaults
 knitr::opts_chunk$set(
-echo = FALSE, message = FALSE, warning = FALSE,
-fig.pos = "H", fig.align = "center",
-fig.width = 7.2, fig.height = 4.6,
-dpi = 300, out.width = "100%"
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  fig.width = 7.2,
+  fig.height = 4.6,
+  dpi = 300,
+  out.width = "100%"
 )
 
-to_num <- function(x) {
-x <- as.character(x)
-x <- str_replace_all(x, ",", "")
-x <- str_replace_all(x, "%", "")
-suppressWarnings(as.numeric(str_replace_all(x, "[^0-9\\.-]", "")))
+# Parsing helpers
+
+# Parse numeric values out of messy strings:
+# - gets rid of commas and percent signs
+# - keeps digits, minus, and decimal
+to_num <- function(x)
+{
+  x <- as.character(x)
+  x <- stringr::str_replace_all(x, ",", "")
+  x <- stringr::str_replace_all(x, "%", "")
+  suppressWarnings(as.numeric(stringr::str_replace_all(x, "[^0-9\\.-]", "")))
 }
 
+# Convert either 0-1 or 0–100 rates into 0–1
 as_rate01 <- function(x)
 {
-x <- suppressWarnings(as.numeric(x))
-ifelse(!is.na(x) & x > 1, x / 100, x)
+  z <- suppressWarnings(as.numeric(x))
+  ifelse(!is.na(z) & z > 1, z / 100, z)
 }
 
-kbl_pdf <- function(df) {
+# LaTex Table Helpers
+
+# kable wrapper for PDF: replaces underscores in column names for nicer output
+kbl_pdf <- function(df)
+{
   df2 <- df
   names(df2) <- gsub("_", " ", names(df2))
 
   knitr::kable(
     df2,
-    format   = "latex",
-    booktabs = TRUE,
+    format    = "latex",
+    booktabs  = TRUE,
     longtable = FALSE,
-    escape   = TRUE
+    escape    = TRUE
   )
 }
 
-tbl_float <- function(tabular_tex, caption) {
+# Wrap a kable string into a float with a caption
+tbl_float <- function(tabular_tex, caption)
+{
   knitr::asis_output(
     paste0(
       "\\begin{table}[H]\n\\centering\n",
@@ -91,7 +113,6 @@ tbl_float <- function(tabular_tex, caption) {
     )
   )
 }
-
 ```
 
 # Executive Summary
@@ -102,112 +123,130 @@ Offensively his role hasn’t changed, but he’s finishing at a career-best lev
 
 # Offense
 ```{r off-data}
-# update path if needed
+# Load & tidy Rudy Gobert rim/paint finishing (career by season)
 
+# Inputs
 fin_path <- "C:/Users/caleb/Downloads/RudyGobert_RimAndPaintFinishing_Career.xlsx"
 
-fin_raw <- read_excel(fin_path) %>%
-clean_names()
+# Read & standardize column names
+fin_raw <- readxl::read_excel(fin_path) %>%
+  janitor::clean_names()
 
-# normalize year colnames: "2014.0" -> "2014"
-
-fix_year_cols <- function(nm) {
-nm %>%
-str_replace("^x", "") %>%
-str_replace("\\.0$", "") %>%
-str_replace("_0$", "")
+# Normalize year columns (ex: "x2014.0" -> "2014")
+fix_year_cols <- function(nm)
+{
+  nm %>%
+    stringr::str_replace("^x", "") %>%
+    stringr::str_replace("\\.0$", "") %>%
+    stringr::str_replace("_0$", "")
 }
+
 names(fin_raw) <- fix_year_cols(names(fin_raw))
 
-metric_col <- names(fin_raw)[1]  # first column is the metric label
+# First column holds the metric label ("RA FGA", "Paint FGM", etc.)
+metric_col <- names(fin_raw)[1]
 
+# Pivot to long (tidyr)
 fin_long <- fin_raw %>%
-pivot_longer(
-cols = -all_of(metric_col),
-names_to = "season",
-values_to = "value"
-) %>%
-mutate(
-metric = str_to_lower(as.character(.data[[metric_col]])),
-season = suppressWarnings(as.integer(season)),
-value  = to_num(value)
-)
+  tidyr::pivot_longer(
+    cols      = -dplyr::all_of(metric_col),
+    names_to  = "season",
+    values_to = "value"
+  ) %>%
+  dplyr::mutate(
+    metric = stringr::str_to_lower(as.character(.data[[metric_col]])),
+    season = suppressWarnings(as.integer(season)),
+    value  = to_num(value)
+  )
 
-# IMPORTANT: do NOT match "ra" (it hits "non-ra")
-
+# Parse metric -> zone + measure
+# NOTE: don't use "RA" substring matching (it will hit "Non-RA")
 fin_long2 <- fin_long %>%
-mutate(
-zone = case_when(
-str_detect(metric, "restricted") ~ "Restricted Area",
-str_detect(metric, "paint")      ~ "Paint (Non-RA)",
-TRUE                             ~ NA_character_
-),
-measure = case_when(
-str_detect(metric, "fga$") ~ "FGA",
-str_detect(metric, "fgm$") ~ "FGM",
-str_detect(metric, "fg%|fg_percent|fg$") ~ "FG%",
-TRUE ~ NA_character_
-),
-fg_pct = if_else(measure == "FG%", as_rate01(value), NA_real_)
-) %>%
-filter(!is.na(zone), zone %in% c("Restricted Area", "Paint (Non-RA)")) %>%
-filter(measure %in% c("FGA", "FGM", "FG%"))
+  dplyr::mutate(
+    zone = dplyr::case_when(
+      stringr::str_detect(metric, "restricted") ~ "Restricted Area",
+      stringr::str_detect(metric, "paint")      ~ "Paint (Non-RA)",
+      TRUE                                      ~ NA_character_
+    ),
+    measure = dplyr::case_when(
+      stringr::str_detect(metric, "fga$")                    ~ "FGA",
+      stringr::str_detect(metric, "fgm$")                    ~ "FGM",
+      stringr::str_detect(metric, "fg%|fg_percent|fg$")      ~ "FG%",
+      TRUE                                            ~ NA_character_
+    ),
+    # Keep FG% in 0–1 scale
+    fg_pct = dplyr::if_else(measure == "FG%", as_rate01(value), 
+                            NA_real_)
+  ) %>%
+  dplyr::filter(
+    !is.na(zone),
+    zone %in% c("Restricted Area", "Paint (Non-RA)"),
+    measure %in% c("FGA", "FGM", "FG%")
+  )
 ```
 
 ## Career Finishing Snapshot
 ```{r career-finishing, results='asis'}
-fin_fg <- fin_long2 %>%
-filter(measure == "FG%") %>%
-group_by(season, zone) %>%
-summarise(fg_pct = mean(fg_pct, na.rm = TRUE), .groups = "drop") %>%
-arrange(season)
+# Career finishing table: RA vs Non-RA Paint (FGA / FGM / FG%)
+# Assumes `fin_long2` already exists from the prior chunk
 
+# Aggregate to season x zone x measure
 fin_tbl <- fin_long2 %>%
-mutate(out = if_else(measure == "FG%", fg_pct, value)) %>%
-group_by(season, zone, measure) %>%
-summarise(
-out = case_when(
-measure %in% c("FGA", "FGM") ~ sum(out, na.rm = TRUE),
-measure == "FG%"            ~ mean(out, na.rm = TRUE),
-TRUE                        ~ NA_real_
-),
-.groups = "drop"
-) %>%
-pivot_wider(
-names_from  = c(zone, measure),
-values_from = out,
-values_fn   = list(out = ~ mean(.x, na.rm = TRUE))
-) %>%
-mutate(season_num = suppressWarnings(as.integer(season))) %>%
-arrange(season_num) %>%
-select(-season_num) %>%
-rename(Year = season) %>%
-mutate(
-`Restricted Area_FG%` = percent(`Restricted Area_FG%`, accuracy = 1),
-`Paint (Non-RA)_FG%`  = percent(`Paint (Non-RA)_FG%`, accuracy = 1)
-)
-
-fin_tbl_disp <- fin_tbl %>%
-  rename(
-    `RA FG%`        = `Restricted Area_FG%`,
-    `RA FGA`        = `Restricted Area_FGA`,
-    `RA FGM`        = `Restricted Area_FGM`,
-    `Paint FG%`     = `Paint (Non-RA)_FG%`,
-    `Paint FGA`     = `Paint (Non-RA)_FGA`,
-    `Paint FGM`     = `Paint (Non-RA)_FGM`
+  mutate(
+    out = if_else(measure == "FG%", fg_pct, value)
+  ) %>%
+  group_by(season, zone, measure) %>%
+  summarise(
+    out = case_when(
+      measure %in% c("FGA", "FGM") ~ sum(out, na.rm = TRUE),
+      measure == "FG%"            ~ mean(out, na.rm = TRUE),
+      TRUE                        ~ NA_real_
+    ),
+    .groups = "drop"
   )
 
-tbl_float(as.character(kbl_pdf(fin_tbl_disp)),
-          "Career finishing by zone (Restricted Area vs Non-RA Paint).")
+# Wide reshape for presentation (tidyr)
+fin_tbl_wide <- fin_tbl %>%
+  pivot_wider(
+    names_from  = c(zone, measure),
+    values_from = out
+  ) %>%
+  mutate(season_num = suppressWarnings(as.integer(season))) %>%
+  arrange(season_num) %>%
+  select(-season_num) %>%
+  rename(Year = season)
+
+# Format for display (percent rows only)
+fin_tbl_disp <- fin_tbl_wide %>%
+  mutate(
+    `Restricted Area_FG%` = scales::percent(`Restricted Area_FG%`, accuracy = 1),
+    `Paint (Non-RA)_FG%`  = scales::percent(`Paint (Non-RA)_FG%`,  accuracy = 1)
+  ) %>%
+  rename(
+    `RA FG%`    = `Restricted Area_FG%`,
+    `RA FGA`    = `Restricted Area_FGA`,
+    `RA FGM`    = `Restricted Area_FGM`,
+    `Paint FG%` = `Paint (Non-RA)_FG%`,
+    `Paint FGA` = `Paint (Non-RA)_FGA`,
+    `Paint FGM` = `Paint (Non-RA)_FGM`
+  )
+
+# Output
+tbl_float(
+  as.character(kbl_pdf(fin_tbl_disp)),
+  "Career finishing by zone (Restricted Area vs Non-RA Paint)."
+)
 ```
 
 ## Career Finishing Trend
 ```{r career-finishing-trend, fig.cap = "Rudy Gobert's Finishing Across His Career"}
-fin_fg2 <- fin_fg %>%
-  mutate(
-    is_latest = season == max(season, na.rm = TRUE)
-  )
+# Gobert finishing trend (FG%) - highlight latest season
 
+# Flag most-recent season for point emphasis
+fin_fg2 <- fin_fg %>%
+  mutate(is_latest = season == max(season, na.rm = TRUE))
+
+# Plot: one line per zone, latest season point enlarged
 ggplot(fin_fg2, aes(x = season, y = fg_pct, color = zone, group = zone)) +
   geom_line(linewidth = 1.15) +
   geom_point(aes(size = is_latest), show.legend = FALSE) +
@@ -218,8 +257,12 @@ ggplot(fin_fg2, aes(x = season, y = fg_pct, color = zone, group = zone)) +
       "Paint (Non-RA)"  = MIN_NAVY
     )
   ) +
-  scale_x_continuous(breaks = seq(min(fin_fg2$season), max(fin_fg2$season), by = 2)) +
-  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  scale_x_continuous(
+    breaks = seq(min(fin_fg2$season, na.rm = TRUE),
+                 max(fin_fg2$season, na.rm = TRUE),
+                 by = 2)
+  ) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
   facet_wrap(~ zone, scales = "free_y") +
   labs(
     title = "Gobert Finishing Efficiency by Zone",
@@ -242,124 +285,165 @@ He is averaging 3.9 offensive rebounds per game, accounting for 34.5% of Minneso
 # Defense
 ## Team Impact
 ```{r on-off-data}
-onoff <- tribble(
-~split, ~min, ~off_rtg, ~def_rtg, ~net_rtg,
-"Gobert ON",  1231, 116.8, 108.1,  8.7,
-"Gobert OFF",  637, 122.6, 123.4, -0.8
-) %>%
-mutate(
-`OffRtg` = sprintf("%.1f", off_rtg),
-`DefRtg` = sprintf("%.1f", def_rtg),
-`Net`    = sprintf("%+.1f", net_rtg)
-) %>%
-select(Split = split, MIN = min, OffRtg = `OffRtg`, DefRtg = `DefRtg`, Net = `Net`)
+# On/Off table - Minnesota with Gobert (ratings per 100)
 
+# Build the on/off dataset (numeric)
+onoff_raw <- tibble::tribble(
+  ~split,       ~min,  ~off_rtg, ~def_rtg, ~net_rtg,
+  "Gobert ON",  1231,   116.8,    108.1,     8.7,
+  "Gobert OFF",  637,   122.6,    123.4,    -0.8
+)
 
-tbl_float(as.character(kbl_pdf(onoff)), "Minnesota on/off with Gobert (ratings per 100 possessions).")
+# Format for display (strings exactly as shown)
+onoff_tbl <- onoff_raw %>%
+  mutate(
+    OffRtg = sprintf("%.1f", off_rtg),
+    DefRtg = sprintf("%.1f", def_rtg),
+    Net    = sprintf("%+.1f", net_rtg)
+  ) %>%
+  select(
+    Split = split,
+    MIN   = min,
+    OffRtg,
+    DefRtg,
+    Net
+  )
+
+# Render as a LaTeX float
+tbl_float(
+  as.character(kbl_pdf(onoff_tbl)),
+  "Minnesota on/off with Gobert (ratings per 100 possessions)."
+)
 ```
 
 ## DFG% Impact
 ```{r dfg-impact, results='asis'}
-# ---------- 1) Total DFG% diff leaderboard (min 25 GP) ----------
+# Defensive FG% Impact Leaderboards
 
-dfg_total <- tribble(
-~player, ~team, ~age, ~pos, ~gp, ~g, ~freq_pct, ~dfgm, ~dfga, ~dfg_pct, ~fg_pct, ~diff_pp,
-"Victor Wembanyama","SAS",22,"F-C",28,28,100,174,440,39.5,49.5,-10.0,
-"Duop Reath","POR",29,"C",26,26,100,48,125,38.4,47.3,-8.9,
-"Ariel Hukporti","NYK",23,"C",25,25,100,53,133,39.8,48.5,-8.6,
-"Jonathan Isaac","ORL",28,"F",29,29,100,44,113,38.9,47.2,-8.2,
-"Ajay Mitchell","OKC",23,"G",41,41,100,125,335,37.3,45.3,-8.0,
-"Chet Holmgren","OKC",23,"C-F",37,37,100,216,530,40.8,47.6,-6.9,
-"Steven Adams","HOU",32,"C",31,31,100,158,369,42.8,49.4,-6.6,
-"Paul Reed","DET",26,"F",29,29,100,76,181,42.0,48.4,-6.4,
-"Brook Lopez","LAC",37,"C",34,34,100,131,306,42.8,49.1,-6.3,
-"Jaren Jackson Jr.","MEM",26,"F-C",38,38,100,241,578,41.7,47.9,-6.2,
-"Rudy Gobert","MIN",33,"C",41,41,100,307,708,43.4,49.5,-6.1,
-"Jericho Sims","MIL",27,"C",27,27,100,59,145,40.7,46.7,-6.0,
-"Tyrese Proctor","CLE",21,"G",26,26,100,41,103,39.8,45.6,-5.8,
-"Julian Phillips","CHI",22,"F",25,25,100,39,99,39.4,45.2,-5.8,
-"Evan Mobley","CLE",24,"C",37,37,100,276,639,43.2,48.7,-5.5
+# Helpers
+
+as_rate01 <- function(x)
+{
+  x <- suppressWarnings(as.numeric(x))
+  ifelse(!is.na(x) & x > 1, x / 100, x)
+}
+
+make_diff_leaderboard <- function(df, player_target = "Rudy Gobert")
+{
+  # Assumes df already has the columns used below.
+  df_ranked <- df %>%
+    arrange(diff_pp) %>%                # more negative = better
+    mutate(rank = row_number())
+
+  target_rank <- df_ranked %>%
+    filter(player == player_target) %>%
+    pull(rank)
+
+  list(df_ranked = df_ranked, target_rank = target_rank)
+}
+
+render_total_table <- function(df_ranked, caption_text)
+{
+  out_tbl <- df_ranked %>%
+    transmute(
+      Rank        = rank,
+      Player      = player,
+      Team        = team,
+      GP          = gp,
+      `DFGM/DFGA` = paste0(dfgm, "/", dfga),
+      `Opp FG%`   = percent(dfg_pct, accuracy = 0.1),
+      `Expected FG%` = percent(fg_pct, accuracy = 0.1),
+      `Diff (pp)` = sprintf("%+.1f", diff_pp)
+    )
+
+  tbl_float(as.character(kbl_pdf(out_tbl)), caption_text)
+}
+
+render_rim_table <- function(df_ranked, caption_text)
+{
+  out_tbl <- df_ranked %>%
+    transmute(
+      Rank        = rank,
+      Player      = player,
+      Team        = team,
+      GP          = gp,
+      `DFGM/DFGA` = paste0(dfgm, "/", dfga),
+      `Rim Opp FG%` = percent(dfg_pct, accuracy = 0.1),
+      `Rim Expected FG%` = percent(fg_pct, accuracy = 0.1),
+      `Diff (pp)` = sprintf("%+.1f", diff_pp)
+    )
+
+  tbl_float(as.character(kbl_pdf(out_tbl)), caption_text)
+}
+
+# Total DFG% diff leaderboard (min 25 GP)
+
+dfg_total <- tibble::tribble(
+  ~player, ~team, ~age, ~pos, ~gp, ~g, ~freq_pct, ~dfgm, ~dfga, ~dfg_pct, ~fg_pct, ~diff_pp,
+  "Victor Wembanyama","SAS",22,"F-C",28,28,100,174,440,39.5,49.5,-10.0,
+  "Duop Reath","POR",29,"C",26,26,100,48,125,38.4,47.3,-8.9,
+  "Ariel Hukporti","NYK",23,"C",25,25,100,53,133,39.8,48.5,-8.6,
+  "Jonathan Isaac","ORL",28,"F",29,29,100,44,113,38.9,47.2,-8.2,
+  "Ajay Mitchell","OKC",23,"G",41,41,100,125,335,37.3,45.3,-8.0,
+  "Chet Holmgren","OKC",23,"C-F",37,37,100,216,530,40.8,47.6,-6.9,
+  "Steven Adams","HOU",32,"C",31,31,100,158,369,42.8,49.4,-6.6,
+  "Paul Reed","DET",26,"F",29,29,100,76,181,42.0,48.4,-6.4,
+  "Brook Lopez","LAC",37,"C",34,34,100,131,306,42.8,49.1,-6.3,
+  "Jaren Jackson Jr.","MEM",26,"F-C",38,38,100,241,578,41.7,47.9,-6.2,
+  "Rudy Gobert","MIN",33,"C",41,41,100,307,708,43.4,49.5,-6.1,
+  "Jericho Sims","MIL",27,"C",27,27,100,59,145,40.7,46.7,-6.0,
+  "Tyrese Proctor","CLE",21,"G",26,26,100,41,103,39.8,45.6,-5.8,
+  "Julian Phillips","CHI",22,"F",25,25,100,39,99,39.4,45.2,-5.8,
+  "Evan Mobley","CLE",24,"C",37,37,100,276,639,43.2,48.7,-5.5
 ) %>%
-mutate(
-dfg_pct = as_rate01(dfg_pct),
-fg_pct  = as_rate01(fg_pct)
-) %>%
-arrange(diff_pp)
+  mutate(
+    dfg_pct = as_rate01(dfg_pct),
+    fg_pct  = as_rate01(fg_pct)
+  )
 
-gobert_total_rank <- dfg_total %>%
-mutate(rank = row_number()) %>%
-filter(player == "Rudy Gobert") %>%
-pull(rank)
-
-dfg_total_tbl <- dfg_total %>%
-transmute(
-Rank = row_number(),
-Player = player,
-Team = team,
-GP = gp,
-`DFGM/DFGA` = paste0(dfgm, "/", dfga),
-`Opp FG%` = percent(dfg_pct, accuracy = 0.1),
-`Expected FG%` = percent(fg_pct, accuracy = 0.1),
-`Diff (pp)` = sprintf("%+.1f", diff_pp)
-)
+total_res <- make_diff_leaderboard(dfg_total, player_target = "Rudy Gobert")
 
 cap_total <- paste0(
   "Total defensive FG% impact leaderboard (min 25 GP). Gobert ranks #",
-  gobert_total_rank, " of 15 (more negative = better)."
+  total_res$target_rank, " of 15 (more negative = better)."
 )
 
-tbl_float(as.character(kbl_pdf(dfg_total_tbl)), cap_total)
+render_total_table(total_res$df_ranked, cap_total)
 
-# ---------- 2) Rim-only DFG% diff leaderboard (min 25 GP, >=100 defended) ----------
+# Rim-only DFG% diff leaderboard (min 25 GP, >= 100 defended)
 
-dfg_rim <- tribble(
-~player, ~team, ~age, ~pos, ~gp, ~g, ~freq_pct, ~dfgm, ~dfga, ~dfg_pct, ~fg_pct, ~diff_pp,
-"Isaiah Stewart","DET",24,"F-C",36,36,36.7,72,158,45.6,62.7,-17.2,
-"Chet Holmgren","OKC",23,"C-F",37,37,44.2,113,234,48.3,63.3,-15.0,
-"Kevin Durant","HOU",37,"F",37,34,35.1,76,154,49.4,63.7,-14.3,
-"Trayce Jackson-Davis","GSW",25,"F",29,24,47.6,50,101,49.5,62.7,-13.2,
-"Dominick Barlow","PHI",22,"F",30,30,38.3,70,139,50.4,63.1,-12.8,
-"Adem Bona","PHI",22,"F",31,29,41.2,58,112,51.8,64.6,-12.8,
-"Brook Lopez","LAC",37,"C",34,32,42.5,64,130,49.2,61.9,-12.7,
-"Brandon Miller","CHA",23,"F",25,24,43.6,73,142,51.4,63.7,-12.3,
-"Jaden McDaniels","MIN",25,"F",41,40,38.1,117,228,51.3,63.5,-12.2,
-"Rudy Gobert","MIN",33,"C",41,41,36.4,132,258,51.2,63.3,-12.1,
-"Neemias Queta","BOS",26,"C",38,38,42.6,103,197,52.3,63.6,-11.3,
-"Nic Claxton","BKN",26,"C",37,37,48.2,129,245,52.7,63.6,-10.9,
-"Evan Mobley","CLE",24,"C",37,37,44.9,153,287,53.3,64.0,-10.7,
-"Ivica Zubac","LAC",28,"C",35,35,37.1,109,202,54.0,64.6,-10.6,
-"Quinten Post","GSW",25,"C",43,40,35.3,82,153,53.6,63.5,-9.9
+dfg_rim <- tibble::tribble(
+  ~player, ~team, ~age, ~pos, ~gp, ~g, ~freq_pct, ~dfgm, ~dfga, ~dfg_pct, ~fg_pct, ~diff_pp,
+  "Isaiah Stewart","DET",24,"F-C",36,36,36.7,72,158,45.6,62.7,-17.2,
+  "Chet Holmgren","OKC",23,"C-F",37,37,44.2,113,234,48.3,63.3,-15.0,
+  "Kevin Durant","HOU",37,"F",37,34,35.1,76,154,49.4,63.7,-14.3,
+  "Trayce Jackson-Davis","GSW",25,"F",29,24,47.6,50,101,49.5,62.7,-13.2,
+  "Dominick Barlow","PHI",22,"F",30,30,38.3,70,139,50.4,63.1,-12.8,
+  "Adem Bona","PHI",22,"F",31,29,41.2,58,112,51.8,64.6,-12.8,
+  "Brook Lopez","LAC",37,"C",34,32,42.5,64,130,49.2,61.9,-12.7,
+  "Brandon Miller","CHA",23,"F",25,24,43.6,73,142,51.4,63.7,-12.3,
+  "Jaden McDaniels","MIN",25,"F",41,40,38.1,117,228,51.3,63.5,-12.2,
+  "Rudy Gobert","MIN",33,"C",41,41,36.4,132,258,51.2,63.3,-12.1,
+  "Neemias Queta","BOS",26,"C",38,38,42.6,103,197,52.3,63.6,-11.3,
+  "Nic Claxton","BKN",26,"C",37,37,48.2,129,245,52.7,63.6,-10.9,
+  "Evan Mobley","CLE",24,"C",37,37,44.9,153,287,53.3,64.0,-10.7,
+  "Ivica Zubac","LAC",28,"C",35,35,37.1,109,202,54.0,64.6,-10.6,
+  "Quinten Post","GSW",25,"C",43,40,35.3,82,153,53.6,63.5,-9.9
 ) %>%
-mutate(
-freq_pct = as_rate01(freq_pct),
-dfg_pct  = as_rate01(dfg_pct),
-fg_pct   = as_rate01(fg_pct)
-) %>%
-arrange(diff_pp)
+  mutate(
+    freq_pct = as_rate01(freq_pct),
+    dfg_pct  = as_rate01(dfg_pct),
+    fg_pct   = as_rate01(fg_pct)
+  )
 
-gobert_rim_rank <- dfg_rim %>%
-mutate(rank = row_number()) %>%
-filter(player == "Rudy Gobert") %>%
-pull(rank)
-
-dfg_rim_tbl <- dfg_rim %>%
-transmute(
-Rank = row_number(),
-Player = player,
-Team = team,
-GP = gp,
-`DFGM/DFGA` = paste0(dfgm, "/", dfga),
-`Rim Opp FG%` = percent(dfg_pct, accuracy = 0.1),
-`Rim Expected FG%` = percent(fg_pct, accuracy = 0.1),
-`Diff (pp)` = sprintf("%+.1f", diff_pp)
-)
+rim_res <- make_diff_leaderboard(dfg_rim, player_target = "Rudy Gobert")
 
 cap_rim <- paste0(
   "Rim-only defensive FG% impact leaderboard (min 25 GP, ",
-  "\\geq 100 defended). Gobert ranks #", gobert_rim_rank, " of 15."
+  "\\geq 100 defended). Gobert ranks #", rim_res$target_rank, " of 15."
 )
 
-tbl_float(as.character(kbl_pdf(dfg_rim_tbl)), cap_rim)
+render_rim_table(rim_res$df_ranked, cap_rim)
 ```
 
 ```{=latex}
@@ -368,20 +452,39 @@ tbl_float(as.character(kbl_pdf(dfg_rim_tbl)), cap_rim)
 
 ## Total DFG% Leaderboard
 ```{r tot-dfg-leaderboard, fig.cap="Defensive FG% impact (all shots). Diff = Opp FG% minus Expected FG% in percentage points. Lower is better."}
+# Plot: Total defensive FG% impact (Diff pp)
+
+# Prep: reorder players, flag Rudy, choose labels
+
 plot_total <- dfg_total %>%
   mutate(
-    player = fct_rev(fct_reorder(player, diff_pp, .desc = FALSE)),
+    # order: best (most negative) at top once flipped
+    player  = fct_reorder(player, diff_pp, .desc = FALSE),
+    player  = fct_rev(player),
+
     is_rudy = player == "Rudy Gobert",
-    label_flag = rank(diff_pp) <= 3 | is_rudy   # top 5 + Rudy
+
+    # NOTE: this is top 3 + Rudy
+    label_flag = rank(diff_pp, ties.method = "first") <= 3 | is_rudy
   )
 
+# Data frame used only for text annotations
+plot_total_labels <- plot_total %>%
+  filter(label_flag) %>%
+  mutate(
+    label = sprintf("%+.1f", diff_pp),
+
+    # per-row hjust (negative bars: right edge; positive: left edge)
+    hjust = if_else(diff_pp < 0, 1.05, -0.05)
+  )
+
+# Plot
 ggplot(plot_total, aes(x = player, y = diff_pp)) +
   geom_col(aes(fill = is_rudy), width = 0.68, show.legend = FALSE) +
   geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.4) +
   geom_text(
-    data = subset(plot_total, label_flag),
-    aes(label = sprintf("%+.1f", diff_pp)),
-    hjust = ifelse(plot_total$diff_pp[plot_total$label_flag] < 0, 1.05, -0.05),
+    data = plot_total_labels,
+    aes(label = label, hjust = hjust),
     size = 2.5
   ) +
   coord_flip() +
@@ -389,12 +492,12 @@ ggplot(plot_total, aes(x = player, y = diff_pp)) +
   scale_y_continuous(labels = function(x) sprintf("%+.1f", x)) +
   labs(
     title = "Defensive FG% Impact (All Shots)",
-    subtitle = "Lower = better rim suppression",
+    subtitle = "Lower = better FG% suppression vs expected",
     x = NULL,
     y = "Diff (Percentage Points)",
     caption = "Source: NBA.com | Viz: @Rambzee_"
   ) +
-  theme_caleb() + 
+  theme_caleb() +
   theme(
     plot.title = element_text(size = 16, face = "bold", hjust = 0.5)
   )
@@ -404,20 +507,33 @@ On the all-shots leaderboard Gobert is still an elite defender by raw differenti
 
 ## Rim-only DFG% Diff Leaderboard
 ```{r rim-dfg-leaderboard}
+# Plot: Rim-only defensive FG% impact (Diff pp)
+
+# Prep: reorder players, flag Rudy, choose labels
 plot_rim <- dfg_rim %>%
   mutate(
-    player = fct_rev(fct_reorder(player, diff_pp, .desc = FALSE)),
+    player  = fct_reorder(player, diff_pp, .desc = FALSE),
+    player  = fct_rev(player),
     is_rudy = player == "Rudy Gobert",
-    label_flag = rank(diff_pp) <= 3 | is_rudy   # top 5 + Rudy
+
+    # NOTE: this is top 3 + Rudy
+    label_flag = rank(diff_pp, ties.method = "first") <= 3 | is_rudy
   )
 
+plot_rim_labels <- plot_rim %>%
+  filter(label_flag) %>%
+  mutate(
+    label = sprintf("%+.1f", diff_pp),
+    hjust = if_else(diff_pp < 0, 1.05, -0.05)
+  )
+
+# Plot
 ggplot(plot_rim, aes(x = player, y = diff_pp)) +
   geom_col(aes(fill = is_rudy), width = 0.68, show.legend = FALSE) +
   geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.4) +
   geom_text(
-    data = subset(plot_rim, label_flag),
-    aes(label = sprintf("%+.1f", diff_pp)),
-    hjust = ifelse(plot_rim$diff_pp[plot_rim$label_flag] < 0, 1.05, -0.05),
+    data = plot_rim_labels,
+    aes(label = label, hjust = hjust),
     size = 2.5
   ) +
   coord_flip() +
@@ -430,7 +546,7 @@ ggplot(plot_rim, aes(x = player, y = diff_pp)) +
     y = "Diff (Percentage Points)",
     caption = "Source: NBA.com | Viz: @Rambzee_"
   ) +
-  theme_caleb() + 
+  theme_caleb() +
   theme(
     plot.title = element_text(size = 16, face = "bold", hjust = 0.5)
   )
@@ -440,6 +556,9 @@ At the rim, Gobert ranks 10th among high-volume protectors, holding shooters to 
 
 ## Opp FG% rank at rim
 ```{r opp-fg-rank, fig.cap="Rim defense: opponent FG% at the rim (<6 ft). Min 25 GP and 5+ DFGA/G."}
+# Plot: Rim defense (Opponent FG% at rim, <6 ft sample)
+
+# Data
 rim6_raw <- tribble(
 ~player, ~team, ~age, ~pos, ~gp, ~g, ~freq_pct, ~dfgm_pg, ~dfga_pg, ~dfg_pct, ~exp_fg_pct, ~diff_pp,
 "Chet Holmgren",   "OKC", 23, "C-F", 37, 37, 44.2, 3.0, 6.3, 48.3, 63.4, -15.1,
@@ -455,30 +574,38 @@ rim6_raw <- tribble(
 "Jaren Jackson Jr.","MEM",26, "F-C", 38, 36, 36.7, 3.0, 5.6, 54.2, 62.9,  -8.6
 )
 
+# Prep: normalize, order, flag Rudy, choose labels
 rim6_plot <- rim6_raw %>%
-mutate(
-dfg = dfg_pct / 100,
-is_rudy = player == "Rudy Gobert",
-# order by Opp FG% ascending, then reverse so lowest is at top after flip
-player = fct_rev(fct_reorder(player, dfg, .desc = FALSE))
-)
-
-rim6_plot <- rim6_plot %>%
   mutate(
-    label_flag = rank(dfg) <= 2 | is_rudy   # top 5 + Rudy
+    # dfg_pct convert to 0–1 for plotting
+    dfg = dfg_pct / 100,
+    is_rudy = player == "Rudy Gobert",
+
+    # order by opponent FG% (lower = better), then reverse so best appears on top after coord_flip()
+    player = fct_rev(fct_reorder(player, dfg, .desc = FALSE)),
+
+    # label top-2 (best) + Rudy
+    label_flag = rank(dfg, ties.method = "first") <= 2 | is_rudy
   )
 
+rim6_labels <- rim6_plot %>%
+  filter(label_flag) %>%
+  mutate(
+    label = scales::percent(dfg, accuracy = 0.1)
+  )
+
+# Plot
 ggplot(rim6_plot, aes(x = player, y = dfg)) +
   geom_col(aes(fill = is_rudy), width = 0.68, show.legend = FALSE) +
   geom_text(
-    data = subset(rim6_plot, label_flag),
-    aes(label = percent(dfg, accuracy = 0.1)),
+    data = rim6_labels,
+    aes(label = label),
     hjust = 1.05,
     size = 2.5
   ) +
   coord_flip() +
   scale_fill_manual(values = c("TRUE" = MIN_LAKE, "FALSE" = "#e3e0da")) +
-  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1)) +
   labs(
     title = "Rim Defense: Opponent FG%",
     subtitle = "Min 25 GP and 5+ DFGA/G.",
@@ -486,7 +613,7 @@ ggplot(rim6_plot, aes(x = player, y = dfg)) +
     y = "Opp FG%",
     caption = "Source: NBA.com | Viz: @Rambzee_"
   ) +
-  theme_caleb() + 
+  theme_caleb() +
   theme(
     plot.title = element_text(size = 16, face = "bold", hjust = 0.5)
   )
