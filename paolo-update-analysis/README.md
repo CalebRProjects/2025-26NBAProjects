@@ -51,4 +51,4 @@ This run is less about a “breakout” and more about alignment. If the shot pr
 
 # Authors
 
-Caleb Ramsey — Statistics & Sports Media and Analytics (Virginia Tech)
+Caleb Ramsey -- Statistics & Sports Media and Analytics (Virginia Tech)
