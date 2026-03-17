@@ -2,7 +2,7 @@
 
 This project examines Jusuf Nurkić’s 2025–26 season as a bounce-back year and evaluates what kind of player he is at this stage of his career.
 
-After a few uneven seasons, Nurkić has reestablished himself as a reliable, functional center in Utah. The question isn’t whether he’s producing—it’s how that production translates to winning and what role best maximizes his value.
+After a few uneven seasons, Nurkić has reestablished himself as a reliable, functional center in Utah. Now the question is how that production translates to winning and what role best maximizes his value.
 
 The analysis focuses on his rebounding, playmaking, scoring profile, and defensive impact to define what he still does well and where his limitations now shape his role.
 
