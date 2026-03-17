@@ -33,19 +33,20 @@ The goal of this project is:
 * 3-man lineup combinations to evaluate fit and impact
 
 # Why This Matters
-**For Player Evaluation**
+
+## For Player Evaluation
 
 Banchero’s efficiency isn’t coming from improved shooting, it’s coming from playing to his strengths. His value shows up through rim pressure, physicality, and playmaking off defensive attention.
 
-**For Offensive Role**
+## For Offensive Role
 
 He is most effective when attacking downhill and operating in structured actions, not when relying on difficult jump shots.
 
-**For Team Construction** 
+## For Team Construction
 
 Orlando’s best lineups around him combine spacing and defensive stability. His production scales best when those conditions are met.
 
-**For Interpreting the Stretch**
+## For Interpreting the Stretch
 
 This run is less about a “breakout” and more about alignment. If the shot profile holds, the efficiency is real. If not, it likely regresses.
 
