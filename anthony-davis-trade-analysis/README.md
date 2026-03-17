@@ -38,7 +38,7 @@ The goal of this project is:
 
 Davis is still elite in the areas that matter most (finishing, rim protection, and defensive disruption), but is no longer a primary offensive engine.
 
-For Offensive Role
+## For Offensive Role
 
 His value comes as a play-finisher. He thrives as a roll man, cutter, and interior presence, not as a perimeter creator (see playtype efficiency on page 2).
 
