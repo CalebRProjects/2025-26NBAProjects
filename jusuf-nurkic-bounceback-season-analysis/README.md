@@ -36,23 +36,23 @@ The goal of this project is:
 
 # Why This Matters
 
-**For Player Evaluation**
+## For Player Evaluation
 
 Nurkić’s value is no longer tied to scoring or anchoring a defense. It comes from rebounding, passing, and overall feel as a connective piece.
 
-**For Offensive Role**
+## For Offensive Role
 
-He is most effective as a low-usage hub—setting screens, facilitating from the short roll, and finishing plays rather than creating them.
+He is most effective as a low-usage hub; setting screens, facilitating from the short roll, and finishing plays rather than creating them.
 
-**For Skill Profile**
+## For Skill Profile
 
 His rebounding remains elite, and his playmaking is relatively rare for a center (see rebounding + assist context on page 2).
 
-**For Defensive Impact**
+## For Defensive Impact
 
 He is no longer a defensive anchor, but still serviceable. His impact comes through positioning and activity rather than mobility or rim dominance.
 
-**For Team Construction**
+## For Team Construction
 
 Nurkić profiles best as a stabilizing center—someone who can organize lineups, support creators, and provide rebounding and structure without needing touches.
 
