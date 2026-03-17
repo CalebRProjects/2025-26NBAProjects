@@ -1,0 +1,382 @@
+---
+title: "Scottie Barnes: Two-Way Engine + DPOY Case (2025–26)"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: false
+params:
+  as_of_date: "2026-02-20"
+  season: "2025-26"
+  team_abbr: "TOR"
+  min_minutes: 500
+  viz_credit: "@Rambzee_"
+  data_credit: "NBA.com"
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  dpi = 300,
+  out.width = "100%",
+  fig.width = 7.2,
+  fig.height = 4.6
+)
+
+options(knitr.kable.NA = "")
+
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(readr)
+library(readxl)
+library(janitor)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(lubridate)
+
+library(showtext)
+library(sysfonts)
+
+font_add_google("Inter", "inter")
+showtext_auto()
+
+# -------------------------
+# Theme
+# -------------------------
+BG        <- "#f6f4ef"
+TEXT_DARK <- "#141414"
+GRID      <- "#dedad3"
+
+TOR_RED   <- "#CE1141"
+TOR_BLACK <- "#1D1D1B"
+TOR_GRAY  <- "#A8A8A8"
+
+theme_caleb_rmd <- function() {
+  theme_minimal(base_family = "inter") +
+    theme(
+      plot.background  = element_rect(fill = BG, color = NA),
+      panel.background = element_rect(fill = BG, color = NA),
+      panel.grid.major = element_line(color = GRID, linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+      plot.title       = element_text(size = 18, face = "bold", hjust = 0.5, color = TEXT_DARK),
+      plot.subtitle    = element_text(size = 10, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 8)),
+      axis.title       = element_text(size = 12, face = "bold", color = TEXT_DARK),
+      axis.text        = element_text(size = 10, color = "#333333"),
+      legend.position  = "top",
+      plot.caption.position = "plot",
+      plot.caption     = element_text(size = 8, color = "#6e6e6e", hjust = 1, margin = margin(t = 8)),
+      plot.margin      = margin(10, 12, 14, 12)
+    )
+}
+
+# -------------------------
+# Table helper
+# -------------------------
+kbl_pdf <- function(df, caption = NULL, digits = NULL, align = NULL, font_size = 10) {
+  df2 <- df
+  names(df2) <- gsub("_", " ", names(df2), fixed = TRUE)
+
+  k_args <- list(
+    x = df2,
+    format = "latex",
+    booktabs = TRUE,
+    longtable = FALSE,
+    caption = caption,
+    escape = TRUE
+  )
+  if (!is.null(align)) k_args$align <- align
+  if (!is.null(digits) && length(digits) >= 1) k_args$digits <- digits
+
+  do.call(knitr::kable, k_args) %>%
+    kableExtra::kable_styling(
+      latex_options = c("hold_position", "scale_down"),
+      font_size = font_size
+    )
+}
+
+# -------------------------
+# Caption (bottom-right)
+# -------------------------
+cap_line <- function(data = params$data_credit, viz = params$viz_credit) {
+  paste0("Data: ", data, " | Viz: ", viz)
+}
+
+# -------------------------
+# File paths (uploaded to this chat)
+# -------------------------
+path_team_drtg     <- "NBA Teams DRTG Leaderboard.xlsx"
+path_onball_def    <- "Scottie Barnes On-Ball Defense.xlsx"
+path_playtypes     <- "Scottie Barnes Playtypes (2025-26).xlsx"
+path_deflections   <- "NBA Deflections Per Game Leaders (Feb 20, 2026).xlsx"
+path_stocks        <- "NBA Stocks Per Game Rankings.xlsx"
+path_counting      <- "Scottie Barnes Counting Stats (2021-22 -_ 2025-26).xlsx"
+path_shot_zones    <- "Scottie Barnes Shot Zones - Last 3 Seasons.xlsx"
+```
+
+# Executive Summary
+
+Scottie Barnes has long stood out for his rare blend of size, vision, and defensive versatility. While his scoring remains solid rather than dominant, his all-around skillset has always pointed toward elite two-way impact. This season, with Brandon Ingram being brought in to absorb offensive responsibility, Barnes has been able to shift more of his energy toward defense. The result has been a defining stretch where his activity, versatility, and disruption have powered the Raptor's rise into a top-five defensive unit.
+
+# Offense
+
+## Passing is the engine
+
+```{r load-counting}
+counting <- readxl::read_xlsx(path_counting) %>% janitor::clean_names()
+
+count_keep <- counting %>%
+  dplyr::select(
+    season, g,
+    fg, fga, fg_percent,
+    x3p, x3pa, x3p_percent,
+    x2p, x2pa, x2p_percent,
+    e_fg_percent,
+    ft, fta, ft_percent,
+    orb, drb, trb,
+    ast, stl, blk, tov, pf, pts
+  )
+
+# escape LaTeX for plain-text cells (NOT for cell_spec cells)
+latex_escape <- function(x) {
+  x <- as.character(x)
+  x <- gsub("\\\\", "\\\\textbackslash{}", x)  # backslash first
+  x <- gsub("([{}_#$%&])", "\\\\\\1", x)       # _ { } # $ % &
+  x <- gsub("~", "\\\\textasciitilde{}", x)
+  x <- gsub("\\^", "\\\\textasciicircum{}", x)
+  x
+}
+
+season_hi <- "2025-26"
+num_cols  <- setdiff(names(count_keep), "season")
+
+count_fmt <- count_keep %>%
+  mutate(across(all_of(num_cols), ~ suppressWarnings(as.numeric(.x))))
+
+career_max <- count_fmt %>%
+  summarise(across(all_of(num_cols), ~ max(.x, na.rm = TRUE)))
+
+count_out <- count_fmt %>%
+  mutate(
+    across(all_of(num_cols), ~{
+      x <- .
+      is_target <- (count_fmt$season == season_hi)
+      is_hi <- is_target & !is.na(x) & (x == as.numeric(career_max[[cur_column()]]))
+
+      ifelse(
+        is_hi,
+        kableExtra::cell_spec(
+          format(x, trim = TRUE),
+          bold = TRUE,
+          color = "white",
+          background = TOR_RED
+        ),
+        latex_escape(format(x, trim = TRUE))
+      )
+    }),
+    season = latex_escape(season)
+  )
+
+names(count_out) <- gsub("_", " ", names(count_out), fixed = TRUE)
+
+knitr::kable(
+  count_out,
+  format = "latex",
+  booktabs = TRUE,
+  escape = FALSE,
+  caption = "Counting stats by season - 2025–26 (career highs highlighted)"
+) %>%
+  kableExtra::kable_styling(
+    latex_options = c("hold_position", "scale_down"),
+    font_size = 9
+  )
+```
+
+This season, Barnes has taken meaningful steps forward as an efficient scorer. He is posting career highs in FT%, 2P%, and eFG%, reflecting improved touch and shot selection alongside a primary option in Brandon Ingram. His passing is what separates him offensively. Averaging 5.6 assists per game, Barnes functions as a primary facilitator, using his size and length to see over defenses and access passing windows most players simply cannot.
+
+## Playtypes and where his size creates advantages
+
+```{r load-playtypes}
+pt <- readxl::read_xlsx(path_playtypes) %>% janitor::clean_names()
+
+# keep only what matters for the write-up
+pt_keep <- pt %>%
+  dplyr::select(
+    playtype,
+    possessions,
+    percent_time,
+    ppp,
+    ppp_rating,
+    fga,
+    fg_percent,
+    e_fg_percent,
+    to_percent,
+    x2fga,
+    x2fg_percent,
+    x3fga,
+    x3fga_percent
+  ) %>%
+  mutate(across(where(is.character), ~ gsub("_", " ", .x, fixed = TRUE)))
+
+kbl_pdf(pt_keep, caption = "Barnes most efficient playtypes (2025–26)")
+```
+
+Scoring has never been Barnes’ calling card, but he has shown he can reliably function as a secondary option. He is comfortable operating in pick-and-roll on either side of the action, using his size to see over defenses as a ballhandler and his strength and touch to convert as a roll man. He can create his own shot when needed, and transition remains one of his clearest strengths, where his length and coordination allow him to cover ground and make quick, decisive reads. Even in lower-volume roll man opportunities, he has been highly effective, finishing through contact or leveraging his passing ability to punish help when defenses collapse.
+
+## Scoring context and shot zones
+
+```{r load-shotzones}
+zones <- readxl::read_xlsx(path_shot_zones) %>% janitor::clean_names()
+
+kbl_pdf(zones, caption = "Scottie Barnes shot zones (last 3 seasons)")
+```
+
+```{r shotzones-plot, fig.height=5.4}
+# Expected cols: player, zone, season, fgm, fga, fg_percent
+zones_plot <- zones %>%
+  mutate(
+    season = factor(season, levels = sort(unique(season))),
+    fga = as.numeric(fga),
+    fg = ifelse(as.numeric(fg_percent) > 1, as.numeric(fg_percent)/100, as.numeric(fg_percent)),
+    zone = as.character(zone)
+  ) %>%
+  group_by(zone) %>%
+  mutate(zone_avg = weighted.mean(fg, w = fga, na.rm = TRUE)) %>%
+  ungroup()
+
+ggplot(zones_plot, aes(x = season, y = fg, group = 1)) +
+  geom_hline(aes(yintercept = zone_avg), linetype = "dotted", linewidth = 0.8, color = TOR_GRAY) +
+  geom_line(linewidth = 1.0, color = TOR_BLACK) +
+  geom_point(size = 2.8, color = TOR_RED) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, 1)) +
+  facet_wrap(~ zone, ncol = 2) +
+  labs(
+    title = "FG% by Zone (Last 3 Seasons)",
+    subtitle = "Dotted line = Barnes’ 3-season average in that zone",
+    x = NULL,
+    y = "FG%",
+    caption = cap_line()
+  ) +
+  theme_caleb_rmd() +
+  theme(legend.position = "none")
+```
+
+Though he is not among the league’s elite in finishing or touch shots, Barnes is comfortably above average in both, which makes him a legitimate scoring threat whenever he gets into the paint. As his range extends, however, his efficiency drops off. He has hovered around 40% from midrange and roughly 30% from three over the past three seasons, where his shot remains inconsistent. His jumper may never be a true strength, but it isn't such a weakness that defenses can ignore him entirely or that it entirely drags down Toronto’s offense.
+
+# Defense 
+
+## Event creation: stocks + deflections 
+
+```{r load-event-data}
+stocks <- readxl::read_xlsx(path_stocks) %>% janitor::clean_names()
+defl   <- readxl::read_xlsx(path_deflections) %>% janitor::clean_names()
+```
+
+```{r stocks-table}
+stocks_tbl <- stocks %>% slice_head(n = 25)
+kbl_pdf(stocks_tbl, caption = "Stocks per game leaderboard")
+```
+
+```{r deflections-table}
+defl_tbl <- defl %>% slice_head(n = 25)
+kbl_pdf(defl_tbl, caption = "Deflections per game leaderboard")
+```
+
+Defensive event creation is Barnes’ superpower. His length and anticipation let him blow up possessions in ways few players can, jumping passing lanes, stripping ball handlers, and rotating over as a legitimate weak-side rim protector. 
+
+He ranks second in the league in stocks per game (2.9), trailing only Wembanyama, and is tied for eighth in deflections. That constant activity forces mistakes and creates extra possessions, which has been central to Toronto’s defensive identity this season.
+
+## On-ball defense: matchup workload + results
+
+```{r load-onball}
+path_def_playtypes <- "Scottie Barnes Defensive Playtypes (2025-26).xlsx"
+
+def_pt_raw <- readxl::read_xlsx(path_def_playtypes) %>% janitor::clean_names()
+
+# helper: pick first existing col from a list
+pick1 <- function(df, candidates) {
+  out <- candidates[candidates %in% names(df)]
+  if (length(out) == 0) NA_character_ else out[[1]]
+}
+
+# map likely synergy column names
+c_playtype <- pick1(def_pt_raw, c("playtype","play_type","play_type_name","type"))
+c_poss     <- pick1(def_pt_raw, c("possessions","poss","possesions","possession","total_possessions"))
+c_pct      <- pick1(def_pt_raw, c("percent_time","pct_time","time_percent","freq","frequency","poss_pct"))
+c_ppp      <- pick1(def_pt_raw, c("ppp","points_per_possession"))
+c_rating   <- pick1(def_pt_raw, c("ppp_rating","rating","ppp_tier"))
+c_pts      <- pick1(def_pt_raw, c("points","pts"))
+c_fgm      <- pick1(def_pt_raw, c("fgm","field_goals_made"))
+c_fga      <- pick1(def_pt_raw, c("fga","field_goals_attempted"))
+c_fg       <- pick1(def_pt_raw, c("fg_percent","fg_pct"))
+c_efg      <- pick1(def_pt_raw, c("e_fg_percent","efg_percent","efg_pct"))
+c_to       <- pick1(def_pt_raw, c("to_percent","tov_percent","turnover_percent","to_pct"))
+
+# build a compact table
+def_pt_keep <- def_pt_raw %>%
+  transmute(
+    playtype      = if (!is.na(c_playtype)) as.character(.data[[c_playtype]]) else NA_character_,
+    possessions   = if (!is.na(c_poss)) suppressWarnings(as.numeric(.data[[c_poss]])) else NA_real_,
+    percent_time  = if (!is.na(c_pct)) suppressWarnings(as.numeric(.data[[c_pct]])) else NA_real_,
+    ppp_allowed   = if (!is.na(c_ppp)) suppressWarnings(as.numeric(.data[[c_ppp]])) else NA_real_,
+    rating        = if (!is.na(c_rating)) as.character(.data[[c_rating]]) else NA_character_,
+    fga_allowed   = if (!is.na(c_fga)) suppressWarnings(as.numeric(.data[[c_fga]])) else NA_real_,
+    fg_pct_allowed = if (!is.na(c_fg)) suppressWarnings(as.numeric(.data[[c_fg]])) else NA_real_,
+    efg_pct_allowed = if (!is.na(c_efg)) suppressWarnings(as.numeric(.data[[c_efg]])) else NA_real_,
+    to_pct_forced  = if (!is.na(c_to)) suppressWarnings(as.numeric(.data[[c_to]])) else NA_real_
+  ) %>%
+  mutate(
+    playtype = gsub("_", " ", playtype, fixed = TRUE),
+    percent_time = ifelse(!is.na(percent_time) & percent_time > 1, percent_time/100, percent_time),
+    fg_pct_allowed  = ifelse(!is.na(fg_pct_allowed) & fg_pct_allowed > 1, fg_pct_allowed/100, fg_pct_allowed),
+    efg_pct_allowed = ifelse(!is.na(efg_pct_allowed) & efg_pct_allowed > 1, efg_pct_allowed/100, efg_pct_allowed),
+    to_pct_forced   = ifelse(!is.na(to_pct_forced) & to_pct_forced > 1, to_pct_forced/100, to_pct_forced)
+  ) %>%
+  filter(!is.na(playtype)) %>%
+  arrange(desc(possessions))
+
+kbl_pdf(
+  def_pt_keep,
+  caption = "Barnes defensive playtypes - workload + efficiency allowed",
+  digits = 3,
+  font_size = 9
+)
+```
+
+On-ball, Barnes has been one of the most effective defenders in the league while carrying one of the heaviest workloads. He defends isolation and pick-and-roll ball-handler actions on roughly 45% of his total defensive possessions, regularly taking the toughest assignment and guarding the opposing team’s primary creator. Despite that volume and difficulty, he allows under 0.8 points per possession in both playtypes and forces turnovers on over 17% of those possessions, an elite combination of efficiency and disruption. Overall, opponents are shooting just 38.2% when Barnes is the primary on-ball defender this season, one of the lowest marks among high-volume perimeter stoppers. He grades in the 78th and 83rd percentiles while consistently ending plays himself, stripping ball handlers, blowing up actions early, and turning stops into transition chances where he’s most effective offensively. 
+
+## Rim Protection & Rebounding
+
+Rim protection is not his primary role, but Barnes holds up well as a weakside helper. He allows about 61.6% at the rim, just 1.6% worse than expected, while contesting over six shots per game. Among defenders handling that level of volume, he ranks 28th, a strong mark for someone whose main job is on the perimeter. He also finishes possessions consistently, grabbing 6.3 defensive rebounds per game, 21st in the league, preventing second chances and completing defensive stops.
+
+## Team impact: fueling a top-five defense
+
+```{r load-team-drtg}
+team_drtg <- readxl::read_xlsx(path_team_drtg) %>% janitor::clean_names()
+```
+
+```{r team-drtg-table}
+kbl_pdf(team_drtg %>% slice_head(n = 15), caption = "Team DRTG leaderboard")
+```
+
+All of his activity (the versatility, disruption, and defensive rebounding) translates directly to team impact. Barnes has been the backbone of a top-five Raptors defense, establishing the possession-to-possession consistency that’s fueled their 33–23 record. That defensive reliability gives Toronto a clear foundation and raises their margin for error on a nightly basis. With Wembanyama’s eligibility still uncertain, Barnes’ body of work this season has positioned him as one of the most deserving and credible DPOY candidates in the league.
+
+# Conclusion 
+
+* Barnes’ offensive value starts with his passing and feel. He creates advantages and keeps the offense flowing without needing to force shots.
+
+* His scoring is most effective in advantage situations, where his size lets him finish, draw help, or create easy looks for others.
+
+* Defense is where he separates. His length, activity, and instincts consistently disrupt actions and end possessions.
+
+* Toronto’s top-five defense is anchored by his versatility, on-ball workload, and defensive rebounding.
