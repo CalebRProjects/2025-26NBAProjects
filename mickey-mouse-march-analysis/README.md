@@ -39,19 +39,19 @@ The goal of this project is:
 
 # Why This Matters
 
-**For Player Evaluation**
+## For Player Evaluation
 
 Most March heaters aren’t real breakouts. They’re usually driven by opportunity or short-term shooting stretches rather than sustainable improvement.
 
-**For Interpreting Scoring Surges**
+## For Interpreting Scoring Surges
 
 The reason behind the jump matters more than the jump itself. Role expansion and shot profile changes are far more predictive than raw scoring increases.
 
-**For Projection**
+## For Projection
 
 March production is better treated as a signal to investigate, not a prediction. The data shows most players return close to their previous baseline the following season (see carryover chart on page 5).
 
-**For Identifying Real Growth**
+## For Identifying Real Growth
 
 The small group of players who do sustain improvement tend to show:
 
