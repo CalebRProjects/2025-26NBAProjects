@@ -1,0 +1,824 @@
+---
+title: "Is Paolo Banchero Starting to Figure It Out?"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: false
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  out.width = "95%"
+)
+
+library(dplyr); library(tidyr); library(tibble)
+library(ggplot2); library(scales); library(knitr)
+library(kableExtra); library(stringr); library(hoopR)
+library(lubridate); library(showtext); library(readr)
+library(readxl); library(forcats)
+
+font_add_google("Poppins", "poppins")
+showtext_auto()
+
+BG <- "#f6f4ef"
+TEXT_DARK <- "#141414"
+GRID <- "#dedad3"
+MAGIC_BLUE <- "#0077C0"
+MAGIC_DARK <- "#0b1f33"
+
+# Recent form
+last10_pts <- 26.0
+last10_reb <- 9.2
+last10_ast <- 5.4
+last10_ts  <- 0.633
+last10_fg  <- 0.527
+last10_3p  <- 0.286
+last10_ft  <- 0.804
+
+magic_last10_record <- "8-2"
+magic_last20_record <- "14-6"
+magic_record <- "38-28"
+
+theme_caleb_rmd <- function() {
+  theme_minimal(base_family = "poppins") +
+    theme(
+      plot.background = element_rect(fill = BG, color = NA),
+      panel.background = element_rect(fill = BG, color = NA),
+      panel.grid.major = element_line(color = GRID, linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+      plot.title = element_text(
+        size = 18, face = "bold", hjust = 0.5, color = TEXT_DARK
+      ),
+      plot.subtitle = element_text(
+        size = 10, hjust = 0.5, color = "#2f2f2f",
+        margin = margin(b = 6)
+      ),
+      axis.title = element_text(size = 11, face = "bold", color = TEXT_DARK),
+      axis.text = element_text(size = 10, color = "#333333"),
+      legend.position = "top",
+      legend.title = element_text(size = 9, face = "bold"),
+      legend.text = element_text(size = 9),
+      plot.caption = element_text(
+        size = 8, color = "#6e6e6e", hjust = 0,
+        margin = margin(t = 6)
+      ),
+      plot.margin = margin(10, 12, 14, 12)
+    )
+}
+
+kbl_caleb <- function(df, caption, font_size = 9, scale_down = TRUE, digits = NULL) {
+  if (is.null(digits)) {
+    kb <- kbl(
+      df,
+      format = "latex",
+      booktabs = TRUE,
+      caption = caption
+    )
+  } else {
+    kb <- kbl(
+      df,
+      format = "latex",
+      booktabs = TRUE,
+      caption = caption,
+      digits = digits
+    )
+  }
+
+  latex_options <- c("striped", "HOLD_position")
+
+  if (scale_down) {
+    latex_options <- c(latex_options, "scale_down")
+  }
+
+  kb %>%
+    kable_styling(
+      latex_options = latex_options,
+      font_size = font_size
+    )
+}
+```
+
+# Executive Update
+
+Paolo Banchero’s last 10 games have been his most efficient stretch of the season:
+
+26.0 PTS, 9.2 REB, 5.4 AST on 63.3% TS, with Orlando going 8–2.
+
+But the context around that run still matters.
+
+Franz Wagner has missed significant time this season, meaning the Magic have rarely had extended stretches with Banchero, Wagner, and new addition Desmond Bane all healthy together. The roster is still figuring out how those pieces fit.
+
+At the same time, Banchero is still in the middle of one of the worst jump-shooting seasons of his career. The jumper hasn’t suddenly been fixed.
+
+What has changed is how he’s getting his offense.
+
+More of his scoring is coming from rim pressure and foul drawing, with Banchero getting to the line around eight times per game and converting at a strong rate. The jumper remains inconsistent, but the overall efficiency has stabilized because of how aggressively he’s attacking the paint.
+
+If this stretch means anything, it may be showing what Orlando’s offense can look like when Banchero leans into those strengths.
+
+The question now is whether that shift persists.
+
+```{r recent-form-table, results='asis'}
+recent_form_tbl <- tibble(
+  Span = "Last 10 Games",
+  PTS  = last10_pts,
+  REB  = last10_reb,
+  AST  = last10_ast,
+  `TS%` = percent(last10_ts, accuracy = 0.1),
+  `FG%` = percent(last10_fg, accuracy = 0.1),
+  `3P%` = percent(last10_3p, accuracy = 0.1),
+  `FT%` = percent(last10_ft, accuracy = 0.1),
+  `ORL Record` = magic_last10_record
+)
+
+kbl_caleb(
+  recent_form_tbl,
+  caption = "Recent Paolo Banchero form and team results"
+) %>%
+  column_spec(1, bold = TRUE)
+```
+
+```{r helpers}
+# Core settings ------------------------------------------------------------
+
+season_used <- "2025-26"
+paolo_name <- "Paolo Banchero"
+
+shots_dir <- file.path("data", "processed", "shots")
+dir.create(shots_dir, recursive = TRUE, showWarnings = FALSE)
+
+
+# Pull Paolo's player ID from league stats ---------------------------------
+
+get_player_id <- function(season, player_name) {
+  league_stats <- hoopR::nba_leaguedashplayerstats(
+    season = season,
+    season_type = "Regular Season",
+    measure_type = "Base"
+  )$LeagueDashPlayerStats
+
+  player_id <- league_stats %>%
+    filter(PLAYER_NAME == player_name) %>%
+    slice_tail(n = 1) %>%
+    pull(PLAYER_ID) %>%
+    .[1]
+
+  if (length(player_id) == 0 || is.na(player_id)) {
+    stop("PLAYER_ID not found. Check season string or player name.")
+  }
+
+  player_id
+}
+
+
+# Read shot data from cache if available, otherwise pull from NBA API ------
+
+get_cached_shots <- function(player_id, season, refresh = FALSE) {
+  path <- file.path(shots_dir, paste0("shots_", season, "_", player_id, ".csv"))
+
+  if (file.exists(path) && !refresh) {
+    return(read_csv(path, show_col_types = FALSE))
+  }
+
+  shotchart <- hoopR::nba_shotchartdetail(
+    season = season,
+    season_type = "Regular Season",
+    player_id = player_id,
+    team_id = 0,
+    context_measure_simple = "FGA"
+  )
+
+  shots <- shotchart$Shot_Chart_Detail %>%
+    mutate(
+      game_date = suppressWarnings(mdy(as.character(GAME_DATE))),
+      game_date = if_else(
+        is.na(game_date),
+        suppressWarnings(ymd(as.character(GAME_DATE))),
+        game_date
+      ),
+      GAME_ID = as.character(GAME_ID),
+      x = suppressWarnings(as.numeric(LOC_X)),
+      y = suppressWarnings(as.numeric(LOC_Y)),
+      made = suppressWarnings(as.integer(SHOT_MADE_FLAG)),
+      shot_type = as.character(SHOT_TYPE),
+      shot_zone_basic = as.character(SHOT_ZONE_BASIC),
+      shot_zone_range = as.character(SHOT_ZONE_RANGE),
+      action_type = as.character(ACTION_TYPE)
+    ) %>%
+    filter(!is.na(x), !is.na(y), !is.na(game_date)) %>%
+    select(
+      GAME_ID, game_date, x, y, made,
+      shot_type, shot_zone_basic, shot_zone_range, action_type
+    )
+
+  try(write_csv(shots, path), silent = TRUE)
+  shots
+}
+
+
+# Bucket shots into broad shot profile groups ------------------------------
+
+classify_shot_profile <- function(shots) {
+  shots %>%
+    mutate(
+      x = suppressWarnings(as.numeric(x)),
+      y = suppressWarnings(as.numeric(y)),
+      r = sqrt(x^2 + y^2),
+      is_corner_3 = abs(x) > 220 & y < 92,
+      is_3 = (r >= 237.5 & y >= 92) | is_corner_3,
+      shot_bucket = case_when(
+        is_3 ~ "3PT",
+        r <= 60 ~ "Rim",
+        TRUE ~ "Midrange"
+      )
+    )
+}
+
+
+# Keep only first 45 games and most recent 10 for comparison ---------------
+
+build_sampled_shots <- function(shots) {
+  game_order <- shots %>%
+    distinct(game_date) %>%
+    arrange(game_date) %>%
+    mutate(game_no = row_number())
+
+  sampled_games <- game_order %>%
+    mutate(
+      sample = case_when(
+        game_no <= 45 ~ "Games 1-45",
+        game_no > max(game_no) - 10 ~ "Last 10",
+        TRUE ~ NA_character_
+      )
+    ) %>%
+    filter(!is.na(sample))
+
+  shots %>%
+    left_join(sampled_games, by = "game_date") %>%
+    filter(!is.na(sample))
+}
+
+
+# Summarize shot mix and efficiency by sample ------------------------------
+
+get_shot_profile_table <- function(shots_sampled) {
+  shots_sampled %>%
+    classify_shot_profile() %>%
+    group_by(sample, shot_bucket) %>%
+    summarise(
+      FGA = n(),
+      FGM = sum(made, na.rm = TRUE),
+      FG_PCT = FGM / FGA,
+      .groups = "drop"
+    ) %>%
+    group_by(sample) %>%
+    mutate(Share = FGA / sum(FGA)) %>%
+    ungroup() %>%
+    mutate(
+      sample = factor(sample, levels = c("Games 1-45", "Last 10")),
+      shot_bucket = factor(shot_bucket, levels = c("Rim", "Midrange", "3PT"))
+    ) %>%
+    arrange(sample, shot_bucket)
+}
+
+
+# Pull free throw attempts by game -----------------------------------------
+
+get_game_ft <- function(season, player_id) {
+  game_logs <- hoopR::nba_playergamelogs(
+    player_id = player_id,
+    season = season,
+    season_type = "Regular Season",
+    per_mode = "Totals"
+  )$PlayerGameLogs
+
+  game_logs %>%
+    mutate(
+      GAME_ID = as.character(GAME_ID),
+      FTA = as.numeric(FTA)
+    ) %>%
+    select(GAME_ID, FTA)
+}
+
+
+# Combine sampled shots with game-level FT data to get FTr -----------------
+
+get_ftr_summary <- function(shots_sampled, ft_data) {
+  fga_by_sample <- shots_sampled %>%
+    group_by(sample) %>%
+    summarise(
+      FGA = n(),
+      .groups = "drop"
+    )
+
+  fta_by_sample <- shots_sampled %>%
+    distinct(GAME_ID, sample) %>%
+    left_join(ft_data, by = "GAME_ID") %>%
+    group_by(sample) %>%
+    summarise(
+      FTA = sum(FTA, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  fga_by_sample %>%
+    left_join(fta_by_sample, by = "sample") %>%
+    mutate(FTr = FTA / FGA)
+}
+
+
+# Plot Paolo's shot mix across the two samples -----------------------------
+
+plot_shot_mix <- function(shot_profile_df, ftr_caption) {
+  ggplot(shot_profile_df, aes(x = sample, y = Share, fill = shot_bucket)) +
+    geom_col(width = 0.62) +
+    geom_text(
+      aes(label = percent(Share, accuracy = 0.1)),
+      position = position_stack(vjust = 0.5),
+      size = 3.2,
+      color = "white"
+    ) +
+    scale_y_continuous(labels = percent_format(accuracy = 1)) +
+    scale_fill_manual(
+      values = c(
+        "Rim" = MAGIC_BLUE,
+        "Midrange" = "#7f8c8d",
+        "3PT" = MAGIC_DARK
+      )
+    ) +
+    labs(
+      title = "Paolo Banchero Shot Mix",
+      subtitle = "Games 1-45 vs Last 10",
+      x = NULL,
+      y = "Share of FGA",
+      fill = "Shot Area:   ",
+      caption = paste0(
+        ftr_caption,
+        "\nData: NBA.com | Viz: @Rambzee_"
+      )
+    ) +
+    theme_caleb_rmd() +
+    theme(plot.caption.position = "plot")
+}
+
+
+# League-wide FT rate comparison table -------------------------------------
+
+get_top_ftr_players <- function(season = "2025-26", min_games = 20, min_ppg = 15) {
+  league <- hoopR::nba_leaguedashplayerstats(
+    season = season,
+    season_type = "Regular Season",
+    measure_type = "Base"
+  )$LeagueDashPlayerStats
+
+  league %>%
+    mutate(
+      GP = as.numeric(GP),
+      PTS = as.numeric(PTS),
+      FGA = as.numeric(FGA),
+      FTA = as.numeric(FTA),
+      FT_PCT = as.numeric(FT_PCT),
+      PPG = PTS / GP,
+      FTr = FTA / FGA
+    ) %>%
+    filter(
+      GP >= min_games,
+      PPG >= min_ppg,
+      FGA > 0
+    ) %>%
+    arrange(desc(FTr)) %>%
+    slice_head(n = 10) %>%
+    transmute(
+      Player = PLAYER_NAME,
+      GP = GP,
+      PPG = round(PPG, 1),
+      `FT%` = percent(FT_PCT, accuracy = 0.1),
+      FTr = percent(FTr, accuracy = 0.1)
+    )
+}
+
+
+# Build objects used later in the report -----------------------------------
+
+paolo_id <- get_player_id(season_used, paolo_name)
+
+shots_paolo <- get_cached_shots(
+  player_id = paolo_id,
+  season = season_used,
+  refresh = TRUE
+)
+
+shots_sampled <- build_sampled_shots(shots_paolo)
+shot_profile_raw <- get_shot_profile_table(shots_sampled)
+
+shot_shift_tbl <- shot_profile_raw %>%
+  transmute(
+    Sample = sample,
+    `Shot Area` = shot_bucket,
+    FGA = FGA,
+    Share = percent(Share, accuracy = 0.1),
+    `FG%` = percent(FG_PCT, accuracy = 0.1)
+  )
+
+ft_data <- get_game_ft(season_used, paolo_id)
+ftr_summary <- get_ftr_summary(shots_sampled, ft_data)
+
+ftr_caption <- ftr_summary %>%
+  mutate(FTr_label = percent(FTr, accuracy = 0.1)) %>%
+  summarise(
+    txt = paste0(
+      "Free Throw Rate (FTA/FGA): ",
+      "Games 1-45 ", FTr_label[sample == "Games 1-45"],
+      " | Last 10 ", FTr_label[sample == "Last 10"]
+    )
+  ) %>%
+  pull(txt)
+
+top_ftr_tbl <- get_top_ftr_players(
+  season = season_used,
+  min_games = 20,
+  min_ppg = 15
+)
+```
+
+# Shot Diet and Percentages
+
+The concern early in the season wasn’t talent. It was the kinds of shots Banchero was taking.
+
+For a player with his size and foul-drawing ability, too many possessions were ending in difficult jumpers.
+
+What matters now is whether that shot mix is starting to change.
+
+## Shot Mix 
+
+```{r shot-mix-chart, fig.height=4.8, fig.width=7.5}
+plot_shot_mix(shot_profile_raw, ftr_caption)
+```
+
+```{r shot-shift-table, results='asis'}
+kbl_caleb(
+  shot_shift_tbl,
+  caption = "Paolo Banchero shot profile: Games 1-45 vs Last 10") %>%
+  column_spec(1, bold = T) %>%
+  column_spec(2, bold = T)
+```
+
+The change in Banchero’s shot diet is not dramatic, but it does show a shift in how he is attacking.
+
+* Rim attempts increased from 43.1% → 47.9%
+* Midrange attempts dropped from 33.1% → 26.7%
+* Three-point share stayed roughly stable (23.8% → 25.5%)
+
+Just as important, the aggression is showing up at the line.
+
+Banchero’s free throw rate increased from 48.5% to 55.8% during the recent stretch.
+
+## League Context
+
+That level of foul generation is not ordinary.
+
+Among players averaging at least 15 points per game, Banchero ranks 6th in the NBA in free throw rate, alongside players whose offense is built around rim pressure.
+
+```{r}
+kbl_caleb(
+  top_ftr_tbl,
+  caption = "Top 10 NBA players by Free Throw Rate (FTA/FGA), 2025-26") %>%
+  column_spec(1, bold = T)
+```
+
+This is the version of Banchero’s offense that works.
+
+He is still not beating teams with jump shooting. But when he gets downhill, forces rotations, and lives at the line, the offense looks very different.
+
+Banchero is simply a rare physical talent. At his size and strength, defenders struggle to keep him in front, yet he is still quick enough to attack space and punish help defenders once the defense shifts.
+
+And when those rotations come, he has the playmaking ability to find the next pass.
+
+That combination is what makes him such a dangerous downhill player.
+
+# Playtype Profile: Where the Value Actually Shows Up
+
+The playtype data helps clarify where Banchero’s offense is actually working.
+
+Most of his efficiency is not coming from difficult jumpers. It shows up in advantage situations (transition, post touches, and attacking defenses that are already shifting).
+
+```{r playtype-import}
+playtypes <- read_excel("Paolo Playtypes (2025-26).xlsx")
+
+
+# Full playtype table ------------------------------------------------------
+
+play_tbl <- playtypes %>%
+  arrange(desc(Possessions)) %>%
+  transmute(
+    `Play Type` = Playtype,
+    Poss = Possessions,
+    `Time%` = percent(Percent_Time, accuracy = 0.1),
+    `Time% Rank` = percent(Percent_Time_Rank, accuracy = 1),
+    PPP = round(PPP, 3),
+    `PPP Rank` = percent(PPP_Rank, accuracy = 1),
+    Rating = PPP_Rating,
+    `FG%` = percent(FG_Percent, accuracy = 0.1),
+    `eFG%` = percent(eFG_Percent, accuracy = 0.1),
+    `TOV%` = percent(TO_Percent, accuracy = 0.1)
+  )
+
+
+# First 25 game sample entered manually ------------------------------------
+
+play_types_first25_games <- tribble(
+  ~play_type, ~poss, ~time_pct, ~time_pct_rank, ~pts, ~ppp, ~ppp_rank, ~ppp_rating,
+  ~fgm, ~fga, ~fg_pct, ~efg_pct, ~to_pct,
+  ~fg2m, ~fg2a, ~fg2_pct, ~fg3m, ~fg3a, ~fg3_pct,
+  "P&R Ballhandler", 115, 0.204, 0.56,  91, 0.791, 0.36, "Average",
+  28,  77, 0.364, 0.370, 0.157,
+  27,  64, 0.422,   1,  13, 0.077,
+  "Transition",      110, 0.195, 0.52, 136, 1.236, 0.74, "Very Good",
+  47,  76, 0.618, 0.638, 0.073,
+  44,  67, 0.657,   3,   9, 0.333,
+  "Isolation",        84, 0.149, 0.87,  68, 0.810, 0.37, "Average",
+  24,  63, 0.381, 0.389, 0.083,
+  23,  56, 0.411,   1,   7, 0.143,
+  "Spot Up",          80, 0.142, 0.12,  84, 1.050, 0.51, "Good",
+  26,  65, 0.400, 0.523, 0.075,
+  10,  21, 0.476,  16,  44, 0.364,
+  "Post-Up",          55, 0.097, 0.70,  59, 1.073, 0.63, "Good",
+  18,  33, 0.545, 0.545, 0.182,
+  18,  33, 0.545,   0,   0, NA_real_
+)
+
+
+# Keep only fields needed for first-25 vs rest-of-season comparison --------
+
+playtypes_clean <- playtypes %>%
+  transmute(
+    play_type = Playtype,
+    poss = Possessions,
+    pts = Points,
+    fgm = FGM,
+    fga = FGA,
+    efg_pct = eFG_Percent,
+    to_pct = TO_Percent
+  )
+
+
+# Back out Games 26-56 from season totals ----------------------------------
+
+playtype_since25 <- playtypes_clean %>%
+  inner_join(
+    play_types_first25_games %>%
+      select(
+        play_type,
+        first25_poss = poss,
+        first25_pts = pts,
+        first25_fgm = fgm,
+        first25_fga = fga
+      ),
+    by = "play_type"
+  ) %>%
+  mutate(
+    since25_poss = poss - first25_poss,
+    since25_pts = pts - first25_pts,
+    since25_fgm = fgm - first25_fgm,
+    since25_fga = fga - first25_fga,
+    since25_ppp = since25_pts / since25_poss,
+    since25_fg = since25_fgm / since25_fga
+  ) %>%
+  filter(play_type %in% c(
+    "Transition", "P&R Ballhandler", "Isolation", "Spot Up", "Post-Up"
+  ))
+
+
+# Reshape for plotting -----------------------------------------------------
+
+playtype_compare <- playtype_since25 %>%
+  transmute(
+    play_type,
+    `First 25 Games` = first25_pts / first25_poss,
+    `Games 26-56` = since25_ppp
+  ) %>%
+  pivot_longer(
+    cols = c(`First 25 Games`, `Games 26-56`),
+    names_to = "sample",
+    values_to = "ppp"
+  ) %>%
+  mutate(
+    play_type = fct_relevel(
+      play_type,
+      "Transition", "P&R Ballhandler", "Isolation", "Spot Up", "Post-Up"
+    )
+  )
+
+
+# Plot first 25 vs Games 26-56 ---------------------------------------------
+
+plot_playtype_compare <- function(df) {
+  ggplot(df, aes(x = ppp, y = play_type, fill = sample)) +
+    geom_col(
+      position = position_dodge(width = 0.72),
+      width = 0.62
+    ) +
+    geom_vline(xintercept = 1, linetype = "dashed", color = "#bfbfbf") +
+    geom_text(
+      aes(label = sprintf("%.3f", ppp)),
+      position = position_dodge(width = 0.72),
+      hjust = -0.08,
+      size = 3.0
+    ) +
+    scale_fill_manual(
+      values = c(
+        "First 25 Games" = "#9fb7c9",
+        "Games 26-56" = MAGIC_BLUE
+      )
+    ) +
+    scale_x_continuous(
+      limits = c(0, max(df$ppp, na.rm = TRUE) + 0.18)
+    ) +
+    labs(
+      title = "Paolo Banchero Playtype Efficiency",
+      subtitle = "First 25 games vs Games 26-56",
+      x = "Points per possession",
+      y = NULL,
+      fill = NULL,
+      caption = "Data: Synergy/SportsRadar | Viz: @Rambzee_"
+    ) +
+    theme_caleb_rmd() +
+    theme(plot.caption.position = "plot")
+}
+```
+
+```{r playtype-table, results='asis'}
+kbl_caleb(
+  play_tbl,
+  caption = "Paolo Banchero playtype efficiency (2025-26)") %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(5, bold = TRUE)
+```
+
+Transition and post-ups continue to be where Banchero is most effective. Those are the situations where he can use his size and strength instead of settling for contested jump shots.
+
+The recent stretch has also shown some improvement in how those possessions are happening. More of his offense is coming from downhill drives and interior touches, which has helped steady his overall efficiency.
+
+## Early Season vs Recent Stretch
+
+```{r playtype-compare-chart, fig.height=4.8, fig.width=7.5}
+plot_playtype_compare(playtype_compare)
+```
+
+Several of Banchero’s key actions have become more efficient as the season has gone on.
+His pick-and-roll and isolation scoring have improved, while his post game remains a steady source of offense. Transition dipped slightly, but he still remains an above-average threat in the open floor.
+
+# Lineup Context: Which Groups Actually Work?
+
+```{r lineup-tables-data}
+# Three-man lineup sample --------------------------------------------------
+
+three_man_lineups <- tribble(
+  ~Lineup, ~MIN, ~OFF, ~DEF, ~NET, ~`Team 3P%`, ~`Opp 3P%`,
+  "Suggs - Bane - Paolo", 462, 117.1, 110.9,  6.3, 0.376, 0.317,
+  "Bane - Da Silva - Paolo", 386, 117.4, 111.5,  5.9, 0.346, 0.322,
+  "Suggs - Paolo - Carter", 421, 116.3, 111.1,  5.2, 0.373, 0.323,
+  "Da Silva - Paolo - Carter", 397, 114.9, 112.5,  2.4, 0.351, 0.326,
+  "Bane - Paolo - Carter", 974, 116.1, 114.4,  1.7, 0.361, 0.345,
+  "Black - Bane - Paolo", 872, 115.9, 116.2, -0.3, 0.364, 0.359,
+  "Black - Da Silva - Paolo", 479, 114.0, 114.3, -0.3, 0.334, 0.357,
+  "Black - Paolo - Carter", 916, 115.3, 115.7, -0.4, 0.349, 0.349,
+  "Wagner - Paolo - Carter", 270, 114.9, 115.7, -0.7, 0.347, 0.367,
+  "Bane - Wagner - Paolo", 292, 114.6, 116.1, -1.4, 0.356, 0.373
+)
+
+# Top 3 and bottom 3 net-rating groups ------------------------------------
+
+lineup_focus_tbl <- bind_rows(
+  three_man_lineups %>%
+    arrange(desc(NET)) %>%
+    slice_head(n = 3),
+  three_man_lineups %>%
+    arrange(NET) %>%
+    slice_head(n = 3)
+) %>%
+  distinct(Lineup, .keep_all = TRUE) %>%
+  transmute(
+    Lineup,
+    MIN,
+    OFF = sprintf("%.1f", OFF),
+    DEF = sprintf("%.1f", DEF),
+    NET = sprintf("%+.1f", NET),
+    `Team 3P%` = percent(`Team 3P%`, accuracy = 0.1),
+    `Opp 3P%` = percent(`Opp 3P%`, accuracy = 0.1)
+  )
+```
+
+```{r lineup-focus-table, results='asis'}
+kbl_caleb(
+  lineup_focus_tbl,
+  caption = "Selected Paolo Banchero 3-man lineup combinations (Data: Databallr)") %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(5, bold = TRUE)
+```
+
+The best Banchero lineups tend to combine spacing with defensive stability.
+
+Surrounding him with shooting helps open driving lanes and makes it harder for defenses to load up when he attacks the paint. But the groups that actually succeed are also the ones that hold up on the other end, where defensive slippage can quickly erase those offensive gains.
+
+That balance will matter even more once Orlando’s core has more time together. Injuries have limited the minutes Banchero and Franz Wagner have played alongside new addition Desmond Bane, so many of the lineups that could shape this offense are still developing as the team works to regain the defensive identity it built over the past few seasons.
+
+# Overall On-Court Impact
+
+The broader impact snapshot is mixed.
+
+```{r overall-impact-data}
+# Overall on/off style summary ---------------------------------------------
+
+overall_impact_tbl <- tribble(
+  ~Metric, ~Value, ~On_Off_Diff,
+  "Offensive Rating", 115.0, -0.9,
+  "Defensive Rating", 114.7, -1.2,
+  "Net Rating", 0.3, NA,
+  "TS%", 57.6, -0.1,
+  "TOV%", 14.2, -0.2,
+  "ORB%", 26.4, -3.6,
+  "Team Help", 1.9, NA
+) %>%
+  mutate(
+    Display_Value = case_when(
+      Metric %in% c(
+        "Offensive Rating", "Defensive Rating", "Net Rating", "Team Help"
+      ) ~ sprintf("%+.1f", Value),
+      TRUE ~ percent(Value / 100, accuracy = 0.1)
+    ),
+    Display_Diff = case_when(
+      is.na(On_Off_Diff) ~ "-",
+      TRUE ~ sprintf("%+.1f", On_Off_Diff)
+    )
+  ) %>%
+  select(
+    Metric,
+    Value = Display_Value,
+    `On/Off Diff` = Display_Diff
+  )
+
+# Quick interpretation table -----------------------------------------------
+
+impact_takeaways_tbl <- tibble(
+  `Key signal` = c(
+    "Offense is slightly worse with him on court",
+    "Defense is slightly better with him on court",
+    "Overall impact is around neutral",
+    "Team-help environment is positive"
+  ),
+  Number = c("-0.9 OFF", "-1.2 DEF", "+0.3 NET", "+1.9")
+)
+```
+
+```{r overall-impact-table, results='asis'}
+kbl_caleb(
+  overall_impact_tbl,
+  caption = "Paolo Banchero overall lineup impact snapshot (Data: Databallr)") %>%
+  column_spec(1, bold = TRUE)
+```
+
+```{r impact-takeaways-table, results='asis'}
+kbl_caleb(
+  impact_takeaways_tbl,
+  caption = "How to read the impact snapshot") %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(2, bold = TRUE)
+```
+
+The on/off results are close to neutral.
+
+* Offense is slightly worse with him on the floor (-0.9)
+* Defense is slightly better (-1.2)
+* Overall impact sits around even (+0.3 net)
+
+That profile reflects a player who is still developing rather than one driving team performance in either direction.
+
+The value that does show up tends to come from the same places seen elsewhere in the data:
+
+* interior pressure
+* structured ball-handling actions
+* post scoring
+* lineups that provide spacing and defensive stability
+
+# Final Takeaway
+
+The criticism of Banchero’s season has been fair. The jumper remains inconsistent, and his long-term ceiling will depend on how much he can limit possessions that end in difficult self-created jump shots.
+
+But the recent stretch suggests something more encouraging.
+
+Banchero is playing with more downhill aggression, leaning into actions that take advantage of his size and athleticism. At the same time, several teammates who are likely part of Orlando’s future have begun to show how well they can complement his game.
+
+A lot of the conversation around Paolo has focused on the flaws.
+
+If this stretch continues, it could mark a turning point, one where Banchero’s production starts translating more consistently into winning impact.
