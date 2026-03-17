@@ -1,0 +1,669 @@
+---
+title: "Jusuf Nurkić: The Bosnian Beast Has Bounced Back (2025–26)"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: false
+params:
+  season: "2025-26"
+  season_type: "Regular Season"
+  player_name: "Jusuf Nurkić"
+  team_abbr: "UTA"
+  as_of_date: "2026-01-24"
+  min_minutes: 300
+  use_cache: true
+  cache_dir: "nurkic_bounceback/data/cache"
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+  - \usepackage[table]{xcolor}
+  - \usepackage{fontspec}
+  - \setmainfont{Inter}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  dev = "cairo_pdf",
+  dpi = 200
+)
+
+library(tidyverse)
+library(janitor)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(showtext)
+library(sysfonts)
+library(glue)
+library(ggrepel)
+library(hoopR)
+library(readr)
+library(readxl)
+library(lubridate)
+
+font_add_google("Inter", "inter")
+showtext_auto()
+
+# Jazz-style theme ---------------------------------------------------------
+
+BG <- "#f6f4ef"
+TEXT_DARK <- "#141414"
+GRID <- "#dedad3"
+
+theme_caleb_jazz <- function() {
+  theme_minimal(base_family = "inter") +
+    theme(
+      plot.background = element_rect(fill = BG, color = NA),
+      panel.background = element_rect(fill = BG, color = NA),
+      panel.grid.major = element_line(color = GRID, linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+      plot.title = element_text(size = 18, face = "bold", hjust = 0.5, color = TEXT_DARK),
+      plot.subtitle = element_text(size = 10, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 6)),
+      axis.title = element_text(size = 12, face = "bold", color = TEXT_DARK),
+      axis.text = element_text(size = 10, color = "#333333"),
+      legend.position = "none",
+      plot.caption = element_text(size = 8, color = "#6e6e6e", hjust = 0, margin = margin(t = 6)),
+      plot.margin = margin(10, 12, 14, 12)
+    )
+}
+
+# Parameters ---------------------------------------------------------------
+
+season_used <- params$season
+stype_used <- params$season_type
+target_name <- params$player_name
+as_of_date <- as.Date(params$as_of_date)
+min_minutes <- params$min_minutes
+
+use_cache <- isTRUE(params$use_cache)
+cache_dir <- params$cache_dir
+dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+
+# Cache helper -------------------------------------------------------------
+
+cached <- function(key, fn) {
+  path <- file.path(cache_dir, paste0(key, ".rds"))
+
+  if (use_cache && file.exists(path)) {
+    return(readRDS(path))
+  }
+
+  out <- fn()
+
+  if (use_cache) {
+    saveRDS(out, path)
+  }
+
+  out
+}
+
+# Data helpers -------------------------------------------------------------
+
+get_league_base <- function() {
+  res <- hoopR::nba_leaguedashplayerstats(
+    season = season_used,
+    season_type = stype_used,
+    measure_type = "Base"
+  )
+
+  df <- res$LeagueDashPlayerStats
+
+  if (!is.data.frame(df)) {
+    stop("LeagueDashPlayerStats not found in leaguedashplayerstats() result.")
+  }
+
+  clean_names(df)
+}
+
+get_league_adv <- function() {
+  res <- hoopR::nba_leaguedashplayerstats(
+    season = season_used,
+    season_type = stype_used,
+    measure_type = "Advanced"
+  )
+
+  df <- res$LeagueDashPlayerStats
+
+  if (!is.data.frame(df)) {
+    stop("LeagueDashPlayerStats not found in leaguedashplayerstats() result.")
+  }
+
+  clean_names(df)
+}
+
+# Cached pulls -------------------------------------------------------------
+
+lg_base <- cached(
+  paste0("lg_base_", season_used, "_", stype_used),
+  get_league_base
+)
+
+lg_adv <- cached(
+  paste0("lg_adv_", season_used, "_", stype_used),
+  get_league_adv
+)
+
+# Target player ID ---------------------------------------------------------
+
+target_id <- lg_base %>%
+  filter(player_name == target_name) %>%
+  slice(1) %>%
+  pull(player_id)
+
+if (length(target_id) == 0 || is.na(target_id)) {
+  stop("Could not find player_id for target_name in lg_base. Check params$player_name spelling.")
+}
+
+# Player game log ----------------------------------------------------------
+
+get_gamelog <- function() {
+  res <- hoopR::nba_playergamelog(
+    season = season_used,
+    season_type = stype_used,
+    player_id = target_id
+  )
+
+  if (is.data.frame(res)) {
+    gl <- res
+  } else if (is.list(res)) {
+    idx <- which(vapply(res, is.data.frame, logical(1)))
+    if (length(idx) == 0) {
+      stop("No data frame found in nba_playergamelog() response.")
+    }
+    gl <- res[[idx[1]]]
+  } else {
+    stop("nba_playergamelog() returned unexpected type.")
+  }
+
+  gl %>%
+    clean_names() %>%
+    mutate(
+      game_date = coalesce(
+        suppressWarnings(ymd(game_date)),
+        suppressWarnings(mdy(game_date)),
+        suppressWarnings(dmy(game_date)),
+        suppressWarnings(ymd_hms(game_date)),
+        suppressWarnings(mdy_hms(game_date))
+      )
+    ) %>%
+    filter(!is.na(game_date), game_date <= as_of_date) %>%
+    arrange(game_date)
+}
+
+gl <- cached(
+  paste0(
+    "gamelog_", season_used, "_", stype_used, "_",
+    target_id, "_", gsub("-", "", as.character(as_of_date))
+  ),
+  get_gamelog
+)
+
+# Target player rows -------------------------------------------------------
+
+nurk_base <- lg_base %>%
+  filter(player_name == target_name) %>%
+  slice(1)
+
+nurk_adv <- lg_adv %>%
+  filter(player_name == target_name) %>%
+  slice(1)
+
+if (nrow(nurk_base) == 0) {
+  stop("Player not found in league dashboard. Check params$player_name.")
+}
+
+if (nrow(gl) == 0) {
+  stop("No game logs returned through as_of_date. Check as_of_date or player_name.")
+}
+```
+
+# Baseline Level
+
+Jusuf Nurkić’s season in Utah has marked a clear bounceback, reestablishing him as a reliable and functional NBA center after a few uneven years. He is no longer asked to carry offense or anchor a defense, but his rebounding, passing, and feel for the game have returned as consistent strengths.
+
+```{r season_baseline_table}
+gp_val <- as.numeric(nurk_base$gp)
+
+season_line <- tibble(
+  Season = season_used,
+  Team = nurk_base$team_abbreviation,
+  GP = gp_val,
+  MPG = as.numeric(nurk_base$min) / gp_val,
+  PTS = as.numeric(nurk_base$pts) / gp_val,
+  TRB = as.numeric(nurk_base$reb) / gp_val,
+  AST = as.numeric(nurk_base$ast) / gp_val,
+  TOV = as.numeric(nurk_base$tov) / gp_val,
+  `FG%` = nurk_base$fg_pct,
+  `3PA` = as.numeric(nurk_base$fg3a) / gp_val,
+  `3P%` = nurk_base$fg3_pct,
+  `FT%` = nurk_base$ft_pct
+)
+
+kbl(
+  season_line,
+  format = "latex",
+  booktabs = TRUE,
+  digits = 1,
+  caption = glue("Season baseline through {as.character(as_of_date)}")
+) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position"),
+    font_size = 10
+  ) %>%
+  column_spec(1, bold = TRUE)
+```
+
+# Rebounding Value
+
+## Top 5 rebounding games
+
+```{r top5_reb_games}
+top5_reb <- gl %>%
+  mutate(
+    min = as.numeric(min),
+    oreb = as.numeric(oreb),
+    dreb = as.numeric(dreb),
+    reb = as.numeric(reb),
+    ast = as.numeric(ast),
+    pts = as.numeric(pts)
+  ) %>%
+  transmute(
+    Date = game_date,
+    Opp = matchup,
+    MP = min,
+    ORB = oreb,
+    DRB = dreb,
+    TRB = reb,
+    AST = ast,
+    PTS = pts
+  ) %>%
+  arrange(desc(TRB)) %>%
+  slice_head(n = 5)
+
+kbl(
+  top5_reb,
+  format = "latex",
+  booktabs = TRUE,
+  caption = "Top 5 rebounding games (season to date)"
+) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"),
+    font_size = 9
+  ) %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(6, bold = TRUE)
+```
+
+## Rebound Rate (OREB% / DREB% / REB%)
+
+```{r reb_pct_table}
+reb_pcts <- tibble(
+  `OREB%` = nurk_adv$oreb_pct,
+  `DREB%` = nurk_adv$dreb_pct,
+  `REB%` = nurk_adv$reb_pct
+)
+
+kbl(
+  reb_pcts,
+  format = "latex",
+  booktabs = TRUE,
+  digits = 1,
+  caption = "Rebounding rate profile"
+) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position"),
+    font_size = 10
+  )
+```
+
+Rebounding is Nurkić’s most dependable contribution. Among players with 30+ games played, he ranks second in defensive rebounding rate and eighth league-wide in overall rebounding percentage. He consistently ends possessions through veteran positioning and strength, carving out space and moving bodies to secure the ball. At his best, he controls the defensive glass outright and strings together huge rebounding nights.
+
+## REB/AST unique value
+
+```{r apg_rpg_quadrants_opaque_headshots, message=FALSE, warning=FALSE, dpi=180, fig.width=7.2, fig.height=5.4}
+library(grid)
+library(magick)
+library(ggimage)
+
+quad_df <- lg_base %>%
+  mutate(
+    gp = parse_number(gp),
+    ast = parse_number(ast),
+    reb = parse_number(reb),
+    mp = parse_number(min),
+    apg = ast / gp,
+    rpg = reb / gp,
+    mpg = mp / gp
+  ) %>%
+  filter(gp >= 30, mpg >= 20, is.finite(apg), is.finite(rpg))
+
+x_ref <- as.numeric(quantile(quad_df$apg, 0.75, na.rm = TRUE))
+y_ref <- as.numeric(quantile(quad_df$rpg, 0.75, na.rm = TRUE))
+
+nurk_anchor <- quad_df %>%
+  filter(player_id == target_id)
+
+others <- quad_df %>%
+  filter(player_id != target_id)
+
+if (nrow(nurk_anchor) != 1) {
+  stop("Nurk anchor not found or duplicated. Check gp filter and target_id.")
+}
+
+hs_dir <- file.path(cache_dir, "headshots_opaque")
+dir.create(hs_dir, recursive = TRUE, showWarnings = FALSE)
+
+safe_id <- function(x) {
+  gsub("[^0-9A-Za-z_-]+", "_", as.character(x))
+}
+
+make_opaque_headshot <- function(player_id, out_dir = hs_dir, bg_col = BG, size_px = 520) {
+  pid <- safe_id(player_id)
+  out_path <- file.path(out_dir, paste0(pid, "_opaque.png"))
+
+  if (file.exists(out_path)) {
+    return(out_path)
+  }
+
+  url <- paste0("https://cdn.nba.com/headshots/nba/latest/1040x760/", pid, ".png")
+
+  tmp <- tempfile(fileext = ".png")
+  download.file(url, tmp, mode = "wb", quiet = TRUE)
+
+  img <- magick::image_read(tmp)
+  img <- magick::image_resize(img, paste0(size_px, "x"))
+  info <- magick::image_info(img)
+  bg <- magick::image_blank(width = info$width, height = info$height, color = bg_col)
+  out <- magick::image_composite(bg, img, operator = "over")
+
+  magick::image_write(out, path = out_path, format = "png")
+  out_path
+}
+
+opaque_paths <- quad_df %>%
+  distinct(player_id) %>%
+  mutate(headshot_opaque = purrr::map_chr(player_id, make_opaque_headshot))
+
+quad_df <- quad_df %>%
+  mutate(
+    headshot = paste0(
+      "https://cdn.nba.com/headshots/nba/latest/1040x760/",
+      player_id,
+      ".png"
+    )
+  ) %>%
+  left_join(opaque_paths, by = "player_id")
+
+others <- quad_df %>% filter(player_id != target_id)
+nurk_anchor <- quad_df %>% filter(player_id == target_id)
+
+stopifnot(all(!is.na(quad_df$headshot_opaque)))
+
+quad_cols <- list(
+  tr = "#6A5ACD",
+  tl = "#1F77B4",
+  br = "#2CA02C",
+  bl = "#D22B2B"
+)
+
+QUAD_A <- 0.12
+SIZE_ALL <- 0.075
+SIZE_NURK <- 0.095
+
+xlim <- range(quad_df$apg, na.rm = TRUE)
+ylim <- range(quad_df$rpg, na.rm = TRUE)
+
+g_tl <- rectGrob(gp = gpar(fill = alpha(quad_cols$tl, QUAD_A), col = NA))
+g_tr <- rectGrob(gp = gpar(fill = alpha(quad_cols$tr, QUAD_A), col = NA))
+g_bl <- rectGrob(gp = gpar(fill = alpha(quad_cols$bl, QUAD_A), col = NA))
+g_br <- rectGrob(gp = gpar(fill = alpha(quad_cols$br, QUAD_A), col = NA))
+
+ggplot() +
+  annotation_custom(g_tl, xmin = xlim[1], xmax = x_ref, ymin = y_ref, ymax = ylim[2]) +
+  annotation_custom(g_tr, xmin = x_ref, xmax = xlim[2], ymin = y_ref, ymax = ylim[2]) +
+  annotation_custom(g_bl, xmin = xlim[1], xmax = x_ref, ymin = ylim[1], ymax = y_ref) +
+  annotation_custom(g_br, xmin = x_ref, xmax = xlim[2], ymin = ylim[1], ymax = y_ref) +
+  coord_cartesian(xlim = xlim, ylim = ylim, expand = FALSE) +
+  geom_vline(xintercept = x_ref, linetype = "dashed", alpha = 0.55) +
+  geom_hline(yintercept = y_ref, linetype = "dashed", alpha = 0.55) +
+  ggimage::geom_image(
+    data = others,
+    aes(x = apg, y = rpg, image = headshot),
+    size = SIZE_ALL,
+    alpha = 1,
+    asp = 1.1
+  ) +
+  ggimage::geom_image(
+    data = nurk_anchor,
+    aes(x = apg, y = rpg, image = headshot),
+    size = SIZE_NURK,
+    alpha = 1,
+    asp = 1.1
+  ) +
+  labs(
+    title = "Rebounding + Playmaking in League Context",
+    subtitle = "APG vs RPG | Players with ≥30 GP | Dashed lines = 75th percentiles",
+    x = "Assists per game",
+    y = "Rebounds per game",
+    caption = "Source: NBA.com | Viz: @Rambzee_"
+  ) +
+  theme_caleb_jazz()
+```
+
+Nurkić occupies a relatively rare space as a high-level rebounder and passer. He can occasionally be too willing to test tight windows, but he consistently spots cutters and makes quick reads out of the short roll. That combination puts him in similar playmaking territory to bigger offensive hubs like Giannis, Paolo, and Şengün, even if his usage and scoring burden are much smaller.
+
+## Recent playmaking (last 10 games)
+
+```{r last10_ast_trend_fixed}
+last10 <- gl %>%
+  mutate(
+    ast = as.numeric(ast),
+    game_date = as.Date(game_date)
+  ) %>%
+  arrange(game_date) %>%
+  slice_tail(n = 10)
+
+ggplot(last10, aes(x = game_date, y = ast, group = 1)) +
+  geom_line(alpha = 0.6) +
+  geom_point(color = "#632A7A", size = 2.3, alpha = 0.9) +
+  scale_x_date(date_labels = "%b %d", date_breaks = "2 days") +
+  scale_y_continuous(breaks = pretty_breaks(n = 6)) +
+  labs(
+    title = "Recent Playmaking (Last 10 Games)",
+    subtitle = "Assists per game",
+    x = NULL,
+    y = "AST",
+    caption = "Source: NBA.com | Viz: @Rambzee_"
+  ) +
+  theme_caleb_jazz() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Nurkić’s playmaking value has shown up consistently throughout the season, with several high-assist performances mixed in. That ability has peaked recently, as he recorded three straight triple-doubles while averaging 12 assists per game over that stretch. Zooming out slightly, he is averaging 7.2 assists per game over his last ten, showing that the passing has been a stable part of his impact rather than just a short heater.
+
+```{r screen-assists}
+screen_ast_tbl <- tibble(
+  Player = c("Jusuf Nurkić", "Rudy Gobert", "Luke Kornet", "Domantas Sabonis"),
+  Team = c("UTA", "MIN", "SAS", "SAC"),
+  Age = c(31, 33, 30, 29),
+  GP = c(36, 45, 37, 16),
+  Min = c(26.5, 31.6, 24.2, 29.9),
+  `Screen Assists` = c(4.6, 4.2, 4.1, 3.9)
+)
+
+screen_ast_tbl %>%
+  arrange(desc(`Screen Assists`)) %>%
+  kable(
+    digits = 1,
+    col.names = c("Player", "Team", "Age", "GP", "Min", "Screen Ast"),
+    caption = "Screen assists per game (centers)"
+  )
+```
+
+Nurkić’s screen-setting has been a major source of offense this season. He leads all centers in screen assists per game, consistently freeing ball-handlers and creating scoring chances without needing touches himself. It reinforces his value as a connective piece who can help an offense function even when he is not scoring.
+
+# Scoring Profile
+
+## Shot dashboard zones (Restricted Area / Non-RA Paint / 3s)
+
+```{r shot_locations_pull}
+shotloc <- cached(
+  paste0("shotloc_", season_used, "_", stype_used),
+  function() {
+    res <- hoopR::nba_leaguedashplayershotlocations(
+      season = season_used,
+      season_type = stype_used,
+      per_mode = "PerGame"
+    )
+
+    res$ShotLocations %>%
+      clean_names()
+  }
+)
+
+nurk_shotloc <- shotloc %>%
+  filter(player_name == target_name) %>%
+  slice(1)
+
+get1 <- function(df, col) {
+  if (!col %in% names(df)) {
+    return(NA_real_)
+  }
+  as.numeric(df[[col]][1])
+}
+
+corner3_fgm <- get1(nurk_shotloc, "corner_3_fgm")
+corner3_fga <- get1(nurk_shotloc, "corner_3_fga")
+atb3_fgm <- get1(nurk_shotloc, "above_the_break_3_fgm")
+atb3_fga <- get1(nurk_shotloc, "above_the_break_3_fga")
+
+three_fgm <- corner3_fgm + atb3_fgm
+three_fga <- corner3_fga + atb3_fga
+three_pct <- ifelse(is.na(three_fga) | three_fga == 0, NA_real_, three_fgm / three_fga)
+
+shot_tbl <- tibble(
+  Zone = c("Restricted Area", "In Paint (Non-RA)", "Mid-Range", "3PT"),
+  FGM = c(
+    get1(nurk_shotloc, "restricted_area_fgm"),
+    get1(nurk_shotloc, "in_the_paint_non_ra_fgm"),
+    get1(nurk_shotloc, "mid_range_fgm"),
+    three_fgm
+  ),
+  FGA = c(
+    get1(nurk_shotloc, "restricted_area_fga"),
+    get1(nurk_shotloc, "in_the_paint_non_ra_fga"),
+    get1(nurk_shotloc, "mid_range_fga"),
+    three_fga
+  ),
+  `FG%` = c(
+    get1(nurk_shotloc, "restricted_area_fg_pct"),
+    get1(nurk_shotloc, "in_the_paint_non_ra_fg_pct"),
+    get1(nurk_shotloc, "mid_range_fg_pct"),
+    three_pct
+  )
+)
+
+kbl(
+  shot_tbl,
+  format = "latex",
+  booktabs = TRUE,
+  digits = 2,
+  caption = "Shot profile by NBA.com zones (per game)"
+) %>%
+  kable_styling(
+    latex_options = c("striped", "HOLD_position"),
+    font_size = 10
+  ) %>%
+  column_spec(1, bold = TRUE)
+```
+
+```{r shot_zone_bar}
+shot_tbl2 <- shot_tbl %>%
+  mutate(Zone = factor(Zone, levels = rev(Zone)))
+
+ggplot(shot_tbl2, aes(x = Zone, y = FGA)) +
+  geom_col(fill = "#632A7A", alpha = 0.9) +
+  coord_flip() +
+  labs(
+    title = "Shot Diet by Zone",
+    subtitle = "FGA per game (NBA shot dashboard zones)",
+    x = NULL,
+    y = "FGA / game",
+    caption = "Source: NBA.com | Viz: @Rambzee_"
+  ) +
+  theme_caleb_jazz()
+```
+
+Scoring is the least impactful part of Nurkić’s offensive game. He can still finish plays at the rim, shows decent touch, and will take open threes, but his effectiveness fades when asked to create. His offense is best kept to dump-offs, seals, and simple finishes where he can use his size.
+
+# Defense
+
+```{r dfg_diff_under6ft_top5_headshots, message=FALSE, warning=FALSE}
+df_company <- tribble(
+  ~player, ~team, ~pos, ~dfga_pg, ~diff_pp, ~rank,
+  "Jalen Duren", "DET", "C", 4.9, -6.2, 26,
+  "Donovan Clingan", "POR", "C", 6.4, -5.9, 27,
+  "Jusuf Nurkić", "UTA", "C", 5.0, -5.6, 28,
+  "Karlo Matković", "NOP", "F-C", 2.9, -5.5, 29,
+  "Jonas Valančiūnas", "DEN", "C", 2.7, -5.4, 30
+)
+
+tab <- df_company %>%
+  transmute(
+    Player = player,
+    Team = team,
+    `DFGA / G` = sprintf("%.1f", dfga_pg),
+    `Diff%` = sprintf("%.1f", diff_pp),
+    Rank = rank
+  )
+
+cap <- "Rim defense company (shots < 6 ft) | Centers only | Qualified: DFGA >= 2.5 | Metric: DFG Diff\\% (pp; lower = better)"
+
+kbl(
+  tab,
+  format = "latex",
+  booktabs = TRUE,
+  align = c("l", "c", "r", "c"),
+  caption = cap,
+  escape = TRUE
+) %>%
+  kable_styling(
+    latex_options = c("hold_position", "scale_down", "striped"),
+    font_size = 9
+  ) %>%
+  column_spec(1, bold = TRUE) %>%
+  row_spec(which(df_company$player == "Jusuf Nurkić"), bold = TRUE)
+```
+
+Defensively, Nurkić has remained serviceable despite a shaky Jazz ecosystem. Among players defending at least two shots per game at the rim, he ranks 28th in DFG Diff%, holding opponents 5.6 points worse than expected inside six feet. That metric has limitations, but it still suggests he can hold his ground within a team defense instead of being a total liability.
+
+```{r deflections-among-centers}
+defl_tbl <- tribble(
+  ~Player, ~Team, ~Age, ~GP, ~Min, ~Deflections,
+  "Alperen Şengün", "HOU", 23, 36, 35.1, 3.1,
+  "Jusuf Nurkić", "UTA", 31, 36, 26.5, 3.0,
+  "Nikola Jokić", "DEN", 30, 32, 34.6, 3.0
+) %>%
+  arrange(desc(Deflections)) %>%
+  mutate(Rank = dense_rank(desc(Deflections))) %>%
+  select(Rank, everything())
+
+defl_tbl %>%
+  kable(
+    digits = 1,
+    caption = "Deflections per game - centers (Nurkić tied for 2nd)"
+  )
+```
+
+He makes up for reduced mobility with anticipation and activity, tied for second among centers in deflections per game by reading actions early and disrupting passing lanes. He is no longer the defensive anchor he once was in Portland, but his IQ and effort still let him function within a scheme.
+
+# Closing Summary
+
+This season has looked like a real bounce-back for Nurkić, with his core strengths showing up more consistently again. He still rebounds at a high level, moves the ball well for a center, and helps offenses stay organized without needing touches. His scoring is best when he is finishing plays, and while he is no longer a defensive anchor, he can still hold up in the right environment. For a playoff team or any roster needing steadier center play, he makes sense as a dependable backup or short-term solution.
