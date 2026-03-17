@@ -2,7 +2,7 @@
 
 This project examines Scottie Barnes as a two-way engine and evaluates his case as one of the league’s most impactful defenders during the 2025–26 season.
 
-With added offensive help, Barnes has shifted more of his energy toward defense, leading a Raptors unit that has emerged as a top-five defense. The analysis focuses on how his all-around skill set—passing, versatility, and defensive disruption—translates into real team impact.
+With added offensive help, Barnes has shifted more of his energy toward defense, leading a Raptors unit that has emerged as a top-five defense. The analysis focuses on how his all-around skill set: passing, versatility, and defensive disruption—translates into real team impact.
 
 Rather than viewing him as a scorer, this project frames Barnes through the lens of two-way value and possession-level influence.
 
