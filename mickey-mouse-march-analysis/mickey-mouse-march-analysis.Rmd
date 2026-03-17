@@ -1,0 +1,684 @@
+---
+title: "March Momentum (Mickey Mouse March) - Last 5 Seasons"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+params:
+  seasons:
+    - "2020-21"
+    - "2021-22"
+    - "2022-23"
+    - "2023-24"
+    - "2024-25"
+    - "2025-26"
+  min_gp_pre: 15
+  min_gp_march: 10
+  min_mpg_pre: 20
+  min_mpg_march: 24
+  ppg_delta_min: 3
+  ts_delta_min: -0.02
+  baseline_delta: 2
+  near_peak_margin: 1
+  last_n: 10
+  min_gp_current: 25
+  top_n: 10
+  headshot_res: "1040x760"
+  cache_headshots: TRUE
+  headshot_dir: "data/headshots"
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(lubridate)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(showtext)
+library(sysfonts)
+library(ggrepel)
+library(hoopR)
+suppressPackageStartupMessages(library(ggimage))
+
+options(tinytex.crop = FALSE)
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  dpi = 450,
+  out.width = "100%",
+  fig.width = 7.6,
+  fig.height = 4.9,
+  fig.crop = FALSE,
+  dev = "cairo_pdf"
+)
+
+font_add_google("Inter", "inter")
+showtext_auto()
+
+theme_caleb <- theme_minimal(base_family = "inter") +
+  theme(
+    plot.background = element_rect(fill = "#f6f4ef", color = NA),
+    panel.background = element_rect(fill = "#f6f4ef", color = NA),
+    panel.grid.major = element_line(color = "#dedad3", linewidth = 0.25),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(size = 18, face = "bold", hjust = 0, color = "#141414"),
+    plot.subtitle = element_text(size = 12, hjust = 0, color = "#2f2f2f"),
+    axis.title = element_text(size = 12, face = "bold", color = "#141414"),
+    axis.text = element_text(size = 10, color = "#333333"),
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 9),
+    plot.caption = element_text(size = 8, hjust = 1, color = "#6e6e6e"),
+    plot.margin = margin(10, 14, 10, 14)
+  )
+
+fmt_delta <- function(x, digits = 1) {
+  out <- round(x, digits)
+  ifelse(out > 0, paste0("+", out), as.character(out))
+}
+
+fmt_pct <- function(x, accuracy = 0.1) {
+  percent(x, accuracy = accuracy)
+}
+
+fmt_pct_delta <- function(x, accuracy = 0.1) {
+  sign <- ifelse(x > 0, "+", "")
+  paste0(sign, percent(x, accuracy = accuracy))
+}
+
+outcome_levels <- c("No carry", "Minor bump", "New baseline", "Held peak")
+outcome_cols <- c(
+  "No carry" = "#C43C39",
+  "Minor bump" = "#A7D88C",
+  "New baseline" = "#59A14F",
+  "Held peak" = "#1F6E43"
+)
+```
+
+# Executive Summary
+
+- **Most March heaters are not real.** Late-season scoring spikes happen every year, but most players end up back near their previous level the next season.
+- **The reason behind the jump matters.** Runs tied to more minutes, a bigger role, or a different shot profile are more believable than a player just getting hot.
+- **Use March runs as a signal, not a prediction.** They are usually more about short-term opportunity than a true breakout.
+
+# Introduction
+
+“Mickey Mouse March” has become a pretty common phenomenon in the NBA. Every year, some players start performing well above their usual level once the season moves past the All-Star break and into March. Sometimes it is driven by teams tanking and opening up minutes, softer late-season schedules, injuries creating opportunity, or simply a player getting hot at the right time.
+
+Because of that context, these runs are often dismissed as “not real,” with the expectation that the numbers will come back down soon after. But how true is that idea? Are most March breakouts actually empty late-season noise, or are there signs that a hot stretch might represent something more sustainable?
+
+# Data & Definitions
+
+Player game logs were pulled from **NBA.com via `hoopR`**, covering the **2020-21 through 2025-26 regular seasons**. For the historical March analysis, the candidate pool is limited to **2020-21 through 2024-25**, while **2025-26** is loaded so current-season data can be used for next-season carryover checks and a short “players to watch” section.
+
+Each historical season is split into two windows:
+
+- **Pre_March**: all games before March
+- **March**: all games played during March
+
+To qualify as a March momentum candidate, a player must meet the following filters:
+
+- at least **`r params$min_gp_pre`** games pre-March
+- at least **`r params$min_gp_march`** games in March
+- at least **`r params$min_mpg_pre`** MPG pre-March
+- at least **`r params$min_mpg_march`** MPG in March
+- at least **`r params$ppg_delta_min`** points per game of March scoring growth
+- no major efficiency collapse (**TS% delta >= `r params$ts_delta_min`**)
+
+# Data setup
+
+```{r data-functions, include=FALSE}
+# Pull player game logs for one season and standardize the fields used later.
+get_player_gamelogs <- function(season) {
+  gl <- tryCatch(
+    hoopR::nba_leaguegamelog(
+      season = season,
+      season_type = "Regular Season",
+      player_or_team = "P"
+    ),
+    error = function(e) {
+      message(paste0("Failed to pull season ", season, ": ", e$message))
+      return(NULL)
+    }
+  )
+
+  if (is.null(gl) || !"LeagueGameLog" %in% names(gl) || is.null(gl$LeagueGameLog)) {
+    return(tibble::tibble())
+  }
+
+  gl$LeagueGameLog %>%
+    mutate(
+      season = season,
+      player_name = PLAYER_NAME,
+      player_id = as.character(PLAYER_ID),
+      team = TEAM_ABBREVIATION,
+      game_date = as.Date(GAME_DATE),
+      minutes = as.numeric(MIN),
+      points = as.numeric(PTS),
+      fga = as.numeric(FGA),
+      fgm = as.numeric(FGM),
+      fg3a = as.numeric(FG3A),
+      fg3m = as.numeric(FG3M),
+      fta = as.numeric(FTA),
+      ftm = as.numeric(FTM),
+      tov = as.numeric(TOV),
+      ast = as.numeric(AST),
+      reb = as.numeric(REB),
+      ts_pct = if_else(
+        (fga + 0.44 * fta) > 0,
+        points / (2 * (fga + 0.44 * fta)),
+        NA_real_
+      ),
+      three_rate = fg3a / pmax(fga, 1),
+      ft_rate = fta / pmax(fga, 1),
+      usg_proxy = fga + 0.44 * fta + tov
+    ) %>%
+    select(
+      season, player_name, player_id, team, game_date,
+      minutes, points, fgm, fga, fg3m, fg3a,
+      ftm, fta, tov, ast, reb,
+      ts_pct, three_rate, ft_rate, usg_proxy
+    ) %>%
+    arrange(season, player_name, game_date)
+}
+
+# Convert a season label like 2024-25 into 2025-26.
+make_next_season <- function(season_label) {
+  y1 <- as.integer(substr(season_label, 1, 4))
+  y2 <- as.integer(substr(season_label, 6, 7))
+  paste0(y1 + 1, "-", sprintf("%02d", y2 + 1))
+}
+
+# Build headshot URLs and optionally cache them locally for plotting.
+headshot_url <- function(player_id, res = "1040x760") {
+  paste0("https://cdn.nba.com/headshots/nba/latest/", res, "/", player_id, ".png")
+}
+
+download_headshot <- function(player_id, dir = "data/headshots", res = "1040x760") {
+  dir.create(dir, showWarnings = FALSE, recursive = TRUE)
+  dest <- file.path(dir, paste0(player_id, ".png"))
+
+  if (file.exists(dest)) {
+    return(dest)
+  }
+
+  url <- headshot_url(player_id, res = res)
+  try(utils::download.file(url, dest, mode = "wb", quiet = TRUE), silent = TRUE)
+
+  if (file.exists(dest)) dest else url
+}
+```
+
+```{r all-games, cache=TRUE, include=FALSE}
+# Pull all requested seasons and create the March vs pre-March split.
+games_all <- map_dfr(params$seasons, get_player_gamelogs) %>%
+  mutate(
+    month_num = month(game_date),
+    split = if_else(month_num == 3, "March", "Pre_March")
+  )
+
+if (nrow(games_all) == 0) {
+  stop("No game logs were pulled successfully.")
+}
+
+# Historical analysis excludes the current season.
+analysis_seasons <- params$seasons[params$seasons != "2025-26"]
+
+games_analysis <- games_all %>%
+  filter(season %in% analysis_seasons)
+
+# Keep the last team seen in each season/split in case of team changes.
+team_by_split <- games_all %>%
+  group_by(season, player_id, split) %>%
+  summarise(
+    team_split = last(team[order(game_date)]),
+    .groups = "drop"
+  )
+```
+
+# Build March Momentum Candidates
+
+```{r momentum-candidates, cache=TRUE, include=FALSE}
+# Summarize each player-season separately for Pre_March and March.
+splits <- games_analysis %>%
+  group_by(season, player_name, player_id, split) %>%
+  summarise(
+    gp = n(),
+    mpg = mean(minutes, na.rm = TRUE),
+    ppg = mean(points, na.rm = TRUE),
+    ts = mean(ts_pct, na.rm = TRUE),
+    fga_pg = mean(fga, na.rm = TRUE),
+    three_rate = mean(three_rate, na.rm = TRUE),
+    ft_rate = mean(ft_rate, na.rm = TRUE),
+    tov_pg = mean(tov, na.rm = TRUE),
+    usg_proxy = mean(usg_proxy, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  left_join(team_by_split, by = c("season", "player_id", "split"))
+
+# Reshape to a wide format so March deltas are easy to compute.
+deltas <- splits %>%
+  pivot_wider(
+    names_from = split,
+    values_from = c(gp, mpg, ppg, ts, fga_pg, three_rate, ft_rate, tov_pg, usg_proxy, team_split),
+    names_sep = "_"
+  ) %>%
+  mutate(
+    ppg_delta = ppg_March - ppg_Pre_March,
+    ts_delta = ts_March - ts_Pre_March,
+    mpg_delta = mpg_March - mpg_Pre_March,
+    fga_delta = fga_pg_March - fga_pg_Pre_March,
+    three_rate_delta = three_rate_March - three_rate_Pre_March,
+    ft_rate_delta = ft_rate_March - ft_rate_Pre_March,
+    tov_delta = tov_pg_March - tov_pg_Pre_March,
+    usg_proxy_delta = usg_proxy_March - usg_proxy_Pre_March
+  )
+
+# Assign a simple label for what seems to be driving the jump.
+classify_leap <- function(ppg_d, ts_d, fga_d, mpg_d, three_d, ft_d) {
+  if (!is.na(ts_d) && ts_d >= 0.05 && abs(fga_d) < 1) return("Shooting spike")
+  if (!is.na(fga_d) && fga_d >= 2 && !is.na(mpg_d) && mpg_d >= 3) return("Role expansion")
+  if (!is.na(three_d) && three_d >= 0.05) return("Shot diet shift (3s)")
+  if (!is.na(ft_d) && ft_d >= 0.08) return("Shot diet shift (FTs)")
+  "Combo / growth"
+}
+
+# Filter down to player-seasons that qualify as March momentum candidates.
+candidates <- deltas %>%
+  filter(
+    gp_Pre_March >= params$min_gp_pre,
+    gp_March >= params$min_gp_march,
+    mpg_Pre_March >= params$min_mpg_pre,
+    mpg_March >= params$min_mpg_march,
+    ppg_delta >= params$ppg_delta_min,
+    ts_delta >= params$ts_delta_min
+  ) %>%
+  mutate(
+    leap_type = pmap_chr(
+      list(ppg_delta, ts_delta, fga_delta, mpg_delta, three_rate_delta, ft_rate_delta),
+      ~ classify_leap(..1, ..2, ..3, ..4, ..5, ..6)
+    ),
+    signal = ppg_delta + 40 * pmax(ts_delta, 0) + 0.3 * pmax(mpg_delta, 0)
+  ) %>%
+  arrange(desc(signal))
+```
+
+# Findings
+
+## 1) Top 10 March scorers (PPG in March)
+
+```{r top-10-march-ppg}
+top_march_ppg <- deltas %>%
+  filter(
+    gp_March >= params$min_gp_march,
+    mpg_March >= params$min_mpg_march
+  ) %>%
+  arrange(desc(ppg_March)) %>%
+  transmute(
+    Season = season,
+    Player = player_name,
+    `Team (Mar)` = team_split_March,
+    `GP (Mar)` = gp_March,
+    `MPG (Mar)` = round(mpg_March, 1),
+    `PPG (Mar)` = round(ppg_March, 1),
+    `TS% (Mar)` = fmt_pct(ts_March, 0.1)
+  ) %>%
+  slice_head(n = 10)
+
+kable(
+  top_march_ppg,
+  booktabs = TRUE,
+  caption = "Top 10 March scorers (PPG in March) - last 5 seasons"
+)
+```
+
+Most of the top March scorers are already established superstars. While these months can sometimes reflect sloppy or unusual late-season basketball, they also often show elite players ramping up usage and form as teams push toward the playoffs.
+
+## 2) Top 10: Biggest March scoring jumps (PPG delta)
+
+```{r top-10-ppg-jumps}
+top_ppg_jump <- candidates %>%
+  arrange(desc(ppg_delta)) %>%
+  transmute(
+    Season = season,
+    Player = player_name,
+    `Team (Mar)` = team_split_March,
+    `PPG (Pre->Mar)` = paste0(round(ppg_Pre_March, 1), " -> ", round(ppg_March, 1)),
+    `PPG delta` = fmt_delta(ppg_delta, 1),
+    `TS% delta` = fmt_pct_delta(ts_delta, 0.1),
+    Type = leap_type
+  ) %>%
+  slice_head(n = 10)
+
+kable(
+  top_ppg_jump,
+  booktabs = TRUE,
+  caption = "Top 10: Biggest March scoring jumps (PPG delta)"
+)
+```
+
+The biggest March scoring jumps usually come from players whose roles grow late in the season. Guys like Quentin Grimes, Jalen Green, Jordan Poole, and Deni Avdija saw big boosts in both minutes and shot attempts, which led to huge scoring spikes. In many cases, the jump is more about getting more opportunity than a sudden breakout, which helps explain why some of these runs do not fully carry into the next season.
+
+## 3) Top 10: Biggest March efficiency jumps (TS% delta)
+
+```{r top-10-ts-jumps}
+top_ts_jump <- candidates %>%
+  arrange(desc(ts_delta)) %>%
+  transmute(
+    Season = season,
+    Player = player_name,
+    `Team (Mar)` = team_split_March,
+    `PPG (Pre->Mar)` = paste0(round(ppg_Pre_March, 1), " -> ", round(ppg_March, 1)),
+    `TS% (Pre->Mar)` = paste0(fmt_pct(ts_Pre_March, 0.1), " -> ", fmt_pct(ts_March, 0.1)),
+    `TS% delta` = fmt_pct_delta(ts_delta, 0.1),
+    `PPG delta` = fmt_delta(ppg_delta, 1),
+    Type = leap_type
+  ) %>%
+  slice_head(n = 10)
+
+kable(
+  top_ts_jump,
+  booktabs = TRUE,
+  caption = "Top 10: Biggest March efficiency jumps (TS% delta)"
+)
+```
+
+Some March heaters come from players suddenly shooting much more efficiently. Players like Robert Covington, Immanuel Quickley, Tyrese Maxey, and Jayson Tatum saw major efficiency spikes during the month while their scoring climbed as well. These stretches are often driven by hot shooting or a run of high-quality looks, which can produce big numbers for a few weeks but are difficult to sustain over longer periods.
+
+## 4) March scoring jump vs efficiency change
+
+```{r league-wide}
+plot_df <- candidates %>%
+  mutate(
+    image = if (isTRUE(params$cache_headshots)) {
+      map_chr(player_id, ~ download_headshot(.x, dir = params$headshot_dir, res = params$headshot_res))
+    } else {
+      map_chr(player_id, ~ headshot_url(.x, res = params$headshot_res))
+    }
+  )
+
+ggplot(plot_df, aes(x = ppg_delta, y = ts_delta)) +
+  geom_hline(yintercept = 0, linewidth = 0.35, alpha = 0.30) +
+  geom_vline(xintercept = params$ppg_delta_min, linewidth = 0.35, alpha = 0.30) +
+  ggimage::geom_image(aes(image = image), size = 0.085, asp = 1) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "March scoring jumps vs efficiency change",
+    subtitle = paste0("Each player-season shown met the March momentum filters (N = ", nrow(plot_df), ")."),
+    x = "Scoring increase in March (PPG)",
+    y = "Efficiency change in March (TS%)",
+    caption = "Data: NBA.com | Viz: @Rambzee_"
+  ) +
+  theme_caleb
+```
+
+Overall, the chart shows that most March scoring jumps are not driven by massive efficiency gains. While some players do see real efficiency bumps, large spikes are relatively rare, suggesting many of these scoring increases come from more minutes, more shots, or a larger role rather than a true leap in shot-making.
+
+# Carryover (Next-season)
+
+```{r carry-prep, cache=TRUE, include=FALSE}
+# Compute next-season full-year scoring so March spikes can be checked for carryover.
+next_ppg <- games_all %>%
+  group_by(season, player_id) %>%
+  summarise(ppg_next = mean(points, na.rm = TRUE), .groups = "drop")
+
+label_outcome <- function(ppg_pre, ppg_march, ppg_next,
+                          baseline_delta = 2,
+                          near_peak_margin = 1,
+                          in_sample_next = TRUE) {
+  if (!in_sample_next) return("Next season not in sample")
+  if (is.na(ppg_next)) return("No next-season data (missed season)")
+  if (ppg_next >= ppg_march - near_peak_margin) return("Held peak")
+  if (ppg_next >= ppg_pre + baseline_delta) return("New baseline")
+  if (ppg_next >= ppg_pre + 0.5) return("Minor bump")
+  "No carry"
+}
+
+carry <- candidates %>%
+  mutate(
+    next_season = map_chr(season, make_next_season),
+    next_in_sample = next_season %in% params$seasons
+  ) %>%
+  left_join(next_ppg, by = c("next_season" = "season", "player_id")) %>%
+  mutate(
+    carry_ratio = if_else(
+      is.na(ppg_next),
+      NA_real_,
+      (ppg_next - ppg_Pre_March) / pmax(ppg_March - ppg_Pre_March, 0.01)
+    ),
+    outcome_raw = pmap_chr(
+      list(ppg_Pre_March, ppg_March, ppg_next, next_in_sample),
+      ~ label_outcome(
+        ..1, ..2, ..3,
+        baseline_delta = params$baseline_delta,
+        near_peak_margin = params$near_peak_margin,
+        in_sample_next = ..4
+      )
+    )
+  )
+
+carry_plot <- carry %>%
+  filter(outcome_raw %in% outcome_levels) %>%
+  mutate(
+    outcome = factor(outcome_raw, levels = outcome_levels),
+    leap_type = factor(leap_type)
+  )
+```
+
+## 5) Do March jumps carry?
+
+```{r carryover-bar}
+outcome_summary_plot <- carry_plot %>%
+  count(outcome) %>%
+  mutate(pct = n / sum(n))
+
+ggplot(outcome_summary_plot, aes(x = outcome, y = pct, fill = outcome)) +
+  geom_col(width = 0.72, show.legend = FALSE) +
+  geom_text(
+    aes(label = percent(pct, accuracy = 1)),
+    vjust = -0.45,
+    size = 4
+  ) +
+  scale_fill_manual(values = outcome_cols, drop = FALSE) +
+  scale_y_continuous(
+    labels = percent_format(),
+    expand = expansion(mult = c(0, 0.08))
+  ) +
+  labs(
+    title = "Do March scoring jumps carry into the next season?",
+    subtitle = "Most late-season scoring spikes fade once the next year begins",
+    x = NULL,
+    y = "Share of qualifying players",
+    caption = "Data: NBA.com | Viz: @Rambzee_"
+  ) +
+  theme_caleb
+```
+
+The outcomes reinforce the “Mickey Mouse March” pattern many fans are familiar with. Most late-season scoring surges fade once the next season begins, with only a smaller group maintaining that level or turning it into a new baseline. In other words, while March runs can highlight opportunity or momentum, they rarely translate directly into sustained production the following year.
+
+## 6) Carryover outcomes by leap type
+
+```{r outcome-by-type}
+carry_plot2 <- carry_plot %>%
+  mutate(
+    leap_type = as.character(leap_type),
+    leap_type = na_if(leap_type, "NA"),
+    leap_type = na_if(leap_type, "N/A"),
+    leap_type = na_if(leap_type, "")
+  ) %>%
+  filter(!is.na(leap_type)) %>%
+  mutate(
+    leap_type = droplevels(factor(leap_type)),
+    outcome = droplevels(outcome)
+  )
+
+type_outcome <- carry_plot2 %>%
+  count(leap_type, outcome, name = "n") %>%
+  group_by(leap_type) %>%
+  mutate(pct = n / sum(n)) %>%
+  ungroup()
+
+type_order <- type_outcome %>%
+  filter(outcome %in% c("Held peak", "New baseline")) %>%
+  group_by(leap_type) %>%
+  summarise(meaningful_pct = sum(pct), .groups = "drop") %>%
+  arrange(desc(meaningful_pct))
+
+type_outcome <- type_outcome %>%
+  mutate(leap_type = factor(leap_type, levels = type_order$leap_type))
+
+ggplot(type_outcome, aes(x = leap_type, y = pct, fill = outcome)) +
+  geom_col(width = 0.8) +
+  scale_y_continuous(
+    labels = percent_format(),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  scale_fill_manual(values = outcome_cols, drop = FALSE) +
+  labs(
+    title = "Which kinds of March jumps are more believable?",
+    subtitle = "Role and shot-diet changes tend to hold up better than pure heaters",
+    x = NULL,
+    y = "Share within leap type",
+    fill = "Outcome",
+    caption = "Data: NBA.com | Viz: @Rambzee_"
+  ) +
+  coord_flip() +
+  theme_caleb
+```
+
+## 7) March jump vs next-season baseline carry
+
+```{r model-prep, cache=TRUE, include=FALSE}
+model_df <- carry_plot %>%
+  mutate(baseline_carry = ppg_next - ppg_Pre_March) %>%
+  filter(!is.na(baseline_carry))
+
+label_df <- model_df %>%
+  mutate(
+    rank_ppg = dense_rank(desc(ppg_delta)),
+    rank_pos = dense_rank(desc(baseline_carry)),
+    rank_neg = dense_rank(baseline_carry)
+  ) %>%
+  filter(rank_ppg <= 5 | rank_pos <= 5 | rank_neg <= 5)
+```
+
+```{r model-visual}
+ggplot(model_df, aes(x = ppg_delta, y = baseline_carry, color = team_split_March)) +
+  geom_hline(yintercept = 0, linewidth = 0.35, alpha = 0.35, color = "#666666") +
+  geom_point(alpha = 0.80, size = 2.3, show.legend = FALSE) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 0.8, color = "#141414") +
+  geom_text_repel(
+    data = label_df,
+    aes(label = player_name),
+    size = 2.8,
+    show.legend = FALSE,
+    box.padding = 0.25,
+    point.padding = 0.15,
+    seed = 42,
+    max.overlaps = Inf
+  ) +
+  labs(
+    title = "Do bigger March jumps lead to bigger next-season gains?",
+    subtitle = "The overall relationship is weak, even when the late-season jump is large",
+    x = "March scoring jump (PPG)",
+    y = "Next-season scoring change vs pre-March baseline",
+    caption = "Data: NBA.com | Viz: @Rambzee_"
+  ) +
+  theme_caleb
+```
+
+Bigger March scoring jumps do not necessarily lead to bigger improvements the following season. While a few late-season surges do carry forward, many players return closer to their prior level once the new year begins. The overall trend suggests that a hot March alone is not a reliable indicator of future scoring growth and often reflects temporary circumstances rather than a lasting leap.
+
+## 8) What predicts carryover?
+
+A big March does not automatically signal a breakout.
+
+The jump can still be useful, but mostly as a **signal to look deeper**. Changes in role, minutes, or shot profile often matter more than the scoring spike itself. In other words, the March numbers are better treated as a **starting point for context**, not a prediction on their own.
+
+# So who could have their own March heater this year?
+
+```{r current-year-swings, cache=TRUE}
+current_season <- "2025-26"
+
+current_logs <- games_all %>%
+  filter(season == current_season) %>%
+  arrange(player_name, game_date)
+
+recent_swings <- current_logs %>%
+  group_by(player_name, player_id, team) %>%
+  filter(n() >= params$last_n, n() >= params$min_gp_current) %>%
+  summarise(
+    GP = n(),
+    MPG = mean(minutes, na.rm = TRUE),
+    ppg_season = mean(points, na.rm = TRUE),
+    ppg_last_n = mean(tail(points, params$last_n), na.rm = TRUE),
+    ppg_swing = ppg_last_n - ppg_season,
+    ts_season = mean(ts_pct, na.rm = TRUE),
+    ts_last_n = mean(tail(ts_pct, params$last_n), na.rm = TRUE),
+    ts_swing = ts_last_n - ts_season,
+    .groups = "drop"
+  ) %>%
+  arrange(desc(ppg_swing))
+
+recent_tbl <- recent_swings %>%
+  transmute(
+    Player = player_name,
+    Team = team,
+    GP = GP,
+    MPG = round(MPG, 1),
+    `PPG (season)` = round(ppg_season, 1),
+    `PPG (last N)` = round(ppg_last_n, 1),
+    `PPG swing` = fmt_delta(ppg_swing, 1),
+    `TS% (season)` = fmt_pct(ts_season, 0.1),
+    `TS% (last N)` = fmt_pct(ts_last_n, 0.1),
+    `TS% swing` = fmt_pct_delta(ts_swing, 0.1)
+  ) %>%
+  slice_head(n = 15)
+
+kable(
+  recent_tbl,
+  booktabs = TRUE,
+  caption = "2025-26: biggest recent scoring swings (last N vs season baseline)"
+)
+```
+
+Several players have already been on scoring heaters heading into March. Young players like **Nique Clifford, Jarace Walker, Isaiah Collier, and GG Jackson** have seen some of the biggest recent jumps, while established scorers such as **Desmond Bane and Joel Embiid** also appear to be finding another late-season groove. If these runs continue, they could turn into the kind of **March momentum that may drift into Mickey Mouse territory**.
+
+# Final Takeaways
+
+- **Most March heaters are not real.** Late-season scoring spikes happen every year, but most players end up back near their previous level the next season.
+- **The reason behind the jump matters.** Runs tied to more minutes, a bigger role, or a different shot profile are more believable than a player just getting hot.
+- **Use March runs as a signal, not a prediction.** They are usually more about short-term opportunity than a true breakout.
+
+# Appendix
+
+## Full candidate table
+
+```{r appendix-candidate-table}
+appendix_tbl <- candidates %>%
+  transmute(
+    Season = season,
+    Player = player_name,
+    `Team (Mar)` = team_split_March,
+    `PPG (Pre->Mar)` = paste0(round(ppg_Pre_March, 1), " -> ", round(ppg_March, 1)),
+    `PPG delta` = fmt_delta(ppg_delta, 1),
+    `TS% delta` = fmt_pct_delta(ts_delta, 0.1),
+    `MPG delta` = fmt_delta(mpg_delta, 1),
+    `FGA delta` = fmt_delta(fga_delta, 1),
+    `3PA share delta` = fmt_pct_delta(three_rate_delta, 1),
+    `FT rate delta` = fmt_pct_delta(ft_rate_delta, 1),
+    Type = leap_type
+  )
+
+kable(
+  appendix_tbl,
+  booktabs = TRUE,
+  caption = "Appendix: full March momentum candidate list"
+)
+```
