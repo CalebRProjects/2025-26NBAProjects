@@ -36,7 +36,7 @@ The goal of this project is:
 
 ## For Player Evaluation
 
-Davis is still elite in the areas that matter most—finishing, rim protection, and defensive disruption, but is no longer a primary offensive engine.
+Davis is still elite in the areas that matter most (finishing, rim protection, and defensive disruption), but is no longer a primary offensive engine.
 
 For Offensive Role
 
@@ -48,7 +48,7 @@ He remains one of the league’s most consistent defensive playmakers, ranking n
 
 ## For Team Fit
 
-Pairing him with Alex Sarr creates a flexible defensive frontcourt—Davis anchors while Sarr roams. This setup helps cover for perimeter weaknesses and accelerates team development.
+Pairing him with Alex Sarr creates a flexible defensive frontcourt; Davis anchors while Sarr roams. This setup helps cover for perimeter weaknesses and accelerates team development.
 
 ## For Team Building Strategy
 
