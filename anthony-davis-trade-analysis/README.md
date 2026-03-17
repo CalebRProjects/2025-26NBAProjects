@@ -2,7 +2,7 @@
 
 This project evaluates Anthony Davis as a buy-low acquisition for Washington and examines how his skill set fits within a young, developing roster.
 
-Despite declining availability, Davis remains a high-impact two-way player when healthy. The analysis focuses on how his strengths—rim pressure, defensive disruption, and interior presence—translate in a role that emphasizes finishing and anchoring rather than self-creation.
+Despite declining availability, Davis remains a high-impact two-way player when healthy. The analysis focuses on how his strengths (rim pressure, defensive disruption, and interior presence) translate in a role that emphasizes finishing and anchoring rather than self-creation.
 
 Rather than evaluating him in isolation, this project frames Davis through lineup fit, role optimization, and how he raises the floor of a volatile young team.
 
