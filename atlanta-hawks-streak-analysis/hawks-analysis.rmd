@@ -1,5 +1,5 @@
 ---
-title: "The Hawks Are Finally Looking Real"
+title: "An 11-Game Run, and a Reality Check"
 author: "Caleb Ramsey"
 date: "`r format(Sys.Date(), '%B %d, %Y')`"
 output:
@@ -180,11 +180,11 @@ name_key <- function(x) {
 
 # Executive Summary
 
-Atlanta has spent most of this season bouncing between two familiar tiers: genuinely interesting and overtly frustrating. That is what makes this stretch stand out. The Hawks are in the middle of their most convincing run of the year, stacking wins in a way that feels more complete than the flashes they showed earlier.
+Atlanta has spent most of this season bouncing between two familiar tiers: genuinely interesting and overtly frustrating. That’s what made their recent 11–0 stretch stand out. The Hawks put together their most convincing run of the year, and it looked different from the flashes they’d shown earlier.
 
-Atlanta has sustained this long enough for it to matter, and it has come with real structural improvement. The offense has featured multiple creators instead of relying on a single engine. The defense has been more connected possession to possession. The roster looks like it actually fits.
+It lasted long enough to matter, and it didn’t feel like the same team. Alexander-Walker was scoring at a high level without forcing things, Johnson was driving the offense in multiple ways, and Daniels kept impacting plays on the defensive end. More than anything, it looked like the group clicking at its highest level.
 
-This is one of the best runs the franchise has had in years, and it feels much more stable than what they showed for most of the season.
+Their recent stretch is one of the best runs the franchise has had in years, not just in results but in how it’s looked.
 
 That said, context still matters. The full-season sample still points to volatility, and some of this level is being supported by shotmaking that is unlikely to fully hold. A tougher stretch is coming, and it should give a clearer answer as to how real this version of the Hawks is.
 
@@ -226,31 +226,12 @@ It has been over a decade since a Hawks team put together a stretch like this.
 # League Context
 
 ```{r streak-tables}
-active_streaks <- tibble(
-  Rank = c(1, 2, 3),
-  Team = c("ATL", "OKC", "LAL"),
-  Streak = c(11, 10, 8)
-)
-
 season_streaks <- tibble(
   Rank = c("1st", "2nd", "T-3rd", "T-3rd", "4th"),
-  Team = c("OKC", "DET", "SAS", "ATL*", "OKC*"),
+  Team = c("OKC", "DET", "SAS", "ATL", "OKC*"),
   Streak = c(16, 13, 11, 11, 10),
-  Active = c("", "", "", "*", "*")
+  Active = c("", "", "", "", "*")
 )
-
-kbl(
-  active_streaks,
-  format = "latex",
-  booktabs = TRUE,
-  align = "c",
-  caption = "Longest active winning streaks"
-) %>%
-  kable_styling(
-    latex_options = c("striped", "HOLD_position"),
-    font_size = 9
-  ) %>%
-  row_spec(which(active_streaks$Team == "ATL"), bold = TRUE)
 
 kbl(
   season_streaks,
@@ -267,7 +248,7 @@ kbl(
   footnote(general = "* = active streak", general_title = "")
 ```
 
-The Hawks currently have the longest winning streak in the league, with a pair of streaking teams out West close behind. Across the full season, they have also put together one of the longer runs anyone has had.
+Across the full season, the Hawks have put together one of the longer runs anyone has had.
 
 # Seeding Context
 
@@ -275,7 +256,7 @@ The Hawks currently have the longest winning streak in the league, with a pair o
 standings_shift <- tibble(
   Team = c("DET", "BOS", "CLE", "NYK", "TOR", "PHI", "MIA", "ORL", "ATL", "CHO"),
   Before = c("42-13", "36-19", "36-21", "36-21", "33-23", "30-26", "31-27", "29-26", "27-31", "26-31"),
-  Now = c("49-19", "46-23", "42-27", "45-25", "39-29", "37-32", "38-31", "38-30", "38-31", "35-34")
+  Now = c("51-19", "47-23", "43-27", "46-25", "39-30", "38-32", "38-32", "38-31", "38-32", "36-34")
 )
 
 kbl(
@@ -292,7 +273,7 @@ kbl(
   row_spec(which(standings_shift$Team == "ATL"), bold = TRUE)
 ```
 
-Atlanta was 27–31 and nearly out of the East play-in picture. Now they are 38–31 and firmly in the middle of the playoff race.
+Atlanta was 27–31 and nearly out of the East play-in picture. Now they’re 38–32 and right in the middle of it, part of a tightly packed race for spots outside the play-in. Their run has pushed them up to the 7th seed, just 0.5 games back of 6th and 1.5 back of 5th.
 
 # Team Baseline
 
@@ -398,7 +379,7 @@ kbl(
   column_spec(1, bold = TRUE)
 ```
 
-Eleven straight wins does not happen by accident. Atlanta has gone from being outscored by 1.6 points per game through its first 58 to winning by nearly 18 per game during the streak, all while holding teams to just 106 a night, well below the roughly 115-point league average.
+Eleven straight wins does not happen by accident. Atlanta went from being outscored by 1.6 points per game through its first 58 to winning by nearly 18 per game during the streak, all while holding teams to just 106 a night, well below the roughly 115-point league average.
 
 ```{r team-trend-plot, fig.height=4.8}
 hot_n_start <- min(hot_n_logs$game_date, na.rm = TRUE)
@@ -595,7 +576,7 @@ kbl(
   )
 ```
 
-The offense has been elite, the defense has matched it, and the result is the best net rating in the league over this stretch. That is why the margin has been so high.
+The offense has been elite, the defense has matched it, and the result is the best net rating in the league over their 11-game stretch. 
 
 # Process vs Results
 
@@ -651,12 +632,12 @@ kbl(
 ) %>%
   add_header_above(c(" " = 1, "Overall" = 4, "Offense" = 3, "Defense" = 2, "Efficiency" = 3)) %>%
   kable_styling(
-    latex_options = c("striped", "hold_position", "scale_down"),
+    latex_options = c("striped", "HOLD_position", "scale_down"),
     font_size = 8
   )
 ```
 
-The jump is not coming from just one area. Atlanta is shooting better, taking care of the ball, getting to the line more, and forcing more turnovers. The offense has improved, jumping about seven points in offensive rating, but the bigger shift is on the other end. Their defensive rating has dropped from 111 to 103, with lower opponent eFG and more forced turnovers. That is where the margin is coming from.
+The jump did not come from just one area. Atlanta has been shooting better, taking care of the ball, getting to the line more, and forcing more turnovers. The offense has improved, jumping about seven points in offensive rating, but the bigger shift is on the other end. Their defensive rating has dropped from 111 to 103, with lower opponent eFG and more forced turnovers. That is where the margin is coming from.
 
 # Player Overview (Last `r HOT_N` Games)
 
@@ -793,27 +774,27 @@ kbl(
 
 ## Nickeil Alexander-Walker
 
-Alexander-Walker has been playing the best basketball of his career over this stretch. The scoring stands out, but the efficiency is the bigger story. He is shooting nearly 52% from the field and 48% from three while scoring over 22 a night. Everything has been going down, from pull-ups to catch-and-shoot looks to tough shots late in the clock, and he is doing it without forcing the game. He has also held up on the other end, competing and staying solid defensively even if it is not quite peak-level impact.
+Alexander-Walker has played the best basketball of his career over this stretch. The scoring jumps out, but the efficiency is what makes it real. He’s around 52% from the field and 48% from three while giving them over 22 a night. Pull-ups, catch-and-shoot, late-clock shots, it’s all been there, and none of it feels forced. He’s also held up defensively, competing and staying solid on that end even if it’s not peak-level impact.
 
 ## Jalen Johnson
 
-Johnson has been the engine of this run, even if the efficiency has not fully been there. He is around 20, 10, and 8, and much of what Atlanta is doing runs through him. He grabs and goes, pushes pace, and creates without stopping the flow. The shots have not always fallen, but the impact is still there.
+Johnson has been the engine, even if the efficiency hasn’t fully followed. He’s around 20, 10, and 8, and a lot of what Atlanta is doing runs through him. He grabs and goes, pushes pace, and creates without stalling things out. The shot hasn’t always been there, but the impact is.
 
 ## Dyson Daniels
 
-Daniels is the swing piece in all of this. The shooting is rough, there is no way around that, but almost everything else is elite. He gets downhill, makes the right pass, cuts at the right time, and finds ways to finish even without a jumper. Most importantly, he maximizes possessions. The steals, the deflections, and the extra chances he creates all add up. He is everywhere, and it is a big reason this has worked.
+Daniels is the swing piece. The shooting is rough, there’s no way around it, but everything else is high level. He gets downhill, makes the right read, cuts at the right time, and finds ways to finish anyway. More than anything, he creates extra possessions. The steals, the deflections, the disruption, he’s everywhere, and it’s a big reason this has worked.
 
 ## Onyeka Okongwu
 
-Okongwu has been a big part of this run, and the shooting is the story. He has turned into a legitimate stretch big, knocking down threes and forcing defenses to treat him differently. That changes the spacing for everything else Atlanta wants to do. He is still giving them around 14 and 8, finishing plays and holding up defensively. He is not an elite rim protector, but he has been solid even when asked to do a lot.
+Okongwu has been a big part of this, and the shooting changes everything. He’s turned into a real stretch option, knocking down threes and forcing defenses to account for him. That opens the floor for everything else. He’s still giving them around 14 and 8 and holding up defensively. Not an elite rim protector, but solid, even with a heavy workload.
 
 # The Core Makes More Sense
 
-The most encouraging part of this run is how cleanly the roles fit. Alexander-Walker has given them efficient perimeter scoring without taking over the offense. Johnson has handled most of the creation, rebounding, and pace. Daniels has filled in everything else, defending, rebounding, and connecting possessions.
+The most encouraging part of this run is how cleanly the roles fit. Alexander-Walker provides efficient perimeter scoring, Johnson drives the offense, and Daniels fills in everything else. It’s balanced, and it’s functional in a way this team hasn’t consistently been.
 
 # Remaining Concerns
 
-There are still reasons to stay measured. The full season has been uneven, and some of the offense is being boosted by shooting that will not fully hold. The upcoming stretch should test this version much more seriously. Better teams, tighter games, and less margin for error.
+There are still reasons to stay measured. The full season has been uneven, and some of the offense is being boosted by shooting that will not fully hold. The loss in Houston was an early reminder of that. The upcoming stretch should test this version much more seriously, with better teams, tighter games, and less margin for error.
 
 ```{r sos}
 sos_tbl <- tibble(
@@ -848,10 +829,10 @@ kbl(
   format = "latex",
   booktabs = TRUE,
   digits = 3,
-  caption = "Remaining strength of schedule context"
+  caption = "Remaining strength of schedule context (Prior to March 20th)"
 ) %>%
   kable_styling(
-    latex_options = c("striped", "hold_position", "scale_down"),
+    latex_options = c("striped", "HOLD_position", "scale_down"),
     font_size = 8
   ) %>%
   row_spec(which(sos_tbl$Team == "ATL"), bold = TRUE) %>%
@@ -861,10 +842,10 @@ kbl(
 
 # Final Thoughts
 
-It is still March, so this is not the time to declare anything solved. Some regression is coming, and the full-season sample still matters. But that should not take away from what has actually happened. Atlanta has won 11 straight, gone 14–6 over its last 20, and done it in a way that looks different from earlier in the year.
+It’s still March, so this isn’t the time to declare anything solved. Some regression is coming, and the full-season sample still matters. But that shouldn’t take away from what just happened. Atlanta won 11 straight, went 14–6 over its last 20, and did it in a way that looked different from earlier in the year.
 
 This team has gelled at the right time. The roles are clearer, the production is balanced, and the defense has played at an elite level, supporting the offense instead of relying on it.
 
-Now it gets tested. Atlanta has one of the tougher remaining schedules in the league, with multiple games against teams at the top of the East. This next stretch should tell us whether this is just a run or something they can carry forward.
+The loss in Houston was an early check. Now it gets tested for real. Atlanta has one of the tougher remaining schedules in the league, with multiple games against teams at the top of the East. This next stretch should tell us whether this is just a run or something they can carry forward.
 
-If it holds, the conversation shifts to what this core actually is, and what it could look like over the coming years.
+If it holds, the conversation shifts to what this core actually is, and where it can realistically go from here.
