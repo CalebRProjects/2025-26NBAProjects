@@ -1,0 +1,633 @@
+---
+title: "The Lakers Are Peaking at the Right Time"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+params:
+  season: "2025-26"
+  season_type: "Regular Season"
+  team_abbr: "LAL"
+  team_id: "1610612747"
+  jan1_cutoff: "2026-01-01"
+  allstar_cutoff: "2026-02-13"
+  jan1_ortg_verified: 118.5
+  jan1_drtg_verified: 114.8
+  jan1_net_verified: 3.7
+  allstar_ortg_verified: 120.5
+  allstar_drtg_verified: 113.3
+  allstar_net_verified: 7.2
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(lubridate)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(showtext)
+library(sysfonts)
+library(hoopR)
+library(janitor)
+library(zoo)
+library(tibble)
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  dpi = 450,
+  out.width = "100%",
+  fig.width = 7.6,
+  fig.height = 4.9,
+  dev = "cairo_pdf"
+)
+
+font_add_google("Inter", "inter")
+showtext_auto()
+
+lakers_gold <- "#FDB927"
+lakers_purple <- "#552583"
+paper_bg <- "#f6f4ef"
+grid_col <- "#dedad3"
+text_col <- "#141414"
+bar_col <- "#cfcfcf"
+roll_col <- "#552583"
+shade_col <- alpha("#9b9b9b", 0.15)
+
+# Positional TS baselines used for player-level rTS%.
+# This compares each player to a position-based efficiency baseline
+# rather than to the full-league average.
+team_ts_baseline <- tibble(
+  player_name = c(
+    "Luka Doncic", "Luka Dončić", "Austin Reaves", "LeBron James",
+    "Luke Kennard", "Marcus Smart", "Jaxson Hayes", "Deandre Ayton",
+    "Jake LaRavia", "Rui Hachimura"
+  ),
+  pos = c("PG", "PG", "SG", "SF", "SG", "SG", "C", "C", "SF", "PF"),
+  pos_ts = c(56.5, 56.5, 57.3, 57.9, 57.3, 57.3, 61.1, 61.1, 57.9, 58.1)
+)
+
+theme_caleb <- theme_minimal(base_family = "inter") +
+  theme(
+    plot.background = element_rect(fill = paper_bg, color = NA),
+    panel.background = element_rect(fill = paper_bg, color = NA),
+    panel.grid.major = element_line(color = grid_col, linewidth = 0.25),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(size = 18, face = "bold", hjust = 0.5, color = text_col),
+    plot.subtitle = element_text(size = 10.5, hjust = 0.5, color = "#2f2f2f"),
+    axis.title = element_text(size = 12, face = "bold", color = text_col),
+    axis.text = element_text(size = 10, color = "#333333"),
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 9),
+    plot.caption = element_text(size = 8, hjust = 1, color = "#6e6e6e"),
+    plot.margin = margin(10, 14, 10, 14)
+  )
+
+SEASON <- params$season
+SEASON_TYPE <- params$season_type
+TEAM_ID <- as.character(params$team_id)
+JAN1 <- as.Date(params$jan1_cutoff)
+ALLSTAR <- as.Date(params$allstar_cutoff)
+
+safe_clean_names <- function(df) janitor::clean_names(df)
+to_num <- function(x) suppressWarnings(as.numeric(x))
+
+parse_nba_date <- function(x) {
+  suppressWarnings(
+    parse_date_time(x, orders = c("Ymd", "mdY", "b d, Y", "B d, Y"))
+  ) %>% as.Date()
+}
+
+calc_ts <- function(pts, fga, fta) {
+  pts / (2 * (fga + 0.44 * fta))
+}
+
+get_player_gamelog <- function(pid) {
+  hoopR::nba_playergamelog(
+    season = SEASON,
+    season_type = SEASON_TYPE,
+    player_id = pid
+  ) %>%
+    purrr::pluck("PlayerGameLog") %>%
+    clean_names() %>%
+    mutate(
+      player_id = as.character(player_id),
+      game_id = as.character(game_id),
+      game_date = parse_nba_date(game_date),
+      min = to_num(min),
+      pts = to_num(pts),
+      reb = to_num(reb),
+      ast = to_num(ast),
+      stl = to_num(stl),
+      blk = to_num(blk),
+      tov = to_num(tov),
+      fga = to_num(fga),
+      fta = to_num(fta),
+      fg3a = to_num(fg3a),
+      plus_minus = to_num(plus_minus)
+    )
+}
+```
+
+# Executive Summary
+
+The Lakers have spent much of this season feeling like a team people talked about more than they understood. Every week seemed to bring a new storyline. The fit looked clunky. The bench looked thin. The defense looked too fragile. LeBron was dealing with sciatica and arthritis, which only added to the weirdness of it all. Luka was brilliant. Reaves was brilliant. And yet the whole thing still did not feel as clean or as dangerous as a team with that much talent should.
+
+Lately, that has changed. The Lakers are not just winning, they are starting to look like a team that knows what it is. Luka and Reaves have driven the offense, deservedly drawing most of the spotlight, but the deeper shift has come from LeBron settling into the version of himself this roster actually needs. He is not trying to do everything anymore. He is making the game make sense for them.
+
+```{r team-logs}
+lg <- hoopR::nba_leaguegamelog(
+  season = SEASON,
+  season_type_all_star = SEASON_TYPE
+) %>%
+  purrr::pluck("LeagueGameLog") %>%
+  safe_clean_names()
+
+team_logs <- lg %>%
+  mutate(
+    team_id = as.character(team_id),
+    game_id = as.character(game_id)
+  ) %>%
+  filter(team_id == TEAM_ID) %>%
+  left_join(
+    lg %>%
+      mutate(
+        team_id = as.character(team_id),
+        game_id = as.character(game_id)
+      ) %>%
+      filter(team_id != TEAM_ID) %>%
+      select(game_id, opp_pts = pts),
+    by = "game_id"
+  ) %>%
+  mutate(
+    game_date = parse_nba_date(game_date),
+    pts = to_num(pts),
+    opp_pts = to_num(opp_pts),
+    mov = pts - opp_pts,
+    window_flag = if_else(game_date >= ALLSTAR, "Since All-Star", "Earlier")
+  ) %>%
+  arrange(game_date) %>%
+  mutate(
+    # Rolling 10-game average margin of victory.
+    rolling_mov_10 = zoo::rollapply(
+      mov,
+      width = 10,
+      FUN = mean,
+      align = "right",
+      fill = NA,
+      partial = TRUE
+    )
+  )
+```
+
+# Margin of Victory Over the Season
+
+```{r mov-over-season}
+shade_start <- min(team_logs$game_date[team_logs$game_date >= ALLSTAR], na.rm = TRUE)
+shade_end <- max(team_logs$game_date, na.rm = TRUE)
+
+ggplot(team_logs, aes(x = game_date, y = mov)) +
+  annotate(
+    "rect",
+    xmin = shade_start,
+    xmax = shade_end,
+    ymin = -Inf,
+    ymax = Inf,
+    fill = shade_col,
+    alpha = 0.1,
+    color = NA
+  ) +
+  geom_col(fill = bar_col, width = 0.75) +
+  geom_hline(yintercept = 0, linewidth = 0.45, linetype = "dashed", color = "gray50") +
+  geom_line(aes(y = rolling_mov_10), linewidth = 1.2, color = roll_col, na.rm = TRUE) +
+  labs(
+    title = "The Lakers' recent stretch in the context of their season",
+    subtitle = "Bars = single-game margin. Line = rolling 10-game average. Shaded area = since All-Star.",
+    x = NULL,
+    y = "Point differential",
+    caption = "Source: NBA.com | Viz: @Rambzee_"
+  ) +
+  theme_caleb
+```
+
+The Lakers’ season has not followed a clean arc. There have been real swings in form, long stretches where the process looked clunky, and constant questions about fit, hierarchy, and whether this version of the team would ever fully settle. That is what makes this recent stretch stand out. The margin trend shows a team that has had its share of ups and downs, but also one that seems to be finding its footing at the right time. The Lakers are entering the playoffs not just winning more often, but winning with a level of control and consistency that felt harder to find earlier in the season.
+
+# Team Ratings by Month
+
+```{r monthly-ratings}
+monthly_source <- lg %>%
+  mutate(
+    team_id = as.character(team_id),
+    game_id = as.character(game_id),
+    game_date = parse_nba_date(game_date),
+    pts = to_num(pts),
+    fga = to_num(fga),
+    fta = to_num(fta),
+    oreb = to_num(oreb),
+    tov = to_num(tov)
+  )
+
+monthly_team <- monthly_source %>%
+  filter(team_id == TEAM_ID) %>%
+  select(game_id, game_date, pts, fga, fta, oreb, tov) %>%
+  left_join(
+    monthly_source %>%
+      filter(team_id != TEAM_ID) %>%
+      select(game_id, opp_pts = pts, opp_fga = fga, opp_fta = fta, opp_oreb = oreb, opp_tov = tov),
+    by = "game_id"
+  ) %>%
+  mutate(month = floor_date(game_date, "month")) %>%
+  group_by(month) %>%
+  summarise(
+    # Possessions are estimated using the standard box-score formula.
+    team_poss = sum(fga + 0.44 * fta - oreb + tov, na.rm = TRUE),
+    opp_poss = sum(opp_fga + 0.44 * opp_fta - opp_oreb + opp_tov, na.rm = TRUE),
+    ORtg = 100 * sum(pts, na.rm = TRUE) / team_poss,
+    DRtg = 100 * sum(opp_pts, na.rm = TRUE) / opp_poss,
+    .groups = "drop"
+  ) %>%
+  pivot_longer(cols = c(ORtg, DRtg), names_to = "metric", values_to = "value")
+
+monthly_team <- monthly_team %>%
+  mutate(metric = factor(metric, levels = c("ORtg", "DRtg")))
+
+y_min <- floor(min(monthly_team$value, na.rm = TRUE) - 1)
+y_max <- ceiling(max(monthly_team$value, na.rm = TRUE) + 1)
+
+ggplot(monthly_team, aes(x = month, y = value, color = metric, group = metric)) +
+  geom_hline(yintercept = 115.6, linetype = "dashed", color = "gray55", linewidth = 0.5) +
+  annotate(
+    "text",
+    x = min(monthly_team$month) + 10,
+    y = 115.6 + 0.35,
+    label = "League Avg",
+    hjust = -8,
+    size = 2.5,
+    family = "inter",
+    color = "gray45"
+  ) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2.2) +
+  scale_color_manual(values = c("ORtg" = lakers_gold, "DRtg" = lakers_purple)) +
+  scale_x_date(date_labels = "%b", date_breaks = "1 month") +
+  scale_y_continuous(
+    limits = c(y_min, y_max),
+    breaks = pretty(c(y_min, y_max), n = 6),
+    labels = label_number(accuracy = 0.1)
+  ) +
+  labs(
+    title = "Lakers team ratings by month",
+    subtitle = "Offense and defense over time | Higher ORtg is better; lower DRtg is better.",
+    x = NULL,
+    y = "Rating",
+    color = NULL,
+    caption = "Source: NBA.com | Viz: @Rambzee_"
+  ) +
+  theme_caleb
+```
+
+Looking at their offensive and defensive ratings by month helps explain why the Lakers felt so inconsistent for much of the season. Their offense and defense ebbed and flowed rather than rising together, which kept the team from ever fully settling into a clear identity. Lately, though, both sides have moved in the right direction. That is the difference between a team having a good stretch and a team starting to look genuinely dangerous.
+
+# Record Context
+
+```{r league-record-context}
+league_team_logs <- lg %>%
+  mutate(
+    game_id = as.character(game_id),
+    team_id = as.character(team_id),
+    game_date = parse_nba_date(game_date)
+  )
+
+summarise_team_record_window <- function(df) {
+  df %>%
+    group_by(team_abbreviation) %>%
+    summarise(
+      GP = n(),
+      W = sum(wl == "W", na.rm = TRUE),
+      L = sum(wl == "L", na.rm = TRUE),
+      Win_Pct = W / GP,
+      .groups = "drop"
+    )
+}
+
+since_jan1_record <- league_team_logs %>%
+  filter(game_date >= JAN1) %>%
+  summarise_team_record_window() %>%
+  arrange(desc(Win_Pct)) %>%
+  slice_head(n = 10)
+
+since_allstar_record <- league_team_logs %>%
+  filter(game_date >= ALLSTAR) %>%
+  summarise_team_record_window() %>%
+  arrange(desc(Win_Pct)) %>%
+  slice_head(n = 10)
+
+kable(
+  since_jan1_record %>%
+    mutate(across(where(is.numeric), ~ round(.x, 3))),
+  booktabs = TRUE,
+  caption = "Best records in the NBA since Jan. 1"
+)
+
+kable(
+  since_allstar_record %>%
+    mutate(across(where(is.numeric), ~ round(.x, 3))),
+  booktabs = TRUE,
+  caption = "Best records in the NBA since All-Star"
+)
+```
+
+The Lakers’ recent surge looks strong even in league context. Since January 1, they own the NBA’s seventh-best record at 29–15. Since the All-Star break, they have gone 16–5, the fourth-best mark in the league, which better captures how sharp this team has looked lately.
+
+```{r west-standings-context}
+west_standings_context <- tibble::tribble(
+  ~Rk, ~Team, ~W, ~L, ~Pct,
+  1, "Thunder", 60, 16, 0.789,
+  2, "Spurs", 57, 18, 0.760,
+  3, "Lakers", 49, 26, 0.653,
+  4, "Nuggets", 48, 28, 0.632,
+  5, "Timberwolves", 46, 29, 0.613,
+  6, "Rockets", 45, 29, 0.608
+  ) %>%
+  mutate(Pct = round(Pct, 3))
+
+kable(
+  west_standings_context,
+  booktabs = TRUE,
+  caption = "Top of the Western Conference standings"
+)
+```
+
+That rise has had real standings value too. At 49–26 and third in the West, Los Angeles has created breathing room above the play-in and given itself a much cleaner path into the postseason. Barring a collapse, they look well positioned to finish with at least a top-four seed, and the No. 3 spot now feels like the most likely outcome.
+
+# Post-All-Star League Context
+
+```{r post-allstar-league-context}
+post_allstar_ortg_context <- tibble::tribble(
+  ~Rk, ~Team, ~ORtg,
+  1, "Spurs", 123.4,
+  1, "Hornets", 123.4,
+  3, "Nuggets", 121.5,
+  4, "Clippers", 121.2,
+  5, "Cavaliers", 120.9,
+  6, "Lakers", 120.5,
+  7, "Hawks", 119.9,
+  8, "Heat", 119.3
+)
+
+post_allstar_drtg_context <- tibble::tribble(
+  ~Rk, ~Team, ~DRtg,
+  1, "Thunder", 106.6,
+  2, "Hawks", 108.9,
+  3, "Spurs", 109.3,
+  4, "Trail Blazers", 109.7,
+  5, "Celtics", 110.3,
+  6, "Pistons", 110.3,
+  7, "Knicks", 111.5,
+  8, "Hornets", 111.8,
+  9, "Timberwolves", 112.2,
+  10, "Raptors", 112.5,
+  11, "Lakers", 113.3,
+  12, "Suns", 114.1
+)
+
+post_allstar_net_context <- tibble::tribble(
+  ~Rk, ~Team, ~NetRtg,
+  1, "Spurs", 14.1,
+  2, "Hornets", 11.6,
+  3, "Hawks", 11.0,
+  4, "Thunder", 9.3,
+  5, "Celtics", 8.0,
+  6, "Pistons", 7.6,
+  8, "Lakers", 7.2,
+  8, "Knicks", 7.0,
+  9, "Clippers", 6.5,
+  10, "Nuggets", 6.3
+)
+
+kable(
+  post_allstar_ortg_context %>% mutate(across(where(is.numeric), ~ round(.x, 1))),
+  booktabs = TRUE,
+  caption = "Best offensive ratings in the NBA since All-Star"
+)
+
+kable(
+  post_allstar_drtg_context %>% mutate(across(where(is.numeric), ~ round(.x, 1))),
+  booktabs = TRUE,
+  caption = "Best defensive ratings in the NBA since All-Star"
+)
+
+kable(
+  post_allstar_net_context %>% mutate(across(where(is.numeric), ~ round(.x, 1))),
+  booktabs = TRUE,
+  caption = "Best net ratings in the NBA since All-Star"
+)
+```
+
+Since the break, the Lakers have not just been winning, they have looked like one of the better teams in the league by the measures that matter most. Their 120.5 offensive rating ranks sixth in the NBA over that stretch, which reflects how well the Luka-Reaves partnership has powered the offense. Defensively, they have not been at the level of the league’s absolute best, but they have still been solid enough to give that offense real lift.
+
+Altogether, the Lakers have produced a +7.2 net rating, eighth-best in the league since the break. Some of that run may be helped by hot shooting or short-term variance, but the larger picture still holds. The Lakers have looked more complete and dangerous, with LeBron helping tie the whole thing together in a role that has made this version of the team feel far more coherent.
+
+# Post-All-Star Player Tables
+
+Throughout the player sections, rTS% is measured relative to the league-average true shooting percentage for a player’s position rather than the league as a whole.
+
+```{r player-index}
+player_index <- hoopR::nba_leaguedashplayerstats(
+  season = SEASON,
+  season_type = SEASON_TYPE,
+  measure_type = "Base"
+) %>%
+  purrr::pluck("LeagueDashPlayerStats") %>%
+  clean_names() %>%
+  mutate(player_id = as.character(player_id))
+
+get_player_id <- function(name_vec) {
+  player_index %>%
+    filter(player_name %in% name_vec) %>%
+    pull(player_id) %>%
+    first()
+}
+
+summarise_post_allstar_player <- function(pid, label) {
+  get_player_gamelog(pid) %>%
+    filter(game_date >= ALLSTAR) %>%
+    summarise(
+      Player = label,
+      GP = n(),
+      MPG = mean(min, na.rm = TRUE),
+      PPG = mean(pts, na.rm = TRUE),
+      RPG = mean(reb, na.rm = TRUE),
+      APG = mean(ast, na.rm = TRUE),
+      Stocks = mean(stl + blk, na.rm = TRUE),
+      `3PA` = mean(fg3a, na.rm = TRUE),
+      ts_pct = 100 * sum(pts, na.rm = TRUE) / (2 * sum(fga + 0.44 * fta, na.rm = TRUE)),
+      .groups = "drop"
+    ) %>%
+    left_join(team_ts_baseline, by = c("Player" = "player_name")) %>%
+    mutate(`rTS%` = ts_pct - pos_ts) %>%
+    transmute(
+      Player,
+      GP,
+      MPG = round(MPG, 1),
+      PTS = round(PPG, 1),
+      REB = round(RPG, 1),
+      AST = round(APG, 1),
+      Stocks = round(Stocks, 1),
+      `3PA` = round(`3PA`, 1),
+      `TS%` = round(ts_pct, 1),
+      `rTS%` = round(`rTS%`, 1)
+    )
+}
+```
+
+## The Three-Headed Monster
+
+Luka and Reaves have deservedly gotten much of the attention during this stretch. But what makes the Lakers especially dangerous is that their third star is still doing things that, historically, almost nobody his age has ever done.
+
+```{r big-three-post-allstar}
+luka_id <- get_player_id(c("Luka Doncic", "Luka Dončić"))
+reaves_id <- get_player_id(c("Austin Reaves"))
+lebron_id <- get_player_id(c("LeBron James"))
+
+big_three_post_as <- bind_rows(
+  summarise_post_allstar_player(luka_id, "Luka Dončić"),
+  summarise_post_allstar_player(reaves_id, "Austin Reaves"),
+  summarise_post_allstar_player(lebron_id, "LeBron James")
+)
+
+kable(
+  big_three_post_as,
+  booktabs = TRUE,
+  caption = "The Lakers' three-headed monster since All-Star"
+)
+```
+
+Only two players age 37 or older have ever averaged at least 15 points and 6 assists in a season: LeBron James and Russell Westbrook. LeBron has done it an absurd five separate times, including this season at age 41.
+
+```{r oldest-players-15-6}
+oldest_15_6 <- tibble::tribble(
+  ~Player, ~Age, ~Season, ~PPG, ~RPG, ~APG,
+  "LeBron James", 41, "2025-26", 20.9, 6.0, 6.9,
+  "LeBron James", 40, "2024-25", 24.4, 7.8, 8.2,
+  "LeBron James", 39, "2023-24", 25.7, 7.3, 8.3,
+  "LeBron James", 38, "2022-23", 28.9, 8.3, 6.8,
+  "Russell Westbrook", 37, "2025-26", 15.2, 5.4, 6.7,
+  "LeBron James", 37, "2021-22", 30.3, 8.2, 6.2
+)
+
+kable(
+  oldest_15_6,
+  booktabs = TRUE,
+  digits = 1,
+  caption = "Oldest players to average 15+ PPG and 6+ APG in a season"
+)
+```
+
+At 41, LeBron is still producing like a star while functioning as one of the most overqualified third options the league has ever seen. That is a huge part of why this version of the Lakers feels more sustainable than earlier ones. Earlier in the season, the fit was not always seamless. There were stretches where he still looked caught between being the system and fitting into one led more directly by Luka and Reaves.
+
+Since the break, that tension has eased. LeBron has settled into the role this team needs from him as an organizing, deeply intelligent force who connects everything, picks his spots, and lets the younger duo carry more of the offensive load. The burden has changed. The impact has not.
+
+## Support Pieces
+
+```{r support-pieces-post-allstar}
+ayton_id <- get_player_id(c("Deandre Ayton"))
+smart_id <- get_player_id(c("Marcus Smart"))
+
+support_post_as <- bind_rows(
+  summarise_post_allstar_player(ayton_id, "Deandre Ayton"),
+  summarise_post_allstar_player(smart_id, "Marcus Smart")
+)
+
+kable(
+  support_post_as,
+  booktabs = TRUE,
+  caption = "Key support pieces since All-Star"
+)
+```
+
+```{r smart-defensive-swing}
+smart_def_swing <- tibble::tribble(
+  ~Metric, ~With_Smart, ~Without_Smart, ~Swing,
+  "Defensive Rating", 112.9, 119.1, -6.2
+)
+
+kable(
+  smart_def_swing,
+  booktabs = TRUE,
+  digits = 1,
+  caption = "Marcus Smart defensive on/off swing (padded ratings, low leverage removed)"
+)
+```
+
+Ayton and Smart matter because they make the Lakers feel more complete. Ayton has committed to the role they need from him. The effort can still waver at times, and he will have his share of dumb moments, but the dirty-work buy-in has been real. He has given them size, rebounding, and a functional interior presence, and his recent stretch, while modest on the surface, has been more impactful than the raw numbers suggest.
+
+Smart comes with some chaos too. He will have his share of what-are-you-doing moments, but he more than makes up for them with the defensive impact he brings. In a 3,100-minute sample, the Lakers have posted a 112.9 defensive rating with him on the floor compared to 119.1 with him off, a 6.2-point improvement. That lines up with what this stretch has looked like. Over the past month and a half, Smart has helped sharpen the Lakers’ defense, raise its floor, and give the team a level of edge and disruption it badly needed.
+
+## The Others
+
+```{r others-post-allstar}
+kennard_id <- get_player_id(c("Luke Kennard"))
+hayes_id <- get_player_id(c("Jaxson Hayes"))
+laravia_id <- get_player_id(c("Jake LaRavia", "Jake Laravia"))
+hachimura_id <- get_player_id(c("Rui Hachimura"))
+
+others_post_as <- bind_rows(
+  summarise_post_allstar_player(kennard_id, "Luke Kennard"),
+  summarise_post_allstar_player(hayes_id, "Jaxson Hayes"),
+  summarise_post_allstar_player(laravia_id, "Jake LaRavia"),
+  summarise_post_allstar_player(hachimura_id, "Rui Hachimura")
+)
+
+kable(
+  others_post_as,
+  booktabs = TRUE,
+  caption = "The others since All-Star"
+)
+```
+
+This is where the Lakers start to feel less flimsy than they did earlier in the season. There were real questions about the depth, and for good reason. It looked thin. It looked like something better teams could punish. And while this is still not some overwhelming bench group, these guys have done what the Lakers have needed from them. Kennard gives them real spacing. Hayes gives them vertical pressure and easy finishes. LaRavia gives them another playable wing who can keep things moving without breaking the structure. Rui gives them a little more scoring punch and another bigger body teams still have to account for. Together, they have made the roster feel less easy to pick apart.
+
+## High-Minute 3-Man Lineups
+
+One way to make the Lakers’ late-season rise feel more concrete is to look at the combinations that have actually driven it. Using DataBallr WOWY mode with padded ratings and low leverage removed, the best high-minute Lakers 3-man groups are overwhelmingly built around Luka Dončić, with Austin Reaves, LeBron James, Deandre Ayton, and Marcus Smart appearing repeatedly.
+
+```{r three-man-lineups}
+three_man_lineups <- tibble::tribble(
+  ~Lineup, ~Minutes, ~ORtg, ~ORtg_Rel, ~Off_3P_Pct, ~DRtg, ~DRtg_Rel, ~NetRtg,
+  "Reaves, Luka, LeBron", 491, 120.0, 4.0, 37.8, 113.3, -2.7, 6.7,
+  "Reaves, Luka, Hachimura", 539, 119.1, 3.1, 34.2, 113.9, -2.1, 5.2,
+  "Reaves, Luka, Ayton", 615, 117.9, 1.9, 34.5, 112.8, -3.2, 5.1,
+  "Smart, Luka, Ayton", 720, 119.0, 3.0, 35.7, 115.1, -0.9, 3.9,
+  "Smart, Luka, LeBron", 601, 119.9, 3.9, 36.8, 117.2, 1.2, 2.7,
+  "Smart, Luka, LaRavia", 502, 119.5, 3.5, 34.7, 117.6, 1.6, 2.0,
+  "Luka, LeBron, Ayton", 679, 117.2, 1.3, 34.6, 116.0, 0.0, 1.2,
+  "Luka, Hachimura, Ayton", 532, 117.9, 1.9, 32.8, 118.1, 2.1, -0.2,
+  "Luka, LaRavia, Ayton", 553, 118.6, 2.6, 35.6, 119.0, 3.0, -0.4
+) %>%
+  arrange(desc(NetRtg)) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 1)))
+
+kable(
+  three_man_lineups,
+  booktabs = TRUE,
+  caption = "Best high-minute Lakers 3-man lineups (min. 450 minutes, padded ratings, low leverage removed)"
+)
+```
+
+The clearest takeaway is that the Lakers’ best high-minute trio has been the one most people would guess: Luka, Reaves, and LeBron. In nearly 500 minutes together, that group has posted a +6.7 padded net rating, the best mark among the Lakers’ 3-man combinations with at least 450 minutes played. That lines up with the bigger point of this piece. Luka gives the offense structure, Reaves adds secondary creation and shotmaking, and LeBron ties it together.
+
+Reaves also shows up repeatedly in the strongest combinations. Both the Reaves-Luka-LeBron and Reaves-Luka-Hachimura groups are above +5 in net rating, while the Reaves-Luka-Ayton trio has the best defensive rating in this table at 112.8. The Smart groups are a little different. They are not always the cleanest overall lineups here, but they reinforce his value as a stabilizer and defensive floor-raiser.
+
+# Closing Thoughts
+
+The Lakers look more like a real team now than they did earlier in the season. Luka and Reaves have become a real offensive engine, LeBron has settled into a role that makes the whole thing fit better, and the support pieces have done enough to make this stretch feel real rather than random.
+
+That said, none of it means much unless it holds up in the playoffs. Last year, there was optimism too, before Minnesota shut the door on it. This year’s group looks better and more coherent, but if this run is going to matter, they still have to prove they can hold up over multiple playoff rounds.
