@@ -1,0 +1,775 @@
+---
+title: "The Hornets Are BUZZING"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+params:
+  season: "2025-26"
+  team_abbr: "CHA"
+  last_n: 16
+  roll_n: 10
+  cache_dir: "hornets_shift/cache"
+  use_cache: TRUE
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+library(lubridate)
+library(stringr)
+library(purrr)
+library(knitr)
+library(kableExtra)
+library(janitor)
+library(hoopR)
+library(showtext)
+library(sysfonts)
+library(scales)
+
+# Fonts
+sysfonts::font_add_google("Inter", "inter")
+showtext::showtext_auto()
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  dpi = 300,
+  out.width = "100%"
+)
+
+SEASON <- params$season
+TEAM_ABB <- params$team_abbr
+LAST_N <- params$last_n
+ROLL_N <- params$roll_n
+
+# Cache
+cache_dir <- params$cache_dir
+dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+
+cache_path <- function(name) file.path(cache_dir, paste0(name, ".rds"))
+cache_read <- function(path) if (isTRUE(params$use_cache) && file.exists(path)) readRDS(path) else NULL
+cache_write <- function(x, path) { saveRDS(x, path); x }
+
+# Helpers
+pluck_df <- function(x, prefer = NULL) {
+  if (is.data.frame(x)) return(x)
+  if (!is.null(prefer) && is.list(x) && prefer %in% names(x) && is.data.frame(x[[prefer]])) return(x[[prefer]])
+  if (is.list(x)) {
+    idx <- which(vapply(x, is.data.frame, logical(1)))
+    if (length(idx) > 0) return(x[[idx[1]]])
+  }
+  stop("No data frame found in hoopR response.")
+}
+
+parse_nba_date <- function(x) {
+  x <- as.character(x)
+  d1 <- suppressWarnings(ymd(x))
+  d2 <- suppressWarnings(mdy(x))
+  as.Date(coalesce(d1, d2))
+}
+
+roll_mean <- function(x, n = 10) {
+  vapply(
+    seq_along(x),
+    function(i) mean(x[pmax(1, i - n + 1):i], na.rm = TRUE),
+    numeric(1)
+  )
+}
+
+safe_fetch_cached <- function(key, fn) {
+  p <- cache_path(key)
+  out <- cache_read(p)
+  if (!is.null(out)) return(out)
+  out <- tryCatch(fn(), error = function(e) NULL)
+  if (is.null(out)) stop("Fetch failed: ", key)
+  cache_write(out, p)
+}
+
+to_num <- function(x) suppressWarnings(as.numeric(x))
+
+# Standard possession estimate.
+calc_poss <- function(fga, fta, oreb, tov) fga + 0.44 * fta - oreb + tov
+
+fmt_pm <- function(x) ifelse(is.na(x), NA_character_, sprintf("%+.2f", x))
+
+# Hornets palette
+HORNETS_TEAL   <- "#00788C"
+HORNETS_PURPLE <- "#1D1160"
+HORNETS_GRAY   <- "#A1A1A4"
+INK            <- "#141414"
+
+CAPTION_LINE <- "Data: NBA.com | Viz: @Rambzee_"
+
+theme_caleb <- function() {
+  theme_minimal(base_family = "inter") +
+    theme(
+      plot.background  = element_rect(fill = "#f6f4ef", color = NA),
+      panel.background = element_rect(fill = "#f6f4ef", color = NA),
+      panel.grid.major = element_line(color = "#dedad3", linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+      plot.title       = element_text(size = 16, face = "bold", hjust = 0.5, color = "#141414"),
+      plot.subtitle    = element_text(size = 10, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 8)),
+      axis.title       = element_text(size = 12, face = "bold", color = "#141414"),
+      axis.text        = element_text(size = 10, color = "#333333"),
+      plot.caption     = element_text(size = 8, color = "#6e6e6e", hjust = 0, margin = margin(t = 8)),
+      legend.position  = "top",
+      legend.title     = element_blank(),
+      plot.margin      = margin(10, 12, 14, 12)
+    )
+}
+```
+
+# Executive Summary
+
+The Hornets have flipped the script since the start of the new year. Over the last 16 games, Charlotte has played at an elite level on both ends, sustaining a top-tier offense while adding the defensive and rebounding backbone that turns competitive stretches into dominant ones. Charles Lee has pushed this group to its highest peaks so far. The question now is how much of that level holds as shooting luck inevitably swings the other way.
+
+# Baseline
+
+```{r baseline}
+teams <- hoopR::nba_teams() %>% clean_names()
+
+TEAM_ID <- teams %>%
+  filter(team_abbreviation == TEAM_ABB) %>%
+  slice(1) %>%
+  pull(team_id) %>%
+  as.character()
+
+stopifnot(!is.na(TEAM_ID), TEAM_ID != "")
+
+lg_raw <- safe_fetch_cached(
+  key = paste0("league_team_logs_", SEASON),
+  fn = function() {
+    hoopR::nba_leaguegamelog(
+      season = SEASON,
+      season_type = "Regular Season",
+      player_or_team = "T"
+    )
+  }
+)
+
+lg <- lg_raw |>
+  pluck_df(prefer = "LeagueGameLog") |>
+  clean_names() |>
+  mutate(
+    team_id   = as.character(team_id),
+    game_id   = as.character(game_id),
+    game_date = parse_nba_date(game_date),
+    wl        = as.character(wl),
+    pts  = parse_number(as.character(pts)),
+    fgm  = parse_number(as.character(fgm)),
+    fga  = parse_number(as.character(fga)),
+    fg3m = parse_number(as.character(fg3m)),
+    fg3a = parse_number(as.character(fg3a)),
+    ftm  = parse_number(as.character(ftm)),
+    fta  = parse_number(as.character(fta)),
+    oreb = parse_number(as.character(oreb)),
+    dreb = parse_number(as.character(dreb)),
+    reb  = parse_number(as.character(reb)),
+    ast  = parse_number(as.character(ast)),
+    tov  = parse_number(as.character(tov))
+  ) %>%
+  filter(!is.na(game_date), !is.na(game_id), !is.na(team_id))
+
+lg_opp <- lg %>%
+  select(
+    game_id,
+    team_id_opp = team_id,
+    opp_pts  = pts,
+    opp_fgm  = fgm,
+    opp_fga  = fga,
+    opp_fg3m = fg3m,
+    opp_fg3a = fg3a,
+    opp_fta  = fta,
+    opp_oreb = oreb,
+    opp_dreb = dreb,
+    opp_tov  = tov
+  )
+
+team_logs <- lg %>%
+  filter(team_id == TEAM_ID) %>%
+  left_join(lg_opp, by = "game_id") %>%
+  filter(team_id_opp != TEAM_ID) %>%
+  mutate(
+    mov = pts - opp_pts,
+    result = wl,
+    mov_roll = roll_mean(mov, n = ROLL_N)
+  ) %>%
+  arrange(game_date)
+
+stopifnot(nrow(team_logs) > 0)
+
+last_n_logs <- team_logs %>% slice_tail(n = LAST_N)
+```
+
+```{r baseline-summary}
+team_summary <- bind_rows(
+  team_logs   %>% mutate(window = "Season"),
+  last_n_logs %>% mutate(window = paste0("Last ", LAST_N))
+) %>%
+  group_by(window) %>%
+  summarise(
+    GP = n(),
+    W = sum(result == "W", na.rm = TRUE),
+    L = sum(result == "L", na.rm = TRUE),
+    PTS = mean(pts, na.rm = TRUE),
+    OPP_PTS = mean(opp_pts, na.rm = TRUE),
+    MOV = mean(mov, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(match(window, c(paste0("Last ", LAST_N), "Season")))
+
+kbl(
+  team_summary,
+  booktabs = TRUE,
+  digits = 2,
+  caption = "Season vs. recent form (team game logs)."
+) %>%
+  kable_styling(
+    latex_options = c("hold_position", "scale_down"),
+    font_size = 9
+  )
+```
+
+Charlotte has gone from a near-.500 team with a +1.7 margin of victory to winning games comfortably at +11.8. The offense has improved slightly, but the biggest driver of the gap is on the defensive end. Opponents are scoring roughly nine fewer points per game during this stretch, and that defensive improvement is what is turning close games into blowouts.
+
+```{r baseline-plot, fig.height=4.8}
+last_n_start <- min(last_n_logs$game_date, na.rm = TRUE)
+
+ggplot(team_logs, aes(x = game_date)) +
+  annotate(
+    "rect",
+    xmin = last_n_start,
+    xmax = max(team_logs$game_date, na.rm = TRUE),
+    ymin = -Inf,
+    ymax = Inf,
+    alpha = 0.08,
+    fill = HORNETS_PURPLE
+  ) +
+  geom_col(aes(y = mov), width = 0.9, alpha = 0.35, fill = HORNETS_GRAY) +
+  geom_line(aes(y = mov_roll), color = HORNETS_TEAL, linewidth = 1.05, na.rm = TRUE) +
+  geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.55) +
+  labs(
+    title = "Are the Hornets actually better lately?",
+    subtitle = paste0(
+      "Bars = single-game margin. Line = rolling ", ROLL_N,
+      "-game average. Shaded area = last ", LAST_N, " games."
+    ),
+    x = NULL,
+    y = "Point differential",
+    caption = CAPTION_LINE
+  ) +
+  theme_caleb()
+```
+
+Early in the season, Charlotte mixed close losses with stretches where games slipped away entirely. Since the calendar turned, that pattern has flipped. They have gone 11-5, stacking multiple blowout wins and getting consistently strong play from their young core rather than isolated performances.
+
+# League Context (Last `r LAST_N` Games)
+
+```{r league-context-lastn}
+LAST_N_CTX <- LAST_N
+
+lg2 <- lg %>%
+  left_join(lg_opp, by = "game_id") %>%
+  filter(team_id != team_id_opp)
+
+lastn_games <- lg2 %>%
+  group_by(team_id) %>%
+  arrange(game_date, .by_group = TRUE) %>%
+  mutate(g = row_number(), gmax = max(g, na.rm = TRUE)) %>%
+  filter(g > gmax - LAST_N_CTX) %>%
+  ungroup()
+
+team_lastn <- lastn_games %>%
+  group_by(team_id) %>%
+  summarise(
+    team_name = first(team_name),
+    team_abbr = first(team_abbreviation),
+    GP = n(),
+    W = sum(wl == "W", na.rm = TRUE),
+    L = sum(wl == "L", na.rm = TRUE),
+    poss_for = sum(calc_poss(fga, fta, oreb, tov), na.rm = TRUE),
+    poss_def = sum(calc_poss(opp_fga, opp_fta, opp_oreb, opp_tov), na.rm = TRUE),
+    pts_for = sum(pts, na.rm = TRUE),
+    pts_against = sum(opp_pts, na.rm = TRUE),
+    fgm = sum(fgm, na.rm = TRUE),
+    fga = sum(fga, na.rm = TRUE),
+    fg3m = sum(fg3m, na.rm = TRUE),
+    fg3a = sum(fg3a, na.rm = TRUE),
+    fta = sum(fta, na.rm = TRUE),
+    tov = sum(tov, na.rm = TRUE),
+    oreb = sum(oreb, na.rm = TRUE),
+    opp_fgm = sum(opp_fgm, na.rm = TRUE),
+    opp_fga = sum(opp_fga, na.rm = TRUE),
+    opp_fg3m = sum(opp_fg3m, na.rm = TRUE),
+    opp_fta = sum(opp_fta, na.rm = TRUE),
+    opp_tov = sum(opp_tov, na.rm = TRUE),
+    opp_oreb = sum(opp_oreb, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    ORtg = if_else(poss_for > 0, 100 * pts_for / poss_for, NA_real_),
+    DRtg = if_else(poss_def > 0, 100 * pts_against / poss_def, NA_real_),
+    NetRtg = ORtg - DRtg,
+    eFG = if_else(fga > 0, (fgm + 0.5 * fg3m) / fga, NA_real_),
+    TOVpct = if_else(poss_for > 0, tov / poss_for, NA_real_),
+    FTr = if_else(fga > 0, fta / fga, NA_real_),
+    opp_eFG = if_else(opp_fga > 0, (opp_fgm + 0.5 * opp_fg3m) / opp_fga, NA_real_),
+    opp_TOVpct = if_else(poss_def > 0, opp_tov / poss_def, NA_real_),
+    netrtg_rank = min_rank(desc(NetRtg)),
+    ortg_rank = min_rank(desc(ORtg)),
+    drtg_rank = min_rank(DRtg)
+  )
+
+lg_avg_ortg <- weighted.mean(team_lastn$ORtg, w = team_lastn$poss_for, na.rm = TRUE)
+lg_avg_drtg <- weighted.mean(team_lastn$DRtg, w = team_lastn$poss_def, na.rm = TRUE)
+lg_avg_net <- lg_avg_ortg - lg_avg_drtg
+
+team_lastn <- team_lastn %>%
+  mutate(
+    rel_ortg = ORtg - lg_avg_ortg,
+    rel_drtg = DRtg - lg_avg_drtg,
+    rel_netrtg = NetRtg - lg_avg_net
+  )
+
+hornets_ctx <- team_lastn %>% filter(team_id == as.character(TEAM_ID)) %>% slice(1)
+hornets_ctx_fmt <- hornets_ctx %>% mutate(across(c(rel_ortg, rel_drtg, rel_netrtg), fmt_pm))
+
+kbl(
+  hornets_ctx_fmt %>%
+    select(
+      team_name, GP, W, L,
+      NetRtg, rel_netrtg, netrtg_rank,
+      ORtg, rel_ortg, ortg_rank,
+      DRtg, rel_drtg, drtg_rank
+    ),
+  booktabs = TRUE,
+  digits = 2,
+  caption = paste0(
+    "League context (last ", LAST_N_CTX,
+    " games). Relative ratings are vs. league average in this same window; DRtg: negative is better."
+  )
+) %>%
+  kable_styling(
+    latex_options = c("hold_position", "scale_down"),
+    font_size = 9
+  )
+```
+
+Over the last 16 games, the Hornets are operating nearly 10 points per 100 possessions above league average offensively, while pairing it with an elite defensive profile that allows roughly four fewer points per 100 possessions than the league norm. That combination is what has turned strong performances into consistent wins.
+
+```{r league-off-dist, echo=FALSE}
+top_n <- 5
+
+top_off <- team_lastn %>%
+  arrange(desc(ORtg)) %>%
+  slice_head(n = top_n) %>%
+  transmute(
+    Rk = row_number(),
+    Team = team_abbr,
+    `W-L` = paste0(W, "-", L),
+    ORtg = round(ORtg, 1),
+    `Rel ORtg` = fmt_pm(rel_ortg)
+  )
+
+top_def <- team_lastn %>%
+  arrange(DRtg) %>%
+  slice_head(n = top_n) %>%
+  transmute(
+    Rk = row_number(),
+    Team = team_abbr,
+    `W-L` = paste0(W, "-", L),
+    DRtg = round(DRtg, 1),
+    `Rel DRtg` = fmt_pm(rel_drtg)
+  )
+
+top_net <- team_lastn %>%
+  arrange(desc(NetRtg)) %>%
+  slice_head(n = top_n) %>%
+  transmute(
+    Rk = row_number(),
+    Team = team_abbr,
+    `W-L` = paste0(W, "-", L),
+    NetRtg = round(NetRtg, 1),
+    `Rel Net` = fmt_pm(rel_netrtg)
+  )
+
+hornets_net_all <- team_lastn %>%
+  arrange(desc(NetRtg)) %>%
+  mutate(Rk = row_number()) %>%
+  filter(team_id == as.character(TEAM_ID)) %>%
+  select(Rk, team_abbr, GP, W, L, NetRtg, rel_netrtg) %>%
+  mutate(
+    NetRtg = round(NetRtg, 1),
+    rel_netrtg = fmt_pm(rel_netrtg),
+    `W-L` = paste0(W, "-", L)
+  ) %>%
+  select(Rk, Team = team_abbr, GP, `W-L`, NetRtg, `Rel Net` = rel_netrtg)
+
+kbl(
+  top_off,
+  booktabs = TRUE,
+  caption = paste0("Top ", top_n, " offenses (last ", LAST_N_CTX, " games).")
+) %>%
+  kable_styling(
+    latex_options = c("HOLD_position", "scale_down"),
+    font_size = 8
+  )
+```
+
+With their young talent in place, offensive upside has always been there, and recently it has shown up consistently. Since the start of the new year, Charlotte has been the most efficient offense in the league, posting a 117.4 offensive rating driven by strong shooting and pace.
+
+```{r def-ranking, echo=FALSE}
+kbl(
+  top_def,
+  booktabs = TRUE,
+  caption = paste0("Top ", top_n, " defenses (last ", LAST_N_CTX, " games).")
+) %>%
+  kable_styling(
+    latex_options = c("hold_position", "scale_down"),
+    font_size = 8
+  )
+```
+
+As noted, Charlotte’s defense has been excellent relative to league average over this stretch. To put a number on it, they rank 4th in defensive rating over the last 16 games, allowing just 107.2 points per 100 possessions. That places them in the same tier as teams like Phoenix and Houston during this window, and firmly establishes the defense as a main driver of their recent success.
+
+```{r net-ranking, echo=FALSE}
+kbl(
+  top_net,
+  booktabs = TRUE,
+  caption = paste0("Top ", top_n, " net ratings (last ", LAST_N_CTX, " games).")
+) %>%
+  kable_styling(
+    latex_options = c("hold_position", "scale_down"),
+    font_size = 8
+  )
+```
+
+Overall, Charlotte has the best net rating in the league during this stretch, sitting about a point ahead of the defending champion Thunder at +9.95 vs. +8.45. Some of that gap comes from a handful of blowouts, but it still shows the level this team can reach when both sides of the ball are clicking the way they have lately.
+
+# Process vs. Results (What Changed vs. What Might Regress)
+
+```{r process-vs-results}
+summ_process <- function(df) {
+  poss_for <- sum(calc_poss(df$fga, df$fta, df$oreb, df$tov), na.rm = TRUE)
+  poss_def <- sum(calc_poss(df$opp_fga, df$opp_fta, df$opp_oreb, df$opp_tov), na.rm = TRUE)
+
+  tibble(
+    GP = nrow(df),
+    PPG = mean(df$pts, na.rm = TRUE),
+    OPP_PPG = mean(df$opp_pts, na.rm = TRUE),
+    MOV = mean(df$mov, na.rm = TRUE),
+    eFG = (sum(df$fgm, na.rm = TRUE) + 0.5 * sum(df$fg3m, na.rm = TRUE)) / sum(df$fga, na.rm = TRUE),
+    TOVpct = sum(df$tov, na.rm = TRUE) / poss_for,
+    FTr = sum(df$fta, na.rm = TRUE) / sum(df$fga, na.rm = TRUE),
+    opp_eFG = (sum(df$opp_fgm, na.rm = TRUE) + 0.5 * sum(df$opp_fg3m, na.rm = TRUE)) / sum(df$opp_fga, na.rm = TRUE),
+    opp_TOVpct = sum(df$opp_tov, na.rm = TRUE) / poss_def,
+    ORtg = 100 * sum(df$pts, na.rm = TRUE) / poss_for,
+    DRtg = 100 * sum(df$opp_pts, na.rm = TRUE) / poss_def,
+    NetRtg = ORtg - DRtg
+  )
+}
+
+proc_tbl <- bind_rows(
+  summ_process(team_logs)   %>% mutate(Window = "Season"),
+  summ_process(last_n_logs) %>% mutate(Window = paste0("Last ", LAST_N))
+) %>%
+  select(Window, everything())
+
+proc_tbl_fmt <- proc_tbl %>%
+  mutate(
+    eFG = percent(eFG, accuracy = 0.1),
+    TOVpct = percent(TOVpct, accuracy = 0.1),
+    FTr = round(FTr, 3),
+    opp_eFG = percent(opp_eFG, accuracy = 0.1),
+    opp_TOVpct = percent(opp_TOVpct, accuracy = 0.1),
+    ORtg = round(ORtg, 1),
+    DRtg = round(DRtg, 1),
+    NetRtg = round(NetRtg, 1),
+    PPG = round(PPG, 1),
+    OPP_PPG = round(OPP_PPG, 1),
+    MOV = round(MOV, 1)
+  )
+
+proc_tbl_fmt_disp <- proc_tbl_fmt %>%
+  rename(
+    "eFG%" = eFG,
+    "TOV%" = TOVpct,
+    "FTr" = FTr,
+    "Opp eFG%" = opp_eFG,
+    "Opp TOV%" = opp_TOVpct,
+    "ORtg" = ORtg,
+    "DRtg" = DRtg,
+    "Net" = NetRtg,
+    "PPG" = PPG,
+    "Opp PPG" = OPP_PPG
+  )
+
+kbl(
+  proc_tbl_fmt_disp,
+  booktabs = TRUE,
+  align = "lrrrrrrrrrrrr",
+  caption = "Process vs. results: inputs (shot quality, ball security, pressure) vs. outputs (efficiency and margin)."
+) %>%
+  add_header_above(c(
+    " " = 1,
+    "Overall" = 4,
+    "Offense" = 3,
+    "Defense" = 2,
+    "Efficiency" = 3
+  )) %>%
+  kable_styling(
+    latex_options = c("hold_position", "scale_down"),
+    font_size = 8
+  )
+```
+
+Offensively, the Hornets look much like they have all season, with similar efficiency and turnover rates and gains coming from cleaner execution. The bigger shift has been on defense. Opponents are shooting about 3.7 percentage points worse in eFG%, largely because Charlotte has stayed disciplined. They have bought in to sitting in their stance and playing connected team defense rather than letting lapses define them. That approach has pushed their defensive rating to roughly six points better per 100 possessions than their season average.
+
+# What’s Changed? (Box-Score Deltas)
+
+```{r deltas}
+box_cols <- c("fg3a", "fga", "fta", "tov", "oreb", "dreb", "reb", "ast")
+box_cols <- intersect(box_cols, names(team_logs))
+stopifnot(length(box_cols) > 0)
+
+team_logs_num <- team_logs %>% mutate(across(all_of(box_cols), ~ to_num(.x)))
+last_n_logs_num <- last_n_logs %>% mutate(across(all_of(box_cols), ~ to_num(.x)))
+
+season_avg <- team_logs_num %>% summarise(across(all_of(box_cols), ~ mean(.x, na.rm = TRUE)))
+recent_avg <- last_n_logs_num %>% summarise(across(all_of(box_cols), ~ mean(.x, na.rm = TRUE)))
+
+delta_tbl <- tibble(metric = box_cols) %>%
+  rowwise() %>%
+  mutate(
+    season = season_avg[[metric]][1],
+    recent = recent_avg[[metric]][1],
+    diff = recent - season
+  ) %>%
+  ungroup()
+
+kbl(
+  delta_tbl,
+  booktabs = TRUE,
+  digits = 2,
+  caption = "Season vs. last-N deltas (box-score per game)."
+) %>%
+  kable_styling(
+    latex_options = c("hold_position", "scale_down"),
+    font_size = 9
+  )
+```
+
+This table mostly confirms what has not changed. Shot volume, three-point attempts, and turnovers are basically identical to the season baseline, and free-throw attempts are actually lower. The difference is simple: Charlotte is ending possessions. They are rebounding better on both ends, especially defensively, which limits second chances and keeps games from snowballing back the other way. That extra control is a major win on the margins, even without major changes elsewhere.
+
+# Player Overview (Last `r LAST_N` Games)
+
+```{r players}
+library(stringi)
+
+LAST_N_PLAYERS <- LAST_N
+
+keep_players <- c(
+  "LaMelo Ball",
+  "Brandon Miller",
+  "Miles Bridges",
+  "Kon Knueppel",
+  "Moussa Diabate"
+)
+
+name_key <- function(x) {
+  x %>%
+    stringi::stri_trans_general("Latin-ASCII") %>%
+    stringr::str_squish() %>%
+    stringr::str_to_lower()
+}
+
+keep_keys <- name_key(keep_players)
+
+ldp_raw <- safe_fetch_cached(
+  key = paste0("ld_players_base_", SEASON),
+  fn = function() {
+    hoopR::nba_leaguedashplayerstats(
+      season = SEASON,
+      season_type = "Regular Season",
+      per_mode = "PerGame",
+      measure_type = "Base"
+    )
+  }
+)
+
+ldp <- ldp_raw |>
+  pluck_df(prefer = "LeagueDashPlayerStats") |>
+  clean_names() |>
+  mutate(
+    team_id = as.character(team_id),
+    player_key = name_key(player_name)
+  )
+
+player_ids <- ldp %>%
+  filter(team_id == as.character(TEAM_ID)) %>%
+  transmute(
+    player_id = as.character(player_id),
+    player = player_name,
+    player_key
+  ) %>%
+  distinct() %>%
+  filter(player_key %in% keep_keys) %>%
+  select(player_id, player)
+
+stopifnot(nrow(player_ids) > 0)
+
+get_lastn_tbl_safe <- function(pid) {
+  out <- tryCatch(
+    suppressMessages(
+      hoopR::nba_playerdashboardbylastngames(
+        season = SEASON,
+        season_type = "Regular Season",
+        player_id = pid,
+        last_n_games = LAST_N_PLAYERS,
+        per_mode = "PerGame"
+      )
+    ),
+    error = function(e) NULL
+  )
+  if (is.null(out)) return(NULL)
+
+  tbl <- tryCatch(
+    pluck_df(out, prefer = "OverallPlayerDashboard") %>% clean_names(),
+    error = function(e) NULL
+  )
+  if (is.null(tbl) || nrow(tbl) == 0) return(NULL)
+
+  tbl %>% mutate(player_id = as.character(pid)) %>% select(player_id, everything())
+}
+
+players_stamp <- paste(sort(player_ids$player_id), collapse = "_")
+lastn_key <- paste0("last", LAST_N_PLAYERS, "_dash_", TEAM_ID, "_", SEASON, "_", players_stamp)
+lastn_path <- cache_path(lastn_key)
+
+lastn_raw <- cache_read(lastn_path)
+if (is.null(lastn_raw)) {
+  lastn_raw <- map_dfr(player_ids$player_id, get_lastn_tbl_safe)
+  stopifnot(nrow(lastn_raw) > 0)
+  cache_write(lastn_raw, lastn_path)
+}
+
+stopifnot(all(lastn_raw$player_id %in% player_ids$player_id))
+
+lastn_tbl <- lastn_raw %>%
+  left_join(player_ids, by = "player_id") %>%
+  mutate(
+    pts = to_num(pts),
+    fga = to_num(fga),
+    fgm = to_num(fgm),
+    fg3m = to_num(fg3m),
+    fta = to_num(fta),
+    tov = to_num(tov),
+    min = to_num(min),
+    ts_pct = pts / (2 * (fga + 0.44 * fta)),
+    efg_pct = (fgm + 0.5 * fg3m) / fga,
+    tov_per100 = 100 * tov / (fga + 0.44 * fta + tov),
+    pts_per36 = 36 * pts / min
+  ) %>%
+  relocate(player, .before = everything()) %>%
+  select(
+    player,
+    gp, min,
+    pts, pts_per36, reb, ast,
+    fg_pct, fg3_pct, ft_pct,
+    ts_pct, efg_pct,
+    tov, tov_per100,
+    plus_minus
+  ) %>%
+  arrange(desc(pts))
+
+kableExtra::kbl(
+  lastn_tbl,
+  booktabs = TRUE,
+  digits = 2,
+  caption = paste0(TEAM_ABB, ": last ", LAST_N_PLAYERS, " games (player dashboard).")
+) %>%
+  kableExtra::kable_styling(
+    latex_options = c("hold_position", "scale_down"),
+    font_size = 8
+  )
+```
+
+# Brandon Miller
+
+Miller has clearly been the No. 1 option during this stretch. Over his last 15 games, he is averaging 22.3 points in 29.9 minutes, or 26.9 per 36, while shooting 48.1% from the field and 42.7% from three at +6% rTS. The scoring has come naturally with few forced possessions, and it is a sharp contrast from earlier in the season when injuries disrupted his rhythm. Add in 5.2 rebounds and 3.3 assists per game, and Miller is starting to look like the lead scorer Charlotte envisioned on draft night.
+
+# LaMelo Ball
+
+LaMelo’s scoring at 17.6 PPG, or 24.4 per 36, has not fully popped, but his grip on the offense has been essential. Charlotte is +11.3 points per 100 possessions with him on the floor, 124.2 ORtg vs. 112.9 ORtg, a massive swing that shows how much they rely on his presence. He is averaging 6.7 assists and remains elite at the line at 94.4% FT, even if his overall shooting at 40.5% FG has not fully clicked. When LaMelo is out there, the offense stays organized, plays with pace, and consistently generates quality looks.
+
+# Kon Knueppel
+
+Knueppel has made an immediate impact and has quickly worked his way to the top of the Rookie of the Year conversation. He has been Charlotte’s most efficient scorer, and one of the most efficient scorers in the league, during this stretch, averaging 17.3 points, 6.1 rebounds, and 3.7 assists while shooting 48.7% from the field and 42.0% from three. The efficiency is unreal across the board, backed by a 64% TS at +6 rTS and just 1.6 turnovers per game. Knueppel does not need the ball to be effective, and his ability to score, move it, and stay mistake-free forces defenses to stay honest as they load up on LaMelo and Miller.
+
+# Miles Bridges
+
+Bridges has settled into a steady complementary role during this stretch. Over the last 16 games, he is averaging 15.2 points, 6.1 rebounds, and 3.1 assists while shooting 50.0% from the field and posting a 59% eFG. His impact has come more from fitting into the structure than from elevating it.
+
+# Moussa Diabaté
+
+An absolute monster on the boards at times, Diabaté’s value shows up in the margins. Over this stretch, he is averaging 9.8 points and 9.3 rebounds while converting 68.8% from the field, almost entirely on finishes around the rim. He is not asked to create offense, but his rebounding and interior presence have been game-changing, especially on the defensive end. That impact shows up in the numbers, with Charlotte posting a +10.7 on/off swing when he is in the lineup this season.
+
+# The Young Core Complements Each Other
+
+```{r wowy, echo=FALSE}
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+wowy_core4 <- tibble::tribble(
+  ~Lineup_ON, ~MIN, ~OFF, ~DEF, ~NET,
+  "Ball - Knueppel - Miller - Diabate",        209, 142.4, 111.8, 30.5,
+  "Ball - Knueppel - Diabate (Miller OFF)",    169, 119.1, 107.2, 11.9,
+  "Ball - Knueppel - Miller (Diabate OFF)",    161, 122.3, 129.9, -7.6,
+  "Ball - Miller - Diabate (Knueppel OFF)",    122, 126.7, 113.7, 13.1,
+  "Knueppel - Miller - Diabate (Ball OFF)",     65, 104.9, 110.2, -5.3
+) %>%
+  mutate(
+    NET_fmt = ifelse(NET > 0, paste0("+", sprintf("%.1f", NET)), sprintf("%.1f", NET))
+  ) %>%
+  transmute(
+    `Lineup (ON)` = Lineup_ON,
+    MIN,
+    OFF = round(OFF, 1),
+    DEF = round(DEF, 1),
+    NET = NET_fmt
+  )
+
+kbl(
+  wowy_core4,
+  booktabs = TRUE,
+  caption = "WOWY core lineup splits (full season). OFF/DEF/NET = points per 100 possessions."
+) %>%
+  kable_styling(
+    latex_options = c("hold_position", "scale_down"),
+    font_size = 8
+  ) %>%
+  column_spec(1, width = "3.4in") %>%
+  column_spec(5, bold = TRUE)
+```
+
+Quick caveat up top: these are still small samples. Even 200 minutes can swing with a few hot or cold shooting nights, so the exact numbers will move around. The point here is not that these net ratings are fact; it is that the same patterns show up no matter how you slice the group.
+
+When Ball, Miller, Knueppel, and Diabaté are on the floor together, Charlotte has flat-out dominated. With Diabaté out, the defense slips quickly. Remove Ball and the offense loses its steam. Without Miller, the lineup just does not have the same scoring punch. Knueppel is not engineering everything, but when he is gone, the group loses its ideal complementary shooter.
+
+This is not some magic lineup that suddenly turns Charlotte into a contender, but it does show that this core has real upside. LaMelo plays with a level of audacity few players ever reach, and when it clicks, it is special. Miller is clearly coming into his own as a go-to option, and Knueppel has been the perfect third piece. Pair that offensive balance with what Diabaté brings defensively and on the glass, and it has produced one of the most impressive stretches of Hornets basketball the franchise has seen in a long time.
+
+# Coaching, Bench, and Final Thoughts
+
+Charles Lee deserves a lot of credit for this stretch. If Charlotte keeps trending this way, he will be firmly in the Coach of the Year conversation. The offense popping is not a surprise because the pieces have been there, but the buy-in, especially on the defensive end, has been fantastic to see. Players are clearer on their roles, competing possession to possession, and that commitment shows up in how connected the team looks.
+
+Just as important, Lee has gotten meaningful production from the bench. Collin Sexton has provided a much-needed scoring punch, while guys like Ryan Kalkbrenner, Sion James, Grant Williams, and Josh Green have all made tangible contributions, particularly on defense. There is still plenty to figure out and real questions left to answer, but this stretch has earned the excitement. The buzz around Spectrum Center has not come out of nowhere. It has been well deserved.
