@@ -1,0 +1,534 @@
+---
+title: "LA Clippers Bounceback: What Broke, What Changed, What It Means"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+params:
+  season: "2025-26"
+  team_abbr: "LAC"
+  as_of_date: "2026-01-23"
+  start_games_n: 27
+  recent_games_n: 17
+  use_cache_files: TRUE
+  cache_dir: "clippers_bounceback/data/processed"
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(lubridate)
+library(stringr)
+library(hoopR)
+library(showtext)
+library(sysfonts)
+library(janitor)
+
+# Fonts
+sysfonts::font_add_google("Inter", "inter")
+showtext::showtext_auto()
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  dpi = 300,
+  out.width = "100%"
+)
+
+theme_caleb <- function() {
+  theme_minimal(base_family = "inter") +
+    theme(
+      plot.background  = element_rect(fill = "#f6f4ef", color = NA),
+      panel.background = element_rect(fill = "#f6f4ef", color = NA),
+      panel.grid.major = element_line(color = "#dedad3", linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+      plot.title       = element_text(size = 16, face = "bold", hjust = 0.5, color = "#141414"),
+      plot.subtitle    = element_text(size = 10, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 8)),
+      axis.title       = element_text(size = 12, face = "bold", color = "#141414"),
+      axis.text        = element_text(size = 10, color = "#333333"),
+      plot.caption     = element_text(size = 8, color = "#6e6e6e", hjust = 0, margin = margin(t = 8)),
+      legend.position  = "top",
+      plot.margin      = margin(10, 12, 14, 12)
+    )
+}
+
+CAPTION_LINE <- "Data: NBA.com | Viz: @Rambzee_"
+
+# Utilities
+parse_nba_date <- function(x) {
+  x <- as.character(x)
+  d1 <- suppressWarnings(lubridate::ymd(x))
+  d2 <- suppressWarnings(lubridate::mdy(x))
+  as.Date(dplyr::coalesce(d1, d2))
+}
+
+roll_mean_partial <- function(x, k) {
+  sapply(seq_along(x), function(i) {
+    mean(x[pmax(1, i - k + 1):i], na.rm = TRUE)
+  })
+}
+
+dir_create <- function(path) {
+  dir.create(path, recursive = TRUE, showWarnings = FALSE)
+  invisible(path)
+}
+
+cache_path <- function(stem) {
+  dir_create(params$cache_dir)
+  file.path(params$cache_dir, paste0(stem, "_asof_", params$as_of_date, ".csv"))
+}
+
+read_or_fetch <- function(path, fetch_fn) {
+  if (isTRUE(params$use_cache_files) && file.exists(path)) {
+    return(readr::read_csv(path, show_col_types = FALSE))
+  }
+
+  df <- fetch_fn()
+  readr::write_csv(df, path)
+  df
+}
+
+# Possessions + Four Factors (approximate)
+calc_possessions <- function(fga, fta, oreb, tov) {
+  fga + 0.44 * fta - oreb + tov
+}
+
+add_team_rates <- function(df) {
+  df %>%
+    mutate(
+      poss = calc_possessions(FGA, FTA, OREB, TOV),
+      ortg = if_else(poss > 0, 100 * PTS / poss, NA_real_),
+      efg = if_else(FGA > 0, (FGM + 0.5 * FG3M) / FGA, NA_real_),
+      tov_rate = if_else(poss > 0, TOV / poss, NA_real_),
+      ft_rate = if_else(FGA > 0, FTA / FGA, NA_real_),
+      three_rate = if_else(FGA > 0, FG3A / FGA, NA_real_)
+    )
+}
+
+fmt_pm <- function(x) ifelse(is.na(x), NA_character_, sprintf("%+.2f", x))
+```
+
+# Executive Summary
+
+After the Clippers opened the season 6–21, Ty Lue put it simply: “We just need to go 35–20.”
+
+Since then, Los Angeles has gone 14–3, and the turnaround has come from execution rather than reinvention. The Clippers have cut down on turnovers, gotten to the free-throw line more often, and are finally converting the same shots they were already creating earlier in the season. The structure of the offense has not changed much. James Harden and Kawhi Leonard still drive it, but the effort level and overall sharpness are noticeably higher.
+
+Over the last 17 games, the Clippers own the fourth-best offense in the league, operating at a level comparable to teams like Boston, Golden State, and a scorching-hot Charlotte group. This is not the result of one hot week. The trends point to steady improvement across December and January, with gains in efficiency, ball security, and scoring output.
+
+```{r data-pulls, include=FALSE}
+# Pull Clippers team game log, locked to the report snapshot date.
+fetch_team_gamelog <- function() {
+  lg <- hoopR::nba_leaguegamelog(
+    season = params$season,
+    season_type = "Regular Season",
+    player_or_team = "T"
+  )
+
+  df <- lg$LeagueGameLog
+  if (is.null(df) || nrow(df) == 0) stop("LeagueGameLog returned no rows.")
+
+  as_of <- parse_nba_date(params$as_of_date)
+  if (is.na(as_of)) stop("params$as_of_date must be YYYY-MM-DD or MM/DD/YYYY.")
+
+  df %>%
+    mutate(
+      team_abbr = TEAM_ABBREVIATION,
+      game_date = parse_nba_date(GAME_DATE)
+    ) %>%
+    filter(team_abbr == params$team_abbr) %>%
+    filter(!is.na(game_date)) %>%
+    filter(game_date <= as_of) %>%
+    arrange(game_date)
+}
+
+team_gamelog_path <- cache_path(paste0("team_gamelog_", params$team_abbr))
+
+team_games_raw <- read_or_fetch(
+  team_gamelog_path,
+  fetch_fn = fetch_team_gamelog
+)
+
+team_games <- team_games_raw %>%
+  mutate(
+    game_date = parse_nba_date(GAME_DATE),
+    wl = as.character(WL),
+    matchup = as.character(MATCHUP)
+  ) %>%
+  transmute(
+    team_abbr = params$team_abbr,
+    game_date,
+    wl,
+    matchup,
+    PTS = as.numeric(PTS),
+    FGM = as.numeric(FGM),
+    FGA = as.numeric(FGA),
+    FG3M = as.numeric(FG3M),
+    FG3A = as.numeric(FG3A),
+    FTM = as.numeric(FTM),
+    FTA = as.numeric(FTA),
+    OREB = as.numeric(OREB),
+    DREB = as.numeric(DREB),
+    REB = as.numeric(REB),
+    AST = as.numeric(AST),
+    TOV = as.numeric(TOV),
+    STL = as.numeric(STL),
+    BLK = as.numeric(BLK),
+    PF = as.numeric(PF),
+    PLUS_MINUS = as.numeric(PLUS_MINUS)
+  ) %>%
+  arrange(game_date)
+
+team_games <- team_games %>%
+  mutate(game_n = row_number())
+```
+
+```{r windows, include=FALSE}
+if (nrow(team_games) < params$start_games_n + 3) {
+  stop("Not enough games yet for the chosen start window.")
+}
+
+start_df <- team_games %>% filter(game_n <= params$start_games_n)
+since_df <- team_games %>% filter(game_n > params$start_games_n)
+last_n <- min(params$recent_games_n, nrow(team_games))
+last_df <- team_games %>% slice_tail(n = last_n)
+
+start_end_date <- max(start_df$game_date, na.rm = TRUE)
+
+start_df <- add_team_rates(start_df)
+since_df <- add_team_rates(since_df)
+last_df  <- add_team_rates(last_df)
+team_games_rates <- add_team_rates(team_games)
+```
+
+# Results
+
+## What Was Broken Early?
+
+```{r start-vs-since-table}
+summ_team <- function(df) {
+  df %>%
+    summarise(
+      GP = n(),
+      W = sum(wl == "W", na.rm = TRUE),
+      L = sum(wl == "L", na.rm = TRUE),
+      PPG = mean(PTS, na.rm = TRUE),
+      ORtg = mean(ortg, na.rm = TRUE),
+      eFG = mean(efg, na.rm = TRUE),
+      TOV_rate = mean(tov_rate, na.rm = TRUE),
+      FT_rate = mean(ft_rate, na.rm = TRUE),
+      `3PA_share` = mean(three_rate, na.rm = TRUE),
+      .groups = "drop"
+    )
+}
+
+tab_core <- bind_rows(
+  summ_team(start_df) %>% mutate(Window = paste0("Start (1–", params$start_games_n, ")")),
+  summ_team(since_df) %>% mutate(Window = paste0("Since (", params$start_games_n + 1, "+)"))
+) %>%
+  select(Window, GP, W, L, PPG, ORtg, eFG, TOV_rate, FT_rate, `3PA_share`) %>%
+  mutate(
+    ORtg = round(ORtg, 1),
+    eFG = scales::percent(eFG, accuracy = 0.1),
+    TOV_rate = scales::percent(TOV_rate, accuracy = 0.1),
+    FT_rate = scales::percent(FT_rate, accuracy = 0.1),
+    `3PA_share` = scales::percent(`3PA_share`, accuracy = 0.1),
+    PPG = round(PPG, 1)
+  )
+
+knitr::kable(tab_core, booktabs = TRUE, caption = "Core offensive profile.") %>%
+  kableExtra::kable_styling(latex_options = c("scale_down"))
+```
+
+The early-season Clippers were inefficient and careless.
+
+Through the first 27 games, the offense struggled to turn decent looks into points. Shot efficiency sat well below league average, while turnovers wiped out far too many possessions. Despite the poor results, the Clippers’ shot diet was actually fine. They were taking a healthy number of threes and generating pressure in the half court. The problem was execution. Missed shots, rushed decisions, and empty trips piled up quickly, especially late in games.
+
+## Rolling Trends (How Real Is It?)
+
+```{r rolling, fig.height=5.2, fig.cap="Rolling offensive indicators. Vertical line marks end of the start window."}
+LAC_BLUE <- "#1D428A"
+LAC_RED  <- "#C8102E"
+INK      <- "#141414"
+
+k <- 16
+
+roll_df <- team_games_rates %>%
+  arrange(game_date) %>%
+  mutate(
+    ortg_roll = roll_mean_partial(ortg, k),
+    efg_roll = roll_mean_partial(efg, k),
+    ft_roll = roll_mean_partial(ft_rate, k)
+  ) %>%
+  select(game_date, ortg_roll, efg_roll, ft_roll) %>%
+  pivot_longer(-game_date, names_to = "metric", values_to = "value") %>%
+  mutate(
+    metric = factor(
+      metric,
+      levels = c("ortg_roll", "efg_roll", "ft_roll"),
+      labels = c("ORtg", "eFG%", "FT rate")
+    )
+  )
+
+ggplot(roll_df, aes(game_date, value)) +
+  geom_line(linewidth = 1.05, color = LAC_BLUE, na.rm = TRUE) +
+  geom_vline(
+    xintercept = as.numeric(start_end_date),
+    linetype = "dashed",
+    linewidth = 0.85,
+    color = LAC_RED
+  ) +
+  facet_wrap(~metric, ncol = 1, scales = "free_y") +
+  labs(
+    title = "The Turnaround, Game by Game",
+    subtitle = "Rolling offensive trends since the 6–21 start (dashed line marks the split)",
+    x = NULL,
+    y = NULL,
+    caption = CAPTION_LINE
+  ) +
+  theme_caleb() +
+  theme(
+    plot.title = element_text(face = "bold", color = INK),
+    plot.subtitle = element_text(color = "gray25")
+  )
+```
+
+The rolling trends point to a real shift. Offensive rating has steadily climbed after the early-season window and has held in the range of elite offenses. Free throws tell the story. The Clippers are executing possessions more cleanly and with more force, putting defenses in position to foul night after night.
+
+## League Context (Last 17 Games)
+
+```{r league-context, include=FALSE}
+fetch_league_lastn <- function() {
+  lg <- hoopR::nba_leaguegamelog(
+    season = params$season,
+    season_type = "Regular Season",
+    player_or_team = "T"
+  )
+
+  df <- lg$LeagueGameLog
+  if (is.null(df) || nrow(df) == 0) stop("LeagueGameLog returned no rows.")
+
+  as_of <- parse_nba_date(params$as_of_date)
+  if (is.na(as_of)) stop("params$as_of_date must be YYYY-MM-DD or MM/DD/YYYY.")
+
+  df %>%
+    mutate(
+      team_abbr = TEAM_ABBREVIATION,
+      game_date = parse_nba_date(GAME_DATE),
+      wl = as.character(WL),
+      PTS = as.numeric(PTS),
+      FGM = as.numeric(FGM),
+      FGA = as.numeric(FGA),
+      FG3M = as.numeric(FG3M),
+      FG3A = as.numeric(FG3A),
+      FTA = as.numeric(FTA),
+      OREB = as.numeric(OREB),
+      TOV = as.numeric(TOV)
+    ) %>%
+    filter(!is.na(game_date), game_date <= as_of) %>%
+    arrange(team_abbr, game_date)
+}
+
+league_lastn_path <- cache_path(paste0("league_last", params$recent_games_n))
+
+league_games <- read_or_fetch(
+  league_lastn_path,
+  fetch_fn = fetch_league_lastn
+)
+
+league_lastn <- league_games %>%
+  group_by(team_abbr) %>%
+  arrange(game_date, .by_group = TRUE) %>%
+  mutate(g = row_number(), g_max = max(g, na.rm = TRUE)) %>%
+  filter(g > g_max - params$recent_games_n) %>%
+  ungroup() %>%
+  group_by(team_abbr) %>%
+  summarise(
+    GP = n(),
+    W = sum(wl == "W", na.rm = TRUE),
+    L = sum(wl == "L", na.rm = TRUE),
+    poss = sum(calc_possessions(FGA, FTA, OREB, TOV), na.rm = TRUE),
+    PTS = sum(PTS, na.rm = TRUE),
+    FGM = sum(FGM, na.rm = TRUE),
+    FGA = sum(FGA, na.rm = TRUE),
+    FG3M = sum(FG3M, na.rm = TRUE),
+    FG3A = sum(FG3A, na.rm = TRUE),
+    FTA = sum(FTA, na.rm = TRUE),
+    TOV = sum(TOV, na.rm = TRUE),
+    OREB = sum(OREB, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    ORtg = if_else(poss > 0, 100 * PTS / poss, NA_real_),
+    eFG = if_else(FGA > 0, (FGM + 0.5 * FG3M) / FGA, NA_real_),
+    TOV_rate = if_else(poss > 0, TOV / poss, NA_real_),
+    FT_rate = if_else(FGA > 0, FTA / FGA, NA_real_),
+    `3PA_share` = if_else(FGA > 0, FG3A / FGA, NA_real_)
+  ) %>%
+  mutate(
+    ORtg_rank = dplyr::min_rank(dplyr::desc(ORtg)),
+    eFG_rank = dplyr::min_rank(dplyr::desc(eFG)),
+    TOV_rank = dplyr::min_rank(TOV_rate),
+    FT_rank = dplyr::min_rank(dplyr::desc(FT_rate)),
+    `3PA_rank` = dplyr::min_rank(dplyr::desc(`3PA_share`))
+  )
+```
+
+```{r league-context-table}
+lac_tbl <- league_lastn %>%
+  filter(team_abbr == params$team_abbr) %>%
+  transmute(
+    Team = team_abbr,
+    `GP (W-L)` = paste0(GP, " (", W, "-", L, ")"),
+    ORtg = round(ORtg, 1),
+    `ORtg rk` = ORtg_rank,
+    eFG = scales::percent(eFG, accuracy = 0.1),
+    `eFG rk` = eFG_rank,
+    `TOV%` = scales::percent(TOV_rate, accuracy = 0.1),
+    `TOV rk` = TOV_rank,
+    `FT rate` = scales::percent(FT_rate, accuracy = 0.1),
+    `FT rk` = FT_rank,
+    `3PA share` = scales::percent(`3PA_share`, accuracy = 0.1),
+    `3PA rk` = `3PA_rank`
+  )
+
+knitr::kable(
+  lac_tbl,
+  booktabs = TRUE,
+  caption = paste0("League context: last ", params$recent_games_n, " games.")
+) %>%
+  kableExtra::kable_styling(latex_options = c("scale_down"))
+```
+
+```{r league-top10-ortg}
+top10 <- league_lastn %>%
+  mutate(ORtg_rank = dplyr::min_rank(dplyr::desc(ORtg))) %>%
+  arrange(ORtg_rank) %>%
+  slice_head(n = 10) %>%
+  transmute(
+    Rk = ORtg_rank,
+    Team = team_abbr,
+    `W-L` = paste0(W, "-", L),
+    ORtg = round(ORtg, 1),
+    eFG = scales::percent(eFG, accuracy = 0.1),
+    `TOV%` = scales::percent(TOV_rate, accuracy = 0.1),
+    `FT rate` = scales::percent(FT_rate, accuracy = 0.1)
+  )
+
+knitr::kable(top10, booktabs = TRUE, caption = "Top 10 offenses in the last 17 games.") %>%
+  kableExtra::kable_styling(latex_options = c("scale_down"))
+```
+
+```{r shot-profile}
+profile_plot_df <- league_lastn %>%
+  summarise(
+    scope = "League avg",
+    `3PA share` = mean(`3PA_share`, na.rm = TRUE),
+    `FT rate` = mean(FT_rate, na.rm = TRUE),
+    `TOV rate` = mean(TOV_rate, na.rm = TRUE)
+  ) %>%
+  bind_rows(
+    league_lastn %>%
+      filter(team_abbr == params$team_abbr) %>%
+      transmute(
+        scope = params$team_abbr,
+        `3PA share` = `3PA_share`,
+        `FT rate` = FT_rate,
+        `TOV rate` = TOV_rate
+      )
+  ) %>%
+  pivot_longer(-scope, names_to = "metric", values_to = "value")
+
+profile_plot_df <- profile_plot_df %>%
+  mutate(scope = factor(scope, levels = c("League avg", params$team_abbr)))
+
+ggplot(profile_plot_df, aes(metric, value, fill = scope)) +
+  geom_col(position = position_dodge(width = 0.65), width = 0.6) +
+  scale_fill_manual(values = setNames(c("gray70", LAC_BLUE), c("League avg", params$team_abbr))) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "How the Clippers score (Last 17 games)",
+    subtitle = "Three-point volume + free throws",
+    x = NULL,
+    y = NULL,
+    caption = CAPTION_LINE
+  ) +
+  theme_caleb() +
+  theme(legend.title = element_blank())
+```
+
+Over the last 17 games, the Clippers rank third in offensive rating league-wide, trailing only Boston, Golden State, and Charlotte in that span. In a league where offense is abundant, the separation comes from how they score, not how fast they are scoring. They play a slower, more deliberate style, pairing heavy three-point volume at roughly 45% of their shots with an elite free-throw rate. That combination lets them control possessions and squeeze efficiency out of the half court, resulting in a 117.9 offensive rating built on cerebral play.
+
+# The Stars
+
+```{r stars}
+stars_counting <- tibble::tribble(
+  ~Player, ~G, ~MPG, ~PTS, ~AST, ~TRB, ~FG_pct, ~`3P_pct`, ~`2P_pct`, ~eFG, ~FT_pct, ~TOV,
+  "James Harden", 40, 35.7, 26.0, 8.0, 4.8, 0.423, 0.342, 0.507, 0.510, 0.897, 3.6,
+  "Kawhi Leonard", 30, 33.8, 28.2, 3.5, 6.3, 0.497, 0.399, 0.556, 0.572, 0.941, 2.1
+) %>%
+  mutate(
+    FG_pct = percent(FG_pct, accuracy = 0.1),
+    `3P_pct` = percent(`3P_pct`, accuracy = 0.1),
+    `2P_pct` = percent(`2P_pct`, accuracy = 0.1),
+    eFG = percent(eFG, accuracy = 0.1),
+    FT_pct = percent(FT_pct, accuracy = 0.1)
+  )
+
+knitr::kable(
+  stars_counting,
+  booktabs = TRUE,
+  caption = "Harden/Leonard season counting stats"
+) %>%
+  kableExtra::kable_styling(latex_options = c("scale_down"))
+```
+
+```{r star-impact}
+wowy_tbl <- tibble::tribble(
+  ~Lineup, ~MIN, ~OFF, ~DEF, ~NET,
+  "Harden ON, Leonard OFF", 783, 116.4, 120.3, -3.9,
+  "Harden ON, Leonard ON", 680, 124.7, 118.7, 6.1,
+  "Leonard ON, Harden OFF", 359, 112.3, 111.3, 1.0,
+  "Harden OFF, Leonard OFF", 305, 103.2, 112.0, -8.8
+)
+
+wowy_tbl_fmt <- wowy_tbl %>%
+  mutate(
+    NET_fmt = ifelse(NET > 0, paste0("+", NET), as.character(NET))
+  ) %>%
+  select(Lineup, MIN, OFF, DEF, NET_fmt)
+
+knitr::kable(
+  wowy_tbl_fmt,
+  booktabs = TRUE,
+  caption = "Harden/Leonard WOWY on/off lineup splits"
+) %>%
+  kableExtra::kable_styling(latex_options = c("scale_down")) %>%
+  kableExtra::column_spec(
+    which(names(wowy_tbl_fmt) == "NET_fmt"),
+    bold = TRUE,
+    color = ifelse(wowy_tbl$NET > 0, LAC_BLUE, LAC_RED)
+  )
+```
+
+While the Clippers’ turnaround has been driven by better team execution, it has been anchored by their two stars. James Harden and Kawhi Leonard still run the offense, supplying control, shot creation, and dependable scoring that let the Clippers play at a slower pace without bogging down. Their production and impact on the floor help explain why the offense found its footing so quickly once the details started to clean up.
+
+# What Does This All Mean?
+
+The Clippers are still a flawed team, with real questions around age, health, and athleticism. Even so, they are far more competent than their 6–21 start suggested.
+
+Kawhi Leonard has played at a borderline MVP level during this stretch, while James Harden continues to function as one of the game’s best floor-raisers. Combined with a team playing with renewed effort and clarity, it is easy to see why the results have flipped so sharply.
+
+This team may not be a true title contender, but that is not the point. For an aging roster without its own first-round pick, stabilizing into a strong, competitive playoff team matters. Whether or not they push past that ceiling, the Clippers have already pulled off one of the more impressive midseason turnarounds in recent memory.
