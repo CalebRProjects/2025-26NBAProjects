@@ -1,0 +1,623 @@
+---
+title: "9–3 Without Cade, and Finally Built to Survive It"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+params:
+  season: "2025-26"
+  season_type: "Regular Season"
+  team_abbr: "DET"
+  team_id: "1610612765"
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(lubridate)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(showtext)
+library(sysfonts)
+library(hoopR)
+suppressPackageStartupMessages(library(janitor))
+
+options(tinytex.crop = FALSE)
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  dpi = 450,
+  out.width = "100%",
+  fig.width = 7.6,
+  fig.height = 4.9,
+  fig.crop = FALSE,
+  dev = "cairo_pdf"
+)
+
+font_add_google("Inter", "inter")
+showtext_auto()
+
+det_blue <- "#1D42BA"
+det_red <- "#C8102E"
+det_navy <- "#0C2340"
+det_silver <- "#BEC0C2"
+paper_bg <- "#f6f4ef"
+grid_col <- "#dedad3"
+text_col <- "#141414"
+
+theme_caleb <- theme_minimal(base_family = "inter") +
+  theme(
+    plot.background = element_rect(fill = paper_bg, color = NA),
+    panel.background = element_rect(fill = paper_bg, color = NA),
+    panel.grid.major = element_line(color = grid_col, linewidth = 0.25),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(size = 18, face = "bold", hjust = 0, color = text_col),
+    plot.subtitle = element_text(size = 12, hjust = 0, color = "#2f2f2f"),
+    axis.title = element_text(size = 12, face = "bold", color = text_col),
+    axis.text = element_text(size = 10, color = "#333333"),
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 9),
+    plot.caption = element_text(size = 8, hjust = 1, color = "#6e6e6e"),
+    plot.margin = margin(10, 14, 10, 14)
+  )
+
+SEASON <- params$season
+SEASON_TYPE <- params$season_type
+TEAM_ID <- params$team_id
+
+fmt_pct <- function(x, accuracy = 0.1) percent(x, accuracy = accuracy)
+safe_clean_names <- function(df) janitor::clean_names(df)
+to_num <- function(x) suppressWarnings(as.numeric(x))
+
+parse_nba_date <- function(x) {
+  suppressWarnings(
+    lubridate::parse_date_time(
+      x,
+      orders = c("Ymd", "mdY", "b d, Y", "B d, Y")
+    )
+  ) %>% as.Date()
+}
+
+# Standard box-score possession estimate.
+calc_poss <- function(fga, fta, oreb, tov) {
+  fga + 0.44 * fta - oreb + tov
+}
+```
+
+# Executive Summary
+
+Detroit was a first-time playoff team a year ago, built more on promise than certainty. Cade Cunningham gave them a star to organize around, Jalen Duren and Ausar Thompson gave them a young core, and a handful of veterans filled in the gaps well enough to make them competitive.
+
+This year, that foundation has pushed into the league’s upper tier.
+
+With more experience and a deeper, more complete roster, Detroit has taken advantage of a shifting Eastern Conference and pushed into 50-win territory for the first time since 2007–08. The shooting is still not where you would expect for a team at this level, but it has not mattered as much as it should. They defend, they rebound, and they consistently win on the margins.
+
+It is easy to point to Cade as the reason this works, and for the most part, that is correct. He is the engine. But what has stood out just as much is what has happened when he is not there.
+
+Detroit has stayed competitive in those games. Not explosive, not overwhelming, but functional. They lean further into defense, generate just enough offense, and rely on a roster that knows how to contribute without needing the ball.
+
+```{r team-logs, cache=TRUE}
+lg <- hoopR::nba_leaguegamelog(
+  season = SEASON,
+  season_type_all_star = SEASON_TYPE
+) %>%
+  purrr::pluck("LeagueGameLog") %>%
+  safe_clean_names()
+
+league_team_games <- lg %>%
+  mutate(
+    pts = to_num(pts),
+    fga = to_num(fga),
+    fgm = to_num(fgm),
+    fg3m = to_num(fg3m),
+    fta = to_num(fta),
+    tov = to_num(tov)
+  )
+
+league_ppg <- mean(league_team_games$pts, na.rm = TRUE)
+
+team_logs <- lg %>%
+  filter(team_id == TEAM_ID) %>%
+  mutate(game_id = as.character(game_id)) %>%
+  left_join(
+    lg %>%
+      mutate(game_id = as.character(game_id)) %>%
+      filter(team_id != TEAM_ID) %>%
+      select(
+        game_id,
+        opp_pts = pts,
+        opp_reb = reb,
+        opp_ast = ast,
+        opp_tov = tov,
+        opp_fga = fga,
+        opp_fgm = fgm,
+        opp_fg3m = fg3m,
+        opp_fta = fta
+      ),
+    by = "game_id"
+  ) %>%
+  mutate(
+    game_date = parse_nba_date(game_date),
+    pts = to_num(pts),
+    reb = to_num(reb),
+    ast = to_num(ast),
+    tov = to_num(tov),
+    fga = to_num(fga),
+    fgm = to_num(fgm),
+    fg3m = to_num(fg3m),
+    fta = to_num(fta),
+    opp_pts = to_num(opp_pts),
+    opp_reb = to_num(opp_reb),
+    opp_ast = to_num(opp_ast),
+    opp_tov = to_num(opp_tov),
+    opp_fga = to_num(opp_fga),
+    opp_fgm = to_num(opp_fgm),
+    opp_fg3m = to_num(opp_fg3m),
+    opp_fta = to_num(opp_fta),
+    wl = wl
+  ) %>%
+  arrange(game_date)
+
+cade_id <- "1630595"
+
+get_player_gamelog <- function(pid) {
+  hoopR::nba_playergamelog(
+    season = SEASON,
+    season_type = SEASON_TYPE,
+    player_id = pid
+  ) %>%
+    purrr::pluck("PlayerGameLog") %>%
+    safe_clean_names() %>%
+    mutate(
+      game_id = as.character(game_id),
+      game_date = as.character(game_date),
+      game_date = parse_nba_date(game_date),
+      player_id = as.character(player_id),
+      min = to_num(min),
+      pts = to_num(pts),
+      oreb = to_num(oreb),
+      dreb = to_num(dreb),
+      reb = to_num(reb),
+      ast = to_num(ast),
+      stl = to_num(stl),
+      blk = to_num(blk),
+      tov = to_num(tov),
+      pf = to_num(pf),
+      fga = to_num(fga),
+      fgm = to_num(fgm),
+      fg3m = to_num(fg3m),
+      fg3a = to_num(fg3a),
+      fta = to_num(fta),
+      ftm = to_num(ftm),
+      plus_minus = to_num(plus_minus)
+    )
+}
+
+cade_games <- get_player_gamelog(cade_id) %>%
+  transmute(game_id, cade_played = TRUE)
+
+team_logs <- team_logs %>%
+  left_join(cade_games, by = "game_id") %>%
+  mutate(
+    cade_played = coalesce(cade_played, FALSE),
+    # Manual override for the 2026-03-26 game.
+    cade_played = ifelse(game_date == as.Date("2026-03-26"), FALSE, cade_played),
+    group = ifelse(cade_played, "Cade In", "Cade Out"),
+    mov = pts - opp_pts
+  )
+
+# Manual add-ins for games not fully represented in the pulled logs.
+manual_games <- tibble(
+  game_id = c("MANUAL_0325", "MANUAL_0326"),
+  game_date = as.Date(c("2026-03-25", "2026-03-26")),
+  matchup = c("DET @ ATL", "DET vs. NOP"),
+  wl = c("L", "W"),
+  pts = c(129, 129),
+  opp_pts = c(130, 108),
+  reb = c(43, 45),
+  ast = c(33, 34),
+  tov = c(14, 19),
+  fga = c(102, 85),
+  fgm = c(52, 48),
+  fg3m = c(9, 15),
+  fta = c(19, 23),
+  opp_reb = c(50, 42),
+  opp_ast = c(31, 26),
+  opp_tov = c(20, 15),
+  opp_fga = c(105, 95),
+  opp_fgm = c(50, 44),
+  opp_fg3m = c(18, 9),
+  opp_fta = c(17, 24),
+  cade_played = c(FALSE, FALSE),
+  group = "Cade Out",
+  mov = pts - opp_pts
+)
+
+team_logs <- bind_rows(team_logs, manual_games) %>%
+  arrange(game_date)
+
+cade_in_logs <- team_logs %>% filter(group == "Cade In")
+cade_out_logs <- team_logs %>% filter(group == "Cade Out")
+```
+
+# Team-Level Results
+
+```{r team-summary}
+summ_process <- function(df) {
+  tibble(
+    GP = nrow(df),
+    W = sum(df$wl == "W", na.rm = TRUE),
+    L = sum(df$wl == "L", na.rm = TRUE),
+    PPG = mean(df$pts, na.rm = TRUE),
+    `Opp. PPG` = mean(df$opp_pts, na.rm = TRUE),
+    MOV = mean(df$mov, na.rm = TRUE),
+    eFG = (sum(df$fgm, na.rm = TRUE) + 0.5 * sum(df$fg3m, na.rm = TRUE)) / sum(df$fga, na.rm = TRUE),
+    `Opp. eFG` = (sum(df$opp_fgm, na.rm = TRUE) + 0.5 * sum(df$opp_fg3m, na.rm = TRUE)) / sum(df$opp_fga, na.rm = TRUE),
+    `TOV%` = sum(df$tov, na.rm = TRUE) /
+      sum(df$fga + 0.44 * df$fta - df$tov, na.rm = TRUE),
+    ORtg = NA_real_,
+    DRtg = NA_real_
+  )
+}
+
+split_summary <- bind_rows(
+  summ_process(cade_in_logs) %>% mutate(Group = "Cade In"),
+  summ_process(cade_out_logs) %>% mutate(Group = "Cade Out")
+) %>%
+  mutate(
+    # Insert verified ratings rather than recomputing them here.
+    ORtg = case_when(
+      Group == "Cade In" ~ 118.3,
+      Group == "Cade Out" ~ 115.8
+    ),
+    DRtg = case_when(
+      Group == "Cade In" ~ 110.7,
+      Group == "Cade Out" ~ 106.7
+    )
+  ) %>%
+  select(Group, everything()) %>%
+  mutate(across(c(PPG, `Opp. PPG`, MOV, eFG, `Opp. eFG`, `TOV%`, ORtg, DRtg), ~ round(.x, 2)))
+
+kable(
+  split_summary,
+  booktabs = TRUE,
+  caption = "Team profile with Cade in versus out"
+)
+```
+
+The scoring dip is obvious. The more important detail is that nothing else really breaks. Opponent scoring stays low, efficiency holds, and the margin remains strong. Detroit has doubled down on its identity and trusted what put it in this position.
+
+## Scoring Profile: Points Scored vs. Points Allowed
+
+```{r ppg-chart}
+ppg_compare <- team_logs %>%
+  group_by(group) %>%
+  summarise(
+    PPG = mean(pts, na.rm = TRUE),
+    Opp_PPG = mean(opp_pts, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(
+    cols = c(PPG, Opp_PPG),
+    names_to = "metric",
+    values_to = "value"
+  )
+
+league_lines <- tibble(
+  metric = c("PPG", "Opp_PPG"),
+  league_avg = c(league_ppg, league_ppg),
+  line_label = c("League Avg", "League Avg")
+)
+
+ggplot(ppg_compare, aes(x = group, y = value, fill = group)) +
+  geom_col(width = 0.62, show.legend = FALSE) +
+  geom_hline(
+    data = league_lines,
+    aes(yintercept = league_avg),
+    linetype = "dotted",
+    linewidth = 0.55,
+    color = det_navy,
+    alpha = 0.65,
+    inherit.aes = FALSE
+  ) +
+  geom_text(
+    aes(label = round(value, 1)),
+    vjust = -0.85,
+    size = 3,
+    color = text_col
+  ) +
+  geom_text(
+    data = league_lines,
+    aes(x = 1.5, y = league_avg + 2.2, label = line_label),
+    inherit.aes = FALSE,
+    color = det_navy,
+    size = 2.0,
+    family = "inter"
+  ) +
+  facet_wrap(~metric, scales = "fixed") +
+  scale_fill_manual(values = c("Cade In" = det_red, "Cade Out" = det_blue)) +
+  scale_y_continuous(
+    limits = c(0, max(ppg_compare$value, league_lines$league_avg) + 18),
+    labels = label_number(accuracy = 1),
+    expand = expansion(mult = c(0, 0.01))
+  ) +
+  labs(
+    title = "Scoring profile with and without Cade",
+    subtitle = "Detroit scores less, but they double down defensively",
+    x = NULL,
+    y = "Points per game",
+    caption = "Data: NBA.com | Viz: @Rambzee_"
+  ) +
+  theme_caleb
+```
+
+## Style Shift: How the Pistons Function Without Cade
+
+```{r style-shift}
+style_compare <- team_logs %>%
+  group_by(group) %>%
+  summarise(
+    REB = mean(reb, na.rm = TRUE),
+    AST = mean(ast, na.rm = TRUE),
+    TOV = mean(tov, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(cols = c(REB, AST, TOV), names_to = "stat", values_to = "value")
+
+ggplot(style_compare, aes(x = stat, y = value, fill = group)) +
+  geom_col(position = "dodge", width = 0.72) +
+  scale_fill_manual(values = c("Cade In" = det_red, "Cade Out" = det_blue)) +
+  scale_y_continuous(labels = label_number(accuracy = 0.1)) +
+  labs(
+    title = "How Detroit has functioned with vs. without Cade",
+    subtitle = "More burden on the collective, less on one engine",
+    x = NULL,
+    y = "Per game",
+    fill = NULL,
+    caption = "Data: NBA.com | Viz: @Rambzee_"
+  ) +
+  theme_caleb
+```
+
+Without Cade, the offense gets less comfortable. What replaces it is collective size, effort, and enough connective playmaking to keep things moving.
+
+# Who Has Stepped Up?
+
+```{r roster-logs, cache=TRUE}
+roster <- hoopR::nba_leaguedashplayerstats(
+  season = SEASON,
+  season_type = SEASON_TYPE
+) %>%
+  purrr::pluck("LeagueDashPlayerStats") %>%
+  safe_clean_names() %>%
+  filter(team_id == TEAM_ID) %>%
+  select(player_id, player_name) %>%
+  distinct()
+
+safe_get_player_gamelog <- purrr::possibly(
+  get_player_gamelog,
+  otherwise = tibble()
+)
+
+player_logs <- roster %>%
+  mutate(log = purrr::map(player_id, safe_get_player_gamelog)) %>%
+  select(player_name, log) %>%
+  tidyr::unnest(log) %>%
+  left_join(
+    team_logs %>% select(game_id, group),
+    by = "game_id"
+  ) %>%
+  mutate(
+    # Simple custom impact proxy for single-game comparison.
+    impact = pts + 1.2 * reb + 1.5 * ast + 2 * stl + 2 * blk - 1.2 * tov
+  )
+
+manual_player_logs <- tibble::tribble(
+  ~player_name,        ~game_id,       ~game_date,           ~matchup,        ~min,    ~fgm, ~fga, ~fg3m, ~fg3a, ~ftm, ~fta, ~oreb, ~dreb, ~reb, ~ast, ~stl, ~blk, ~tov, ~pf, ~pts, ~plus_minus, ~group,
+  # 2026-03-26 vs NOP
+  "Kevin Huerter",     "MANUAL_0326",  as.Date("2026-03-26"), "DET vs. NOP",  33.72,   9,    14,   4,     7,     0,    0,    0,     3,     3,    2,    1,    0,    3,    0,   22,   21,          "Cade Out",
+  "Daniss Jenkins",    "MANUAL_0326",  as.Date("2026-03-26"), "DET vs. NOP",  33.27,   6,    12,   5,     7,     2,    2,    0,     2,     2,    9,    1,    0,    3,    4,   19,   21,          "Cade Out",
+  "Jalen Duren",       "MANUAL_0326",  as.Date("2026-03-26"), "DET vs. NOP",  31.43,   10,   12,   0,     0,     10,   12,   3,     7,     10,   7,    2,    2,    3,    0,   30,   5,           "Cade Out",
+  "Ausar Thompson",    "MANUAL_0326",  as.Date("2026-03-26"), "DET vs. NOP",  28.97,   4,    4,    0,     0,     3,    4,    0,     4,     4,    0,    3,    2,    1,    1,   11,   10,          "Cade Out",
+  "Tobias Harris",     "MANUAL_0326",  as.Date("2026-03-26"), "DET vs. NOP",  25.92,   5,    12,   1,     3,     1,    1,    1,     8,     9,    7,    0,    1,    0,    1,   12,   9,           "Cade Out",
+  "Javonte Green",     "MANUAL_0326",  as.Date("2026-03-26"), "DET vs. NOP",  19.55,   3,    4,    2,     3,     0,    0,    0,     1,     1,    1,    1,    0,    1,    3,   8,    12,          "Cade Out",
+  "Ron Holland",       "MANUAL_0326",  as.Date("2026-03-26"), "DET vs. NOP",  19.12,   1,    6,    0,     0,     0,    0,    1,     6,     7,    4,    0,    0,    2,    2,   2,    9,           "Cade Out",
+  "Marcus Sasser",     "MANUAL_0326",  as.Date("2026-03-26"), "DET vs. NOP",  16.18,   3,    11,   1,     4,     0,    0,    0,     2,     2,    1,    0,    0,    2,    1,   7,    -6,          "Cade Out",
+  "Paul Reed",         "MANUAL_0326",  as.Date("2026-03-26"), "DET vs. NOP",  14.33,   3,    3,    0,     0,     2,    3,    2,     1,     3,    1,    1,    0,    1,    6,   8,    16,          "Cade Out",
+  "Chaz Lanier",       "MANUAL_0326",  as.Date("2026-03-26"), "DET vs. NOP",  10.22,   2,    4,    2,     4,     0,    1,    0,     1,     1,    1,    0,    0,    0,    0,   6,    8,           "Cade Out",
+  "Bobi Klintman",     "MANUAL_0326",  as.Date("2026-03-26"), "DET vs. NOP",  2.53,    1,    1,    0,     0,     0,    0,    0,     1,     1,    0,    0,    0,    0,    0,   2,    0,           "Cade Out",
+  "Isaac Jones",       "MANUAL_0326",  as.Date("2026-03-26"), "DET vs. NOP",  2.53,    0,    1,    0,     0,     0,    0,    0,     1,     1,    0,    0,    1,    0,    0,   0,    0,           "Cade Out",
+  "Tolu Smith",        "MANUAL_0326",  as.Date("2026-03-26"), "DET vs. NOP",  2.23,    1,    1,    0,     0,     0,    0,    1,     0,     1,    1,    0,    0,    1,    0,   2,    0,           "Cade Out",
+
+  # 2026-03-25 @ ATL
+  "Daniss Jenkins",    "MANUAL_0325",  as.Date("2026-03-25"), "DET @ ATL",    44.62,   6,    13,   1,     6,     6,    8,    2,     1,     3,    10,   1,    0,    6,    3,   19,   1,           "Cade Out",
+  "Jalen Duren",       "MANUAL_0325",  as.Date("2026-03-25"), "DET @ ATL",    42.05,   9,    15,   0,     0,     8,    9,    7,     7,     14,   3,    0,    2,    4,    1,   26,   14,          "Cade Out",
+  "Ausar Thompson",    "MANUAL_0325",  as.Date("2026-03-25"), "DET @ ATL",    37.07,   9,    11,   0,     0,     0,    0,    1,     3,     4,    5,    4,    1,    1,    5,   18,   10,          "Cade Out",
+  "Tobias Harris",     "MANUAL_0325",  as.Date("2026-03-25"), "DET @ ATL",    35.43,   9,    17,   2,     5,     2,    2,    0,     3,     3,    3,    1,    0,    1,    3,   22,   1,           "Cade Out",
+  "Duncan Robinson",   "MANUAL_0325",  as.Date("2026-03-25"), "DET @ ATL",    31.87,   6,    12,   5,     10,    0,    0,    1,     6,     7,    4,    0,    0,    0,    1,   17,   6,           "Cade Out",
+  "Kevin Huerter",     "MANUAL_0325",  as.Date("2026-03-25"), "DET @ ATL",    20.35,   4,    9,    0,     2,     0,    0,    1,     1,     2,    2,    2,    0,    1,    2,   8,    -5,          "Cade Out",
+  "Caris LeVert",      "MANUAL_0325",  as.Date("2026-03-25"), "DET @ ATL",    15.18,   2,    7,    0,     3,     0,    0,    1,     4,     5,    2,    1,    1,    1,    0,   4,    -15,         "Cade Out",
+  "Javonte Green",     "MANUAL_0325",  as.Date("2026-03-25"), "DET @ ATL",    15.00,   3,    8,    1,     5,     0,    0,    1,     2,     3,    2,    1,    0,    0,    1,   7,    4,           "Cade Out",
+  "Ron Holland",       "MANUAL_0325",  as.Date("2026-03-25"), "DET @ ATL",    12.48,   1,    3,    0,     1,     0,    0,    0,     2,     2,    1,    1,    0,    0,    0,   2,    -6,          "Cade Out",
+  "Paul Reed",         "MANUAL_0325",  as.Date("2026-03-25"), "DET @ ATL",    10.95,   3,    7,    0,     1,     0,    0,    0,     0,     0,    1,    1,    1,    0,    4,   6,    -15,         "Cade Out"
+)
+
+player_logs <- bind_rows(player_logs, manual_player_logs) %>%
+  mutate(
+    impact = pts + 1.2 * reb + 1.5 * ast + 2 * stl + 2 * blk - 1.2 * tov
+  )
+
+league_ts <- 0.58
+
+teammate_summary <- player_logs %>%
+  filter(group == "Cade Out", player_name != "Cade Cunningham") %>%
+  group_by(player_name) %>%
+  summarise(
+    GP = n(),
+    PTS = mean(pts, na.rm = TRUE),
+    REB = mean(reb, na.rm = TRUE),
+    AST = mean(ast, na.rm = TRUE),
+    STL = mean(stl, na.rm = TRUE),
+    BLK = mean(blk, na.rm = TRUE),
+    TS = sum(pts, na.rm = TRUE) / (2 * sum(fga + 0.44 * fta, na.rm = TRUE)),
+    .groups = "drop"
+  ) %>%
+  filter(PTS >= 5) %>%
+  mutate(
+    rTS = TS - league_ts
+  ) %>%
+  arrange(desc(PTS)) %>%
+  mutate(
+    across(where(is.numeric), ~ round(.x, 2)),
+    rTS = ifelse(
+      rTS > 0,
+      paste0("+", round(rTS * 100, 1), "%"),
+      paste0(round(rTS * 100, 1), "%")
+    ),
+    TS = paste0(round(TS * 100, 1), "%")
+  )
+
+kable(
+  teammate_summary,
+  booktabs = TRUE,
+  caption = "Teammates averaging 5+ PPG in Cade-out games"
+)
+```
+
+## Duren Is a Legitimate Star
+
+24 and 12 on +9.6 rTS is fantastic production for a center. When Cade is off the floor, Detroit has leaned into Duren as a direct interior option, and he has delivered.
+
+This is not just increased usage. It is efficient usage. He is finishing at a level that keeps the offense afloat and gives Detroit something it can reliably go to.
+
+## Jenkins Is the Organizer, Not the Scorer
+
+The efficiency is below league average, but the 16.8 points and 8.2 assists are much needed. When the shot is there, he can go get a bucket, but his value is in keeping the offense organized and functional when Cade is off the floor.
+
+He has taken on real ball-handling and playmaking responsibility, organizing possessions and getting the team into actions instead of letting things stall. He has also had his moments late, including a dagger to close out the Lakers and snap one of the league’s hottest streaks.
+
+## The Spacing Has Mostly Come From One Place: Duncan
+
+At +11 rTS, he has been Detroit’s only consistently reliable shooting option in this stretch, and that gravity has mattered.
+
+Huerter has helped too. The efficiency is slightly below league average, but 12 points per game on around -2 rTS is still useful for this roster. He is not an elite spacer, but he gives Detroit enough shooting to keep the floor from shrinking completely.
+
+Stewart has been excellent as well, especially without Cade. But the efficiency spike is more concentrated; one huge performance is doing a lot of the lifting there.
+
+## Detroit Is Getting Enough from the Margins
+
+Paul Reed and Javonte Green fit the bigger picture. They are not high-usage players, but they consistently finish plays, extend possessions, and tilt small moments in Detroit’s favor.
+
+## There Is Still Offensive Drag
+
+This is not a clean offensive run. Tobias, Huerter, Ausar, LeVert, and Holland are all below league-average efficiency in this stretch.
+
+That is what makes this more convincing. This is not a team-wide shooting surge. It is a team winning anyway.
+
+# Best Games in the Cade-Out Sample
+
+## Jalen Duren's Top 3
+
+```{r duren-top-3}
+duren_top3 <- player_logs %>%
+  filter(group == "Cade Out", player_name == "Jalen Duren") %>%
+  arrange(desc(impact)) %>%
+  slice_head(n = 3) %>%
+  transmute(
+    Date = game_date,
+    Opponent = matchup,
+    PTS = pts,
+    REB = reb,
+    AST = ast,
+    STL = stl,
+    BLK = blk,
+    Impact = round(impact, 1)
+  )
+
+kable(
+  duren_top3,
+  booktabs = TRUE,
+  caption = "Jalen Duren's top 3 Cade-out games"
+)
+```
+
+## Daniss Jenkins' Top 3
+
+```{r jenkins-top-3}
+jenkins_top3 <- player_logs %>%
+  filter(group == "Cade Out", player_name == "Daniss Jenkins") %>%
+  arrange(desc(impact)) %>%
+  slice_head(n = 3) %>%
+  transmute(
+    Date = game_date,
+    Opponent = matchup,
+    PTS = pts,
+    REB = reb,
+    AST = ast,
+    STL = stl,
+    BLK = blk,
+    Impact = round(impact, 1)
+  )
+
+kable(
+  jenkins_top3,
+  booktabs = TRUE,
+  caption = "Daniss Jenkins' top 3 Cade-out games"
+)
+```
+
+Duren’s best nights are dominant interior performances. Jenkins’ best nights are high-assist, controlled offensive games. Those two have defined what these games look like.
+
+## The Others
+
+```{r others-best-games}
+others_best <- player_logs %>%
+  filter(
+    group == "Cade Out",
+    !player_name %in% c("Cade Cunningham", "Jalen Duren", "Daniss Jenkins")
+  ) %>%
+  arrange(desc(impact)) %>%
+  slice_head(n = 10) %>%
+  transmute(
+    Date = game_date,
+    Player = player_name,
+    Opponent = matchup,
+    PTS = pts,
+    REB = reb,
+    AST = ast,
+    STL = stl,
+    BLK = blk,
+    Impact = round(impact, 1)
+  )
+
+kable(
+  others_best,
+  booktabs = TRUE,
+  caption = "The others: best Cade-out games"
+)
+```
+
+The rest of the list is where it gets more interesting.
+
+It is not one consistent third option. It is different players on different nights. Reed swinging games with energy and chaos. Stewart scoring in bursts. Ausar wreaking havoc defensively. Duncan providing just enough spacing. Javonte bringing energy and hustle.
+
+# Final Takeaways
+
+For a team that went 94–290 from 2019–20 to 2023–24, even being here is a massive shift.
+
+It still starts with Cade. What he has become is the foundation. His absence now, after the collapsed lung, is what makes this stretch worth examining.
+
+Detroit is 9–3 without him this season. Since the injury, they are 4–1, with the only loss coming by one point to a red-hot Hawks team.
+
+It is a small sample. It does not change who drives this team. But it does show this is no longer a team that collapses when things go sideways.
+
+And that matters.
+
+For Detroit, the expectations have changed. They have already proven they belong near the top of the East. Now it is about what holds up when games tighten and every possession matters in the playoffs.
