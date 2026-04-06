@@ -1,6 +1,6 @@
 # Overview
 
-This project examines Gui Santos’s unexpected emergence as a meaningful contributor for Golden State during a difficult stretch of the 2025–26 season.
+This project examines Gui Santos’s unexpected emergence as a meaningful contributor for Golden State during a difficult stretch of the 2025-26 season.
 
 With key players unavailable, Santos was forced into a larger role under poor team conditions. Rather than simply increasing volume, he showed real growth: improving efficiency, expanding his offensive responsibilities, and developing into a more complete player.
 
