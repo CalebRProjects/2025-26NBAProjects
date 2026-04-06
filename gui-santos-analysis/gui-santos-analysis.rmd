@@ -1,0 +1,730 @@
+---
+title: "Gui Santos Was Not Supposed to Matter This Much"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: false
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  dpi = 200
+)
+
+library(tidyverse)
+library(scales)
+library(knitr)
+library(glue)
+library(showtext)
+library(sysfonts)
+library(hoopR)
+library(janitor)
+library(lubridate)
+library(ggrepel)
+library(gt)
+library(purrr)
+library(kableExtra)
+
+font_add_google("Inter", "inter")
+showtext_auto()
+
+# ------------------------------------------------------------
+# Constants
+# ------------------------------------------------------------
+
+BG <- "#f6f4ef"
+TEXT_DARK <- "#141414"
+GRID <- "#dedad3"
+WARRIORS_BLUE <- "#1D428A"
+WARRIORS_GOLD <- "#FFC72C"
+
+TEAM_ID <- "1610612744"
+STEPH_ID <- "201939"
+JIMMY_ID <- "202710"
+GUI_ID <- "1630611"
+
+CAPTION_LINE <- "Data: NBA.com | Viz: @Rambzee_"
+CAPTION_DATABALLR <- "Data: Databallr | Viz: @Rambzee_"
+
+# ------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------
+
+safe_clean_names <- function(df) janitor::clean_names(df)
+to_num <- function(x) suppressWarnings(as.numeric(x))
+
+fmt_num <- function(x, digits = 1) {
+  formatC(x, format = "f", digits = digits)
+}
+
+fmt_pct <- function(x, digits = 1) {
+  paste0(formatC(x, format = "f", digits = digits), "%")
+}
+
+parse_nba_date <- function(x) {
+  suppressWarnings(
+    lubridate::parse_date_time(
+      x,
+      orders = c("Ymd", "mdY", "b d, Y", "B d, Y")
+    )
+  ) %>%
+    as.Date()
+}
+
+theme_caleb <- theme_minimal(base_family = "inter") +
+  theme(
+    plot.background = element_rect(fill = BG, color = NA),
+    panel.background = element_rect(fill = BG, color = NA),
+    panel.grid.major = element_line(color = GRID, linewidth = 0.35),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(
+      size = 18,
+      face = "bold",
+      hjust = 0.5,
+      color = TEXT_DARK
+    ),
+    plot.subtitle = element_text(
+      size = 9.5,
+      hjust = 0.5,
+      color = "#2f2f2f",
+      margin = margin(b = 6)
+    ),
+    axis.title = element_text(
+      size = 12,
+      face = "bold",
+      color = TEXT_DARK
+    ),
+    axis.text = element_text(size = 10, color = "#333333"),
+    legend.position = "bottom",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 9, color = "#333333"),
+    plot.caption = element_text(
+      size = 8,
+      color = "#6e6e6e",
+      hjust = 1,
+      margin = margin(t = 8)
+    ),
+    plot.margin = margin(10, 12, 16, 12)
+  )
+
+# ------------------------------------------------------------
+# Data pulls
+# ------------------------------------------------------------
+
+get_player_gamelog <- function(pid) {
+  hoopR::nba_playergamelog(
+    season = "2025-26",
+    season_type = "Regular Season",
+    player_id = pid
+  ) %>%
+    purrr::pluck("PlayerGameLog") %>%
+    safe_clean_names() %>%
+    mutate(
+      game_id = as.character(game_id),
+      game_date = parse_nba_date(as.character(game_date)),
+      player_id = as.character(player_id),
+      min = to_num(min),
+      pts = to_num(pts),
+      oreb = to_num(oreb),
+      dreb = to_num(dreb),
+      reb = to_num(reb),
+      ast = to_num(ast),
+      stl = to_num(stl),
+      blk = to_num(blk),
+      tov = to_num(tov),
+      pf = to_num(pf),
+      fga = to_num(fga),
+      fgm = to_num(fgm),
+      fg3m = to_num(fg3m),
+      fg3a = to_num(fg3a),
+      fta = to_num(fta),
+      ftm = to_num(ftm),
+      plus_minus = to_num(plus_minus)
+    )
+}
+
+get_league_base <- function(season = "2025-26", season_type = "Regular Season") {
+  hoopR::nba_leaguedashplayerstats(
+    season = season,
+    season_type = season_type,
+    measure_type = "Base"
+  )$LeagueDashPlayerStats %>%
+    clean_names() %>%
+    mutate(
+      player_name = as.character(player_name),
+      team_abbreviation = as.character(team_abbreviation),
+      player_id = readr::parse_number(as.character(player_id)),
+      gp = readr::parse_number(as.character(gp)),
+      min = readr::parse_number(as.character(min))
+    )
+}
+
+get_league_usage <- function(season = "2025-26", season_type = "Regular Season") {
+  hoopR::nba_leaguedashplayerstats(
+    season = season,
+    season_type = season_type,
+    measure_type = "Usage"
+  )$LeagueDashPlayerStats %>%
+    clean_names() %>%
+    transmute(
+      player_id = readr::parse_number(as.character(player_id)),
+      usg_pct = readr::parse_number(as.character(usg_pct))
+    )
+}
+
+get_league_advanced <- function(season = "2025-26", season_type = "Regular Season") {
+  hoopR::nba_leaguedashplayerstats(
+    season = season,
+    season_type = season_type,
+    measure_type = "Advanced"
+  )$LeagueDashPlayerStats %>%
+    clean_names() %>%
+    transmute(
+      player_id = readr::parse_number(as.character(player_id)),
+      ts_pct = readr::parse_number(as.character(ts_pct)),
+      net_rating = readr::parse_number(as.character(net_rating))
+    ) %>%
+    mutate(ts_pct = if_else(ts_pct <= 1, ts_pct * 100, ts_pct))
+}
+
+# ------------------------------------------------------------
+# Summary / table helpers
+# ------------------------------------------------------------
+
+summ_process <- function(df) {
+  tibble(
+    GP = nrow(df),
+    W = sum(df$wl == "W", na.rm = TRUE),
+    L = sum(df$wl == "L", na.rm = TRUE),
+    PPG = mean(df$pts, na.rm = TRUE),
+    `Opp. PPG` = mean(df$opp_pts, na.rm = TRUE),
+    MOV = mean(df$mov, na.rm = TRUE),
+    eFG = (sum(df$fgm, na.rm = TRUE) + 0.5 * sum(df$fg3m, na.rm = TRUE)) /
+      sum(df$fga, na.rm = TRUE),
+    `Opp. eFG` = (sum(df$opp_fgm, na.rm = TRUE) + 0.5 * sum(df$opp_fg3m, na.rm = TRUE)) /
+      sum(df$opp_fga, na.rm = TRUE),
+    `TOV%` = sum(df$tov, na.rm = TRUE) /
+      sum(df$fga + 0.44 * df$fta - df$tov, na.rm = TRUE)
+  )
+}
+
+build_split_kable <- function(raw_df, left_label = "First 38", right_label = "Last 27") {
+  split_display <- raw_df %>%
+    transmute(
+      Metric,
+      left_value = if_else(
+        Metric == "TS%" | Metric == "FTR",
+        paste0(formatC(first_38, format = "f", digits = 1), "\\%"),
+        formatC(first_38, format = "f", digits = 1)
+      ),
+      right_value = if_else(
+        Metric == "TS%" | Metric == "FTR",
+        paste0(formatC(last_27, format = "f", digits = 1), "\\%"),
+        formatC(last_27, format = "f", digits = 1)
+      ),
+      Change = if_else(
+        Metric == "TS%" | Metric == "FTR",
+        paste0(
+          if_else(change_num > 0, "+", ""),
+          formatC(change_num, format = "f", digits = 1),
+          "\\%"
+        ),
+        paste0(
+          if_else(change_num > 0, "+", ""),
+          formatC(change_num, format = "f", digits = 1)
+        )
+      )
+    ) %>%
+    mutate(
+      Metric = dplyr::case_when(
+        Metric == "TS%" ~ "TS\\%",
+        Metric == "FTR" ~ "FTR",
+        TRUE ~ Metric
+      )
+    ) %>%
+    rename(
+      !!left_label := left_value,
+      !!right_label := right_value
+    )
+
+  change_col_idx <- which(names(split_display) == "Change")
+
+  change_colors <- dplyr::case_when(
+    raw_df$change_num >= 2.5 ~ "green",
+    raw_df$change_num > 0 ~ "olive",
+    raw_df$change_num <= -2 ~ "red",
+    TRUE ~ "black"
+  )
+
+  split_display[[change_col_idx]] <- purrr::map2_chr(
+    split_display[[change_col_idx]],
+    change_colors,
+    ~ kableExtra::cell_spec(.x, color = .y, bold = TRUE)
+  )
+
+  split_display %>%
+    kableExtra::kbl(
+      format = "latex",
+      booktabs = TRUE,
+      escape = FALSE,
+      align = c("l", "c", "c", "c")
+    ) %>%
+    kableExtra::kable_styling(
+      latex_options = c("hold_position"),
+      full_width = FALSE,
+      position = "center",
+      font_size = 11
+    ) %>%
+    kableExtra::row_spec(0, bold = TRUE) %>%
+    kableExtra::column_spec(1, bold = TRUE)
+}
+```
+
+```{r hand-input-data, include=FALSE}
+split_raw_stats <- tibble(
+  Metric = c("PTS", "FTA", "TS%", "AST", "REB"),
+  first_38 = c(4.3, 0.7, 60.3, 1.1, 2.7),
+  last_27 = c(16.0, 3.2, 63.0, 4.0, 5.6)
+) %>%
+  mutate(change_num = last_27 - first_38)
+
+split_per_75_stats <- tibble(
+  Metric = c("PTS / 75", "FTA / 75", "TS%", "AST / 75", "REB / 75"),
+  first_38 = c(15.1, 2.5, 60.3, 3.9, 9.2),
+  last_27 = c(18.2, 3.7, 63.0, 4.5, 6.4)
+) %>%
+  mutate(change_num = last_27 - first_38)
+
+shot_diet_split <- tibble(
+  Metric = c("FG2A / 75", "FG3A / 75", "FTA / 75", "FTR"),
+  first_38 = c(4.5, 7.0, 2.5, 20.0),
+  last_27 = c(7.1, 5.7, 3.7, 28.6)
+) %>%
+  mutate(change_num = last_27 - first_38)
+
+season_progression <- tibble(
+  season = c("2024", "2025", "2026"),
+  role = c("GSW-PF", "GSW-SG", "GSW-SG"),
+  min_total = c(192, 762, 1289),
+  mpg = c(8.3, 13.6, 20.1),
+  dpm = c(-1.33, -0.57, 0.64),
+  pts = c(3.6, 4.1, 8.9),
+  ast = c(0.6, 1.4, 2.3),
+  reb = c(2.1, 3.1, 3.9),
+  ts = c(65.1, 57.6, 62.0),
+  rts = c(7.1, 0.1, 4.2),
+  ddpm = c(-0.44, 0.05, 0.52),
+  stl = c(0.2, 0.4, 0.9),
+  blk = c(0.1, 0.2, 0.3)
+)
+
+advanced_profile <- tibble(
+  stat = c(
+    "DPM", "ODPM", "DDPM", "On-Ball Usage", "POTAST", "TS%", "rTS%",
+    "2P%", "3P%", "3PA", "FTA", "STL", "DEFL", "STOP%",
+    "Creation TSA", "Creation TS%", "Spacing TSA", "Spacing TS%",
+    "Finish TSA", "Finish TS%", "NET", "NET On-Off"
+  ),
+  `2026` = c(
+    0.6, 0.1, 0.5, 15.1, 11.0, 62.0, 4.2,
+    65.2, 35.6, 7.8, 4.1, 2.1, 3.9, 3.0,
+    2.4, 57.1, 7.9, 56.3, 5.2, 71.9, 4.1, 1.4
+  ),
+  `2025` = c(
+    -0.6, -0.6, 0.1, 9.7, 8.8, 57.6, 0.1,
+    63.2, 33.0, 6.7, 2.7, 1.6, 4.0, 2.1,
+    0.7, 59.4, 5.4, 49.1, 4.3, 60.2, 11.5, 8.7
+  ),
+  `2024` = c(
+    -1.3, -0.9, -0.4, 8.3, 5.0, 65.1, 7.1,
+    64.3, 37.0, 6.8, 4.3, 1.0, 1.8, 1.0,
+    NA, 0.0, NA, 0.0, NA, 0.0, 4.6, 2.3
+  )
+)
+```
+
+# Executive Summary
+
+The Warriors entered the season with real expectations. After going 23-7 with Jimmy Butler to close last year, the path forward looked clear. They needed to lean on the aging core, hope to get enough from the young pieces, and stay in the mix out West. If Steph was still Steph, maybe that would be enough to keep the ceiling high, especially with Butler beside him as the foul-drawing, possession-steadying complement.
+
+Then Butler went down. Then Steph followed.
+
+The season has disappointed and drifted in a worse direction than Golden State expected. But it has also forced a question that has loomed over this team for years:
+
+Who can the Warriors actually rely on when Steph sits?
+
+Gui Santos has been one of those answers.
+
+# Team-Level Fallout
+
+```{r team-context-table}
+lg <- hoopR::nba_leaguegamelog(
+  season = "2025-26",
+  season_type_all_star = "Regular Season"
+) %>%
+  purrr::pluck("LeagueGameLog") %>%
+  safe_clean_names()
+
+team_logs <- lg %>%
+  filter(team_id == TEAM_ID) %>%
+  mutate(game_id = as.character(game_id)) %>%
+  left_join(
+    lg %>%
+      mutate(game_id = as.character(game_id)) %>%
+      filter(team_id != TEAM_ID) %>%
+      select(
+        game_id,
+        opp_pts = pts,
+        opp_reb = reb,
+        opp_ast = ast,
+        opp_tov = tov,
+        opp_fga = fga,
+        opp_fgm = fgm,
+        opp_fg3m = fg3m,
+        opp_fta = fta
+      ),
+    by = "game_id"
+  ) %>%
+  mutate(
+    game_date = parse_nba_date(game_date),
+    pts = to_num(pts),
+    reb = to_num(reb),
+    ast = to_num(ast),
+    tov = to_num(tov),
+    fga = to_num(fga),
+    fgm = to_num(fgm),
+    fg3m = to_num(fg3m),
+    fta = to_num(fta),
+    opp_pts = to_num(opp_pts),
+    opp_reb = to_num(opp_reb),
+    opp_ast = to_num(opp_ast),
+    opp_tov = to_num(opp_tov),
+    opp_fga = to_num(opp_fga),
+    opp_fgm = to_num(opp_fgm),
+    opp_fg3m = to_num(opp_fg3m),
+    opp_fta = to_num(opp_fta),
+    wl = wl
+  ) %>%
+  arrange(game_date)
+
+steph_games <- get_player_gamelog(STEPH_ID) %>%
+  transmute(game_id, steph_played = TRUE)
+
+jimmy_games <- get_player_gamelog(JIMMY_ID) %>%
+  transmute(game_id, jimmy_played = TRUE)
+
+team_logs <- team_logs %>%
+  left_join(steph_games, by = "game_id") %>%
+  left_join(jimmy_games, by = "game_id") %>%
+  mutate(
+    steph_played = coalesce(steph_played, FALSE),
+    jimmy_played = coalesce(jimmy_played, FALSE),
+    no_steph_jimmy = !steph_played & !jimmy_played,
+    group = ifelse(no_steph_jimmy, "No Steph/Jimmy", "Steph or Jimmy In"),
+    mov = pts - opp_pts
+  )
+
+with_stars_logs <- team_logs %>%
+  filter(group == "Steph or Jimmy In")
+
+no_star_logs <- team_logs %>%
+  filter(group == "No Steph/Jimmy")
+
+split_summary <- bind_rows(
+  summ_process(with_stars_logs) %>% mutate(Group = "Steph or Jimmy In"),
+  summ_process(no_star_logs) %>% mutate(Group = "No Steph/Jimmy")
+) %>%
+  select(Group, everything()) %>%
+  mutate(across(c(PPG, `Opp. PPG`, MOV, eFG, `Opp. eFG`, `TOV%`), ~ round(.x, 2)))
+
+knitr::kable(
+  split_summary,
+  booktabs = TRUE,
+  caption = "Warriors with and without Steph/Jimmy"
+)
+```
+
+The team numbers are not subtle. Once Steph and Jimmy went down, the Warriors’ season fell off fast. The offense got shakier, the efficiency dipped, and the turnovers climbed. A team that looked to be getting back on track fell off the rails completely.
+
+That is the version of the team Santos has been playing in. His role did not expand under clean conditions. It expanded as the rotation thinned out and the team around him got worse.
+
+# Gui's Best Games
+
+```{r gui-top-5}
+gui_logs <- get_player_gamelog(GUI_ID)
+
+gui_no_star <- gui_logs %>%
+  select(-game_date, -matchup) %>%
+  inner_join(
+    no_star_logs %>%
+      select(game_id, game_date, matchup),
+    by = "game_id"
+  ) %>%
+  mutate(
+    ts = pts / (2 * (fga + 0.44 * fta)),
+    impact = pts + 1.2 * reb + 1.5 * ast + 2 * stl + 2 * blk - 1.2 * tov
+  )
+
+gui_top5 <- gui_no_star %>%
+  arrange(desc(impact)) %>%
+  slice_head(n = 5) %>%
+  transmute(
+    Date = game_date,
+    Opponent = matchup,
+    PTS = pts,
+    REB = reb,
+    AST = ast,
+    STL = stl,
+    BLK = blk,
+    Impact = round(impact, 1)
+  )
+
+kable(
+  gui_top5,
+  booktabs = TRUE,
+  caption = "Gui Santos' top 5 games without Steph and Jimmy"
+)
+```
+
+Santos has not just padded stats in low-stakes spots. He has had a handful of genuinely strong games in this stretch, including a few against real competition. His best performances highlight the main areas where he impacts the game: efficient scoring, enough rebounding and playmaking to stay involved, and enough defensive activity to swing possessions.
+
+# The Role Shift Shows Up in the Numbers
+
+His explosive performances highlight the raw production jump he's had.
+
+**Raw Stats | First 38 vs. Last 27**
+
+```{r split-raw-stats}
+build_split_kable(split_raw_stats)
+```
+
+More minutes usually mean more production. They do not always mean better production. Santos is not just seeing the ball more and stacking box-score stats. His true shooting actually rises from 60.3% to 63.0% while the role gets tougher, which is a real sign of growth.
+
+For the 55th pick, that matters. His path in the league was always going to depend on becoming the kind of role player who can actually help a winning team. Lately, he has looked like that guy. Even with the season slipping, he has given Golden State a reason to believe he can matter in a more competent second unit now and possibly as a real piece over the next couple of years around the end of Steph’s window.
+
+Once you adjust for opportunity, the jump looks a little different, but it still holds.
+
+**Per 75 Possessions | First 38 vs. Last 27**
+
+```{r split-per75-table}
+build_split_kable(split_per_75_stats)
+```
+
+Per 75, the scoring still rises from 15.1 to 18.2, the assists tick up from 3.9 to 4.5, and the free throws jump from 2.5 to 3.7. So even after stripping out some of the minutes effect, this is still real growth. He has played with more aggression, gotten to the line more, and kept his efficiency moving in the right direction while the job has gotten heavier.
+
+The rebounding is the one place where the tradeoff shows up. He falls from 9.2 to 6.4 per 75, which makes sense in context. Earlier in the year, more of his value came from energy plays, crashing the glass, and filling gaps around the stars. In this version of the role, more of that energy is going toward making reads and helping keep the offense together.
+
+The minutes created the opportunity, but he has justified it.
+
+# The Shot Diet Is What Makes the Split Mean More
+
+He is not just taking more shots for the sake of it. The shape of the offense has changed too. His 2-point volume has jumped from 4.5 to 7.1 per 75, while his 3-point volume has dipped from 7.0 to 5.7. At the same time, his increased downhill pressure has resulted in his free-throw rate rising from 20.0 to 28.6.
+
+**Shot Diet and Foul Pressure | Per 75 Possessions**
+
+```{r shot-diet-split-table}
+build_split_kable(shot_diet_split)
+```
+
+He is getting downhill more often and creating more pressure at the rim and at the line. His shot diet has shifted in a direction that makes a lot of sense, both for him and for this team.
+
+The Warriors have had rim-pressure issues for years, ranking 26th, 14th, 29th, 30th, and 23rd in free-throw rate over the last five seasons. Santos is not solving that by himself, but he is helping fill a real need, and the way he is doing it looks sustainable.
+
+That carries over to the full-season shot chart, which is probably the cleanest visual summary of the kind of player he has become. For a role player, it is a really strong distribution: a lot of threes, a lot of attempts at the rim, some paint shots mixed in, and very little wasted in the midrange.
+
+# Where the Offense Comes From
+
+```{r gui-shot-profile, fig.width=7.4, fig.height=4.8}
+shotloc <- hoopR::nba_leaguedashplayershotlocations(
+  season = "2025-26",
+  season_type = "Regular Season",
+  per_mode = "Totals"
+)$ShotLocations %>%
+  clean_names()
+
+gui_shotloc <- shotloc %>%
+  filter(player_name == "Gui Santos") %>%
+  slice(1)
+
+get1 <- function(df, col) {
+  if (!col %in% names(df)) return(NA_real_)
+  suppressWarnings(as.numeric(df[[col]][1]))
+}
+
+corner3_fga <- get1(gui_shotloc, "corner_3_fga")
+atb3_fga <- get1(gui_shotloc, "above_the_break_3_fga")
+three_fga <- sum(c(corner3_fga, atb3_fga), na.rm = TRUE)
+
+shot_profile <- tibble(
+  zone = c("Rim", "Non-Rim Paint", "Midrange", "3PT"),
+  fga = c(
+    get1(gui_shotloc, "restricted_area_fga"),
+    get1(gui_shotloc, "in_the_paint_non_ra_fga"),
+    get1(gui_shotloc, "mid_range_fga"),
+    three_fga
+  )
+) %>%
+  mutate(
+    share = fga / sum(fga, na.rm = TRUE),
+    zone = factor(zone, levels = c("Rim", "Non-Rim Paint", "Midrange", "3PT"))
+  )
+
+ggplot(shot_profile, aes(x = zone, y = share)) +
+  geom_col(fill = WARRIORS_BLUE, alpha = 0.92, width = 0.66) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "Santos lives in the right places offensively",
+    subtitle = "Shot distribution by zone | 2025-26",
+    x = NULL,
+    y = "Share of field-goal attempts",
+    caption = CAPTION_LINE
+  ) +
+  theme_caleb
+```
+
+Nearly half of his shots are threes, a little under 40 percent come at the rim, and almost nothing is wasted in the midrange. There are some paint touches mixed in, but for the most part, this is exactly the kind of distribution you want from a role player.
+
+# League Context: He Did Not Break When the Role Got Bigger
+
+```{r league-usage-ts, fig.width=7.5, fig.height=5.1}
+lg_base <- get_league_base()
+lg_usage <- get_league_usage()
+lg_adv <- get_league_advanced()
+
+league_usage <- lg_base %>%
+  left_join(lg_usage, by = "player_id") %>%
+  left_join(lg_adv, by = "player_id") %>%
+  filter(!is.na(usg_pct), !is.na(ts_pct), !is.na(min), min >= 1000)
+
+gui_row <- league_usage %>%
+  filter(player_name == "Gui Santos") %>%
+  slice(1)
+
+avg_usg <- mean(league_usage$usg_pct, na.rm = TRUE)
+avg_ts <- mean(league_usage$ts_pct, na.rm = TRUE)
+
+ggplot(league_usage, aes(x = usg_pct, y = ts_pct)) +
+  geom_vline(
+    xintercept = avg_usg,
+    linetype = "dashed",
+    linewidth = 0.5,
+    alpha = 0.2
+  ) +
+  geom_hline(
+    yintercept = avg_ts,
+    linetype = "dashed",
+    linewidth = 0.5,
+    alpha = 0.2
+  ) +
+  geom_point(alpha = 0.18, size = 1.5, color = "#4d4d4d") +
+  geom_point(data = gui_row, color = WARRIORS_GOLD, size = 3.4) +
+  ggrepel::geom_text_repel(
+    data = gui_row,
+    aes(label = player_name),
+    size = 3.2,
+    seed = 42,
+    box.padding = 0.35,
+    max.overlaps = 10
+  ) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_y_continuous(labels = scales::label_number(accuracy = 1)) +
+  labs(
+    title = "More usage, same efficiency",
+    subtitle = "2025-26 | 1000+ minutes | dashed lines = average",
+    x = "Usage rate",
+    y = "True shooting %",
+    caption = CAPTION_LINE
+  ) +
+  theme_caleb
+```
+
+He still sits in a lower-usage range, which is what you would expect from a bench wing, but he is doing it with efficiency that really stands out. He is comfortably above average there, around +5% relative true shooting, and that is the kind of offensive profile Golden State needs from a role player.
+
+Santos has been around as an energy guy and an easy player to root for, but not necessarily someone you thought of as a real piece. Lately, that has started to change. He is being asked to do more without overstepping what he is. That is what makes this stretch feel believable. He has taken on a bigger share of the offense without dragging it down, and he is still competing defensively.
+
+# The Defensive Growth Is Just as Intriguing
+
+Santos is at 2.8 deflections per 36, which puts him in some pretty solid company alongside players like Terance Mann, Collin Sexton, Jimmy Butler, and Jrue Holiday. Not top-of-the-league territory, but still an impressive range to sit in. More than anything, it reflects his activity. Those are players who are consistently around the ball, disrupting actions, and creating extra possessions.
+
+```{r defense-trend-plot, fig.width=7.2, fig.height=4.9}
+defense_plot <- advanced_profile %>%
+  filter(stat %in% c("DDPM", "STL", "DEFL", "STOP%")) %>%
+  pivot_longer(
+    cols = c(`2024`, `2025`, `2026`),
+    names_to = "season",
+    values_to = "value"
+  )
+
+ggplot(defense_plot, aes(x = season, y = value, group = stat, color = stat)) +
+  geom_line(linewidth = 0.95) +
+  geom_point(size = 2.6) +
+  scale_color_manual(values = c(
+    "DDPM" = WARRIORS_GOLD,
+    "STL" = "#4C9F70",
+    "DEFL" = "#7B5EA7",
+    "STOP%" = "#B55D60"
+  )) +
+  labs(
+    title = "Defense is the biggest part, and he's continuing to grow",
+    subtitle = "Impact and event creation across Gui Santos' three seasons",
+    x = NULL,
+    y = NULL,
+    caption = CAPTION_DATABALLR
+  ) +
+  theme_caleb
+```
+
+And when you zoom out, the growth looks pretty steady.
+
+Some of that is experience. Some of it is finally getting real opportunity. Either way, the defensive profile has moved in the right direction with it. The impact numbers go from negative to positive, and the event-creation stats rise with them.
+
+Santos has grown into a player who can be competent, and at times genuinely good, on the defensive end too. He still competes, still flies around, and now looks more comfortable turning that energy into consistent positive impact.
+
+That is part of what makes this season matter for him. The Warriors may not have gotten the year they wanted, but Santos has turned a down season into a real development story. He is homegrown, he has improved with time, and he is starting to look like a meaningful part of their future rotation.
+
+# Three-Year Snapshot
+
+```{r reduced-season-table}
+season_tbl <- season_progression %>%
+  transmute(
+    Season = season,
+    Role = role,
+    MIN = min_total,
+    MPG = fmt_num(mpg),
+    DPM = fmt_num(dpm, 2),
+    DDPM = fmt_num(ddpm, 2),
+    PTS = fmt_num(pts),
+    AST = fmt_num(ast),
+    REB = fmt_num(reb),
+    `TS%` = fmt_pct(ts),
+    `rTS%` = paste0(if_else(rts >= 0, "+", ""), fmt_num(rts), "%"),
+    STL = fmt_num(stl),
+    BLK = fmt_num(blk)
+  )
+
+kable(season_tbl, caption = "Three-year snapshot")
+```
+
+The bigger picture is that this did not come out of nowhere.
+
+Santos entered the league as a developmental flier, the kind of late pick teams hope they can slowly turn into something useful. Early on, that meant short minutes, scattered chances, and flashes more than substance. Now, Golden State’s bet looks like it may have paid off. The minutes have climbed, the production has followed, and the impact has moved with it. In a season that went sideways for the Warriors, Santos has started to look less like a nice story and more like a real developmental win.
+
+# What This Actually Means
+
+The Warriors are still operating on Steph’s clock. Jimmy and Draymond matter too, but this is really about how much Golden State can still get out of the end of Steph’s career. They owe it to him to keep finding real players who can help, not just recognizable names.
+
+That has always been part of what makes Golden State work. The stars drive everything, but the machine only really functions when the role players are smart, quick in their decisions, and ready to capitalize when something opens up.
+
+This recent stretch from Santos fits that mold, and it feels like more than just a hot run off extra minutes. The scoring has been real, but so have the other parts of it. He is still cutting, still competing, still defending, and still making the kinds of plays that let him fit into this environment in the first place.
+
+Gui has grown, and he is starting to look like someone Golden State can actually use, both for whatever is left of this season and for the next version of the team.
