@@ -1,0 +1,353 @@
+---
+title: "SGA's MVP Case"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: false
+geometry: margin=0.8in
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{table}{H}
+  - \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  dpi = 300
+)
+
+library(tidyverse)
+library(scales)
+library(showtext)
+library(sysfonts)
+library(knitr)
+library(kableExtra)
+library(forcats)
+
+font_add_google("Inter", "inter")
+showtext_auto()
+options(scipen = 999)
+
+# ------------------------------------------------------------
+# Theme + table helpers
+# ------------------------------------------------------------
+
+BG <- "#f6f4ef"
+TEXT_DARK <- "#141414"
+TEXT_LIGHT <- "#6b6b6b"
+GRID <- "#dedad3"
+ACCENT <- "#1d4ed8"
+HILITE <- "#e8f0ff"
+
+OKC_BLUE <- "#007AC1"
+OKC_ORANGE <- "#EF3B24"
+
+CAPTION_LINE <- "Data: NBA.com | Viz: @Rambzee_"
+
+theme_caleb <- function() {
+  theme_minimal(base_family = "inter") +
+    theme(
+      plot.background = element_rect(fill = BG, color = NA),
+      panel.background = element_rect(fill = BG, color = NA),
+      panel.grid.major = element_line(color = GRID, linewidth = 0.3),
+      panel.grid.minor = element_blank(),
+      text = element_text(color = TEXT_DARK),
+      plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(size = 11.5, color = TEXT_LIGHT, hjust = 0.5),
+      axis.title = element_text(size = 11.5, face = "bold"),
+      axis.text = element_text(size = 10),
+      axis.ticks = element_blank(),
+      plot.caption = element_text(size = 8, color = "#6e6e6e", hjust = 1, margin = margin(t = 8))
+    )
+}
+
+style_kable <- function(df, align = NULL, font_size = 10, full_width = FALSE) {
+  if (is.null(align)) {
+    align <- strrep("c", ncol(df))
+  }
+
+  kbl(
+    df,
+    booktabs = TRUE,
+    align = align,
+    format = "latex",
+    linesep = ""
+  ) %>%
+    kable_styling(
+      latex_options = c("HOLD_position", "striped"),
+      full_width = full_width,
+      font_size = font_size,
+      stripe_color = "#fbfaf7"
+    )
+}
+```
+
+# Shai Gilgeous-Alexander
+
+## The Case
+
+Shai Gilgeous-Alexander is not just putting up MVP numbers. He is having one of the most efficient high-volume scoring seasons a guard has ever produced.
+
+He is averaging 31.1 points per game on +8.4 rTS, controlling the middle of the floor, taking care of the ball at a historically rare level for this kind of volume, and anchoring elite offense for the best team in the league. Coming off a championship and Finals MVP, Shai has built about as complete an MVP case as you could ask for.
+
+## Scoring Profile
+
+```{r sga-shot-profile}
+sga_shot_profile <- tibble(
+  Zone = c("Restricted Area", "Paint (Non-RA)", "Midrange", "3PT", "FT"),
+  Pct = c("71.2%", "53.1%", "54.9%", "38.6%", "87.9%"),
+  Volume = c("5.4 att/G", "4.5 att/G", "5.2 att/G", "4.4 att/G", "9.0 FTA/G"),
+  Context = c("+4.3 rFG%", "+8.6 rFG%", "+11.2 rFG%", "+2.4 rFG%", "46.5% FTr")
+)
+
+sga_shot_profile %>%
+  style_kable(align = "lcccc", font_size = 9) %>%
+  row_spec(3, bold = TRUE)
+```
+
+```{r sga-shot-plot, fig.height=4.4, fig.width=7.4}
+sga_shot_plot <- tibble(
+  zone = c("Restricted Area", "Paint (Non-RA)", "Midrange", "3PT"),
+  fga_per_game = c(5.4, 4.5, 5.2, 4.4),
+  sga_fg = c(71.2, 53.1, 54.9, 38.6),
+  league_fg = c(66.9, 44.5, 43.7, 36.2)
+) %>%
+  mutate(
+    zone = fct_reorder(zone, fga_per_game),
+    diff = sga_fg - league_fg,
+    pct_label = paste0(sga_fg, "%"),
+    league_label = paste0("Lg: ", league_fg, "%")
+  )
+
+ggplot(sga_shot_plot, aes(x = zone, y = fga_per_game)) +
+  geom_col(fill = OKC_BLUE, width = 0.68) +
+  geom_text(
+    aes(y = fga_per_game + 0.10, label = pct_label),
+    hjust = 0,
+    size = 3.6,
+    family = "inter",
+    fontface = "bold",
+    color = TEXT_DARK
+  ) +
+  geom_text(
+    aes(y = fga_per_game + 0.95, label = league_label),
+    hjust = 0,
+    size = 3.0,
+    alpha = 0.7,
+    family = "inter",
+    color = OKC_ORANGE
+  ) +
+  coord_flip(clip = "off") +
+  labs(
+    title = "Balanced shot diet, elite everywhere",
+    subtitle = "Labels show SGA FG% and league average by zone",
+    x = NULL,
+    y = "FGA per game",
+    caption = CAPTION_LINE
+  ) +
+  expand_limits(y = max(sga_shot_plot$fga_per_game) + 1.5) +
+  theme_caleb()
+```
+
+Shai is not just living off one zone or one coverage. What stands out first is how different his athleticism looks from almost anyone else. He does not overpower people in the usual way. He stretches, slithers, changes angles, and gets to the rim whenever he wants. It often feels like he glides from one spot to another without ever giving the defender a clean body line.
+
+That is what makes this season so difficult to defend. No single defender can really handle him, and no coverage holds up for long because he demands the attention of the entire defense. He is an isolation savant who can beat his man clean, force extra help, and then punish whatever comes next. Send two and he finds the open man or slips through the gap himself. Stay home and he picks the matchup apart. Switch, hedge, blitz, drop, eventually he solves it. That is why the shot profile looks the way it does. He is not efficient everywhere by accident. He gets there because defenses have to load up on him, and even then he still has the counter.
+
+## Pressure, Load, and Scalability
+
+```{r sga-load-context}
+sga_context <- tribble(
+  ~Scenario, ~PPG, ~RPG, ~APG, ~`TS%`, ~`rTS`, ~STL, ~BLK, ~TOV, ~Record,
+  "Without Jalen Williams", 32.2, 4.6, 6.9, "67.3%", "+9.2%", 1.6, 0.7, 2.1, "35-4",
+  "Without Chet Holmgren", 30.6, 6.1, 6.9, "62.1%", "+4.0%", 1.0, 1.3, 1.8, "7-1"
+)
+
+sga_context %>%
+  style_kable(align = "lccccccccc", font_size = 9)
+```
+
+Without Jalen Williams, SGA still put up 32.2 points and 6.9 assists per game on 67.3 TS%, and the Thunder went 35-4. Without Chet Holmgren, the efficiency came down some, but the scoring, playmaking, and team results still held up well. That kind of scalability starts with the pressure he puts on a defense every trip down. Shai averaged 18.8 drives per game this season, the most among guards and third-most in the league, and that constant downhill pressure is a big reason the scoring and playmaking keep holding up as the burden rises.
+
+More responsibility usually comes with some trade-off, whether in efficiency, playmaking, or overall team success. With Shai, there was barely one. The scoring stayed elite, the playmaking held up, and Oklahoma City still performed like one of the best teams of the decade whenever he was on the floor.
+
+## Team Impact and On-Off Context
+
+```{r sga-onoff-table}
+sga_impact <- tribble(
+  ~State, ~ORTG, ~`ORTG vs league`, ~DRTG, ~`DRTG vs league`,
+  "With Shai", 122.9, "+6.9", 106.8, "-9.2",
+  "Without Shai", 113.5, "-2.5", 107.4, "-8.5"
+)
+
+sga_impact %>%
+  style_kable(align = "lcccc")
+```
+
+```{r sga-onoff-plot, fig.height=4.4, fig.width=7.4}
+league_avg_ortg <- 116
+
+ortg_plot <- tibble(
+  state = c("With Shai", "Without Shai"),
+  ortg = c(122.9, 113.5)
+)
+
+ggplot(ortg_plot, aes(x = state, y = ortg)) +
+  geom_col(fill = OKC_BLUE, width = 0.62) +
+  geom_hline(
+    yintercept = league_avg_ortg,
+    linetype = "dotted",
+    linewidth = 0.6,
+    color = OKC_ORANGE
+  ) +
+  geom_text(
+    aes(label = ortg),
+    vjust = -1.2,
+    size = 3.5,
+    family = "inter",
+    color = TEXT_DARK
+  ) +
+  annotate(
+    "text",
+    x = 1.5,
+    y = league_avg_ortg + 3.5,
+    label = "League Avg: 116",
+    color = OKC_ORANGE,
+    family = "inter",
+    size = 2
+  ) +
+  labs(
+    title = "OKC offense swings with SGA",
+    x = NULL,
+    y = "Offensive rating",
+    caption = CAPTION_LINE
+  ) +
+  expand_limits(y = max(ortg_plot$ortg) + 3) +
+  theme_caleb()
+```
+
+Shai is not just making a good offense better. Oklahoma City is already one of the better teams we have seen this decade, which is exactly what makes his impact so striking. Even in the games he has missed, they have still gone 8-4, a reminder that this is not some weak roster being dragged along by one star. It is already a strong team. Shai is the piece that pushes it from very good to all-time great.
+
+## Historical Scoring Context
+
+### 30+ PPG seasons by a guard, ranked by rTS
+
+```{r guard-rts-table}
+guard_rts <- tribble(
+  ~Year, ~Age, ~Player, ~PPG, ~rTS,
+  2016, 27, "Stephen Curry", 30.1, "13.2%",
+  2021, 32, "Stephen Curry", 32.0, "8.9%",
+  2026, 27, "Shai Gilgeous-Alexander", 31.1, "8.4%",
+  1989, 25, "Michael Jordan", 32.5, "7.7%",
+  1991, 27, "Michael Jordan", 31.5, "7.1%",
+  1990, 26, "Michael Jordan", 33.6, "6.9%",
+  1988, 24, "Michael Jordan", 35.0, "6.6%",
+  2023, 32, "Damian Lillard", 32.2, "6.4%",
+  2020, 29, "Damian Lillard", 30.0, "6.4%",
+  2018, 28, "James Harden", 30.4, "6.4%",
+  2025, 26, "Shai Gilgeous-Alexander", 32.7, "6.1%",
+  2020, 30, "James Harden", 34.3, "6.1%",
+  2019, 29, "James Harden", 36.1, "5.7%",
+  2024, 25, "Shai Gilgeous-Alexander", 30.1, "5.6%"
+)
+
+guard_rts %>%
+  style_kable(align = "cccccc", font_size = 8.5) %>%
+  row_spec(which(guard_rts$Player == "Shai Gilgeous-Alexander"), bold = TRUE, background = HILITE)
+```
+
+This is where the case goes from great to historic. Shai’s +8.4 rTS places him in an absurdly small group for 30-point-per-game guard seasons, trailing only peak Curry and clearing every Michael Jordan season. This is not just elite volume scoring. It is one of the most efficient scoring seasons a guard has ever put together.
+
+### 30+ PPG seasons with the lowest turnovers per game
+
+```{r low-turnover-table}
+low_tov <- tribble(
+  ~Season, ~PPG, ~APG, ~TOV,
+  "2025-26 Shai", 31.1, 6.6, 2.2,
+  "2023-24 Shai", 30.1, 6.2, 2.2,
+  "1995-96 Jordan", 30.4, 4.3, 2.4,
+  "2024-25 Shai", 32.7, 6.4, 2.4,
+  "1990-91 Jordan", 31.5, 5.5, 2.5
+)
+
+low_tov %>%
+  style_kable(align = "lccc") %>%
+  row_spec(1, bold = TRUE, background = HILITE)
+```
+
+The scoring efficiency is historic on its own. The ball security pushes it even further. High-volume scoring seasons inherently come with some give because of what the role demands. Creating your own shot possession after possession, handling pressure, taking contact, and finishing through bodies naturally leads to mistakes. Shai somehow makes that part of scoring look trivial.
+
+He is taking on a superstar scoring load, creating offense for himself and others, and still barely giving the ball away. Roughly 20 shots a game, more than 6 assists a night, and only 2 turnovers per game is ridiculous possession control. This is not just another great season. It is something only a tiny handful of guards have ever touched, with Jordan being the only real historical comparison that shows up.
+
+### FG% Context
+
+```{r fg-context-table}
+fg_table <- tribble(
+  ~Season, ~`Stat line`,
+  "2025-26 Shai", "31.1 PPG (55.3 FG%)",
+  "1990-91 Jordan", "31.5 PPG (53.9 FG%)",
+  "1988-89 Jordan", "32.5 PPG (53.8 FG%)",
+  "1987-88 Jordan", "35.0 PPG (53.5 FG%)",
+  "1979-80 Gervin", "33.1 PPG (52.8 FG%)",
+  "1989-90 Jordan", "33.6 PPG (52.6 FG%)",
+  "2024-25 Shai", "32.7 PPG (51.9 FG%)",
+  "2022-23 Shai", "31.4 PPG (51.0 FG%)",
+  "1981-82 Gervin", "32.3 PPG (50.0 FG%)",
+  "2023-24 Luka", "32.4 PPG (49.6 FG%)",
+  "1992-93 Jordan", "32.6 PPG (49.5 FG%)"
+)
+
+fg_table %>%
+  style_kable(align = "ll", font_size = 9) %>%
+  row_spec(1, bold = TRUE, background = HILITE)
+```
+
+This is not the core of the case, but it is still useful context. The rTS and turnover arguments carry more weight, but the FG% mark adds another layer to the season. Shai now holds the highest FG% ever by a guard averaging 30+, another place where he sits alongside Jordan.
+
+## Clutch Impact
+
+```{r clutch-table}
+clutch <- tribble(
+  ~Player, ~PTS, ~`TS%`, ~Record,
+  "Shai Gilgeous-Alexander", 6.5, "67.0%", "20-7",
+  "Anthony Edwards", 5.7, "66.6%", "14-9",
+  "Nikola Jokic", 4.8, "61.3%", "15-17",
+  "Stephen Curry", 4.5, "62.7%", "7-10",
+  "Jamal Murray", 4.4, "70.2%", "20-18"
+)
+
+clutch %>%
+  kbl(
+    booktabs = TRUE,
+    align = "lccccc",
+    format = "latex",
+    linesep = ""
+  ) %>%
+  kable_styling(
+    latex_options = c("HOLD_position", "striped"),
+    font_size = 10,
+    stripe_color = "#fbfaf7"
+  ) %>%
+  row_spec(1, bold = TRUE, background = HILITE)
+```
+
+If the rest of the case was not enough, Shai has also been the best clutch player in basketball. He is averaging 6.5 points per game on 67 TS% in clutch time, the highest mark any player has reached since play-by-play tracking began in 1996. The Thunder are 20-7 in clutch games he has played, and since March 17 he has scored 42 fourth-quarter and overtime points without missing a shot, going 11-for-11 from the field. It is just one more layer of a season that keeps adding to an already historic résumé.
+
+## Defensive Impact
+
+Shai’s case does not stop on the offensive end. He averaged 1.4 steals and 0.8 blocks this season, good for 2.2 stocks per game, which at the very least reflects how active and disruptive he can be defensively. But the value goes beyond the box score. He is not just a guard who piles up events. He is a legitimately good defender.
+
+That shows up in the team context too. Oklahoma City posted a 106.8 defensive rating with Shai on the floor compared to 107.4 without him. On a team that was already loaded with elite defensive personnel, that is not nothing. If anything, it says even more. He is not being hidden, and he is not just along for the ride. On a historically great defense, he still helps move the needle in the right direction.
+
+## Extra Historical Note
+
+**Consistency:** Shai has already passed Wilt Chamberlain’s record for consecutive 20-point games and now sits at 140. Wilt scoring records are supposed to be untouchable, so breaking one says plenty on its own. More than anything, though, it fits the way Shai has always carried himself. His whole game, routine, and approach are built on consistency, and this streak feels like the clearest reflection of that.
+
+## Closing
+
+We are watching an all-time great guard add a historic season to an already incredible résumé. Shai is 27 years old, just entering his prime, and already operating at a level very few guards in league history have touched. The efficiency is historic, the ball security is absurd, the shotmaking is elite from every level, and the team impact is exactly what an MVP season is supposed to look like. There are historical comparisons for parts of this season, but the full picture is rare. This is not a breakout or some one-off heater. It is another dominant season from a player whose trophy case is already starting to resemble that of the game’s all-time greats, and he will likely add another one soon.
