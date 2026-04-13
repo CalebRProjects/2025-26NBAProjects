@@ -1,0 +1,339 @@
+---
+title: "Luka MVP Case"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: false
+geometry: margin=0.8in
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{table}{H}
+  - \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  dpi = 300
+)
+
+library(tidyverse)
+library(scales)
+library(showtext)
+library(sysfonts)
+library(knitr)
+library(kableExtra)
+library(forcats)
+
+font_add_google("Inter", "inter")
+showtext_auto()
+options(scipen = 999)
+
+# ------------------------------------------------------------
+# Theme + table helpers
+# ------------------------------------------------------------
+
+BG <- "#f6f4ef"
+TEXT_DARK <- "#141414"
+TEXT_LIGHT <- "#6b6b6b"
+GRID <- "#dedad3"
+ACCENT <- "#1d4ed8"
+HILITE <- "#e8f0ff"
+
+LAKERS_PURPLE <- "#552583"
+LAKERS_GOLD <- "#FDB927"
+
+CAPTION_LINE <- "Data: NBA.com | Viz: @Rambzee_"
+
+theme_caleb <- function() {
+  theme_minimal(base_family = "inter") +
+    theme(
+      plot.background = element_rect(fill = BG, color = NA),
+      panel.background = element_rect(fill = BG, color = NA),
+      panel.grid.major = element_line(color = GRID, linewidth = 0.3),
+      panel.grid.minor = element_blank(),
+      text = element_text(color = TEXT_DARK),
+      plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(size = 11.5, color = TEXT_LIGHT, hjust = 0.5),
+      axis.title = element_text(size = 11.5, face = "bold"),
+      axis.text = element_text(size = 10),
+      axis.ticks = element_blank(),
+      plot.caption = element_text(size = 8, color = "#6e6e6e", hjust = 1, margin = margin(t = 8))
+    )
+}
+
+style_kable <- function(df, align = NULL, font_size = 10, full_width = FALSE) {
+  if (is.null(align)) {
+    align <- strrep("c", ncol(df))
+  }
+
+  kbl(
+    df,
+    booktabs = TRUE,
+    align = align,
+    format = "latex",
+    linesep = ""
+  ) %>%
+    kable_styling(
+      latex_options = c("HOLD_position", "striped"),
+      full_width = full_width,
+      font_size = font_size,
+      stripe_color = "#fbfaf7"
+    )
+}
+```
+
+# Luka Dončić
+
+## The Case
+
+Since Luka Dončić established himself as one of the league’s premier offensive talents, MVP buzz has followed him. This season was no different. With talent around him but real questions about whether his limitations would hold him back, Luka answered them by remaining the clear engine behind everything the Lakers do offensively. At 33.5 points, 7.7 rebounds, and 8.3 assists per game on 61.6 TS%, he has paired massive production with one of the heaviest offensive burdens in the league.
+
+## Scoring Profile
+
+```{r luka-shot-profile}
+luka_shot_profile <- tibble(
+  Zone = c("Restricted Area", "Paint (Non-RA)", "Midrange", "3PT", "FT"),
+  Pct = c("81.6%", "55.3%", "44.3%", "36.6%", "78.0%"),
+  Volume = c("2.5 att/G", "5.7 att/G", "3.7 att/G", "10.1 FTA/G", "43.9% FTr"),
+  Context = c("+14.7 rFG%", "+10.8 rFG%", "+0.6 rFG%", "10.8 att/G", "78.0% FT")
+)
+
+luka_shot_profile %>%
+  style_kable(align = "lcccc", font_size = 9)
+```
+
+```{r luka-shot-plot, fig.height=4.4, fig.width=7.4}
+luka_shot_plot <- tibble(
+  zone = c("Restricted Area", "Paint (Non-RA)", "Midrange", "3PT"),
+  fga_per_game = c(2.5, 5.7, 3.7, 10.8),
+  luka_fg = c(81.6, 55.3, 44.3, 36.6),
+  league_fg = c(66.9, 44.5, 43.7, 36.2)
+) %>%
+  mutate(
+    zone = fct_reorder(zone, fga_per_game),
+    pct_label = paste0(luka_fg, "%"),
+    league_label = paste0("Lg: ", league_fg, "%")
+  )
+
+ggplot(luka_shot_plot, aes(x = zone, y = fga_per_game)) +
+  geom_col(fill = LAKERS_PURPLE, width = 0.68) +
+  geom_text(
+    aes(y = fga_per_game + 0.10, label = pct_label),
+    hjust = 0,
+    size = 3.6,
+    family = "inter",
+    fontface = "bold",
+    color = TEXT_DARK
+  ) +
+  geom_text(
+    aes(y = fga_per_game + 1.4, label = league_label),
+    hjust = 0,
+    size = 3.0,
+    family = "inter",
+    color = TEXT_LIGHT,
+    fontface = "italic",
+    alpha = 0.8
+  ) +
+  coord_flip(clip = "off") +
+  labs(
+    title = "High-volume threes, elite touch inside",
+    subtitle = "Labels show Luka FG% and league average by zone",
+    x = NULL,
+    y = "FGA per game",
+    caption = CAPTION_LINE
+  ) +
+  expand_limits(y = max(luka_shot_plot$fga_per_game) + 2) +
+  theme_caleb()
+```
+
+Luka’s shot diet reflects the difficulty of his role. The settling criticism is fair at times, but it also undersells what he is being asked to do. He carries one of the heaviest offensive burdens in the league and still gets strong efficiency out of a profile built heavily on three-point volume. Nearly eleven threes per game at 36.6% is a lot of difficult offense to sustain, and it is a huge part of what opens the rest of the floor for him.
+
+Once he gets inside, the touch is what really separates him. He is absurdly efficient at the rim and excellent on non-rim paint shots. The rim volume is not especially high and has dipped over time, but the threat of that interior scoring still forces defenses to send help and gameplan around it. That blend of threes, foul pressure, and elite touch is what makes him such a dangerous scorer.
+
+## Offensive Burden / Creation
+
+```{r points-created}
+points_created <- tribble(
+  ~Player, ~`Points Created Per Game`,
+  "Nikola Jokic", 53.6,
+  "Luka Dončić", 52.7,
+  "Shai Gilgeous-Alexander", 47.8
+)
+
+points_created %>%
+  style_kable(align = "lc") %>%
+  row_spec(2, bold = TRUE, background = HILITE)
+```
+
+That scoring pressure is what drives the rest of Luka’s creation. Once defenses have to respect the three and his touch inside, he can force help and make any pass the coverage gives him. Skip passes, lobs, pocket feeds, hit-aheads, there is not a throw he cannot make at a high level.
+
+The turnovers come with the role, but he still protects the ball at an above average rate considering how much he has the ball. His creation-adjusted turnover rate of 8.6% ranks in the 60th percentile, which is solid for someone carrying this much offense. That mix of volume and control is a big reason he ranks second in the league in points created per game, behind only Jokic and ahead of SGA.
+
+## Usage Context
+
+```{r usage}
+usage_context <- tribble(
+  ~Season, ~Player, ~USG,
+  "2016-17", "Russell Westbrook", 41.5,
+  "2018-19", "James Harden", 40.3,
+  "2005-06", "Kobe Bryant", 38.7,
+  "2022-23", "Giannis Antetokounmpo", 38.5,
+  "2014-15", "Russell Westbrook", 38.2,
+  "1986-87", "Michael Jordan", 38.2,
+  "2025-26", "Luka Dončić", 38.1,
+  "2001-02", "Allen Iverson", 37.7
+)
+
+usage_context %>%
+  style_kable(align = "lcc", font_size = 9) %>%
+  row_spec(7, bold = TRUE, background = HILITE)
+```
+
+Luka’s 38.1% usage rate places this season alongside some of the heaviest offensive loads we have ever seen. That does not automatically make the season historic on its own, but it does frame how much he is being asked to do. It also makes the efficiency even more impressive, especially once you place his scoring volume next to the rest of the league’s top scorers.
+
+## 2025-26 Scoring Leaders
+
+```{r ppg-season}
+ppg_2026 <- tribble(
+  ~Rank, ~Player, ~PPG, ~`rTS%`,
+  1, "Luka Dončić", 33.5, "+3.8",
+  2, "Shai Gilgeous-Alexander", 31.1, "+8.4",
+  3, "Anthony Edwards", 28.8, "+3.7",
+  4, "Jaylen Brown", 28.7, "-0.6",
+  5, "Tyrese Maxey", 28.4, "+0.7"
+)
+
+ppg_2026 %>%
+  style_kable(align = "cllc", font_size = 9) %>%
+  row_spec(1, bold = TRUE)
+```
+
+Dončić led the league at 33.5 points per game, and he did it efficiently. His +3.8 rTS ranked second among the league’s top five scorers, trailing only Shai.
+
+## Historical Scoring Context
+
+```{r ppg-historical}
+ppg_historical <- tribble(
+  ~Rank, ~Season, ~Player, ~PPG,
+  1, "1986-87", "Michael Jordan", 37.1,
+  2, "2018-19", "James Harden", 36.1,
+  3, "2005-06", "Kobe Bryant", 35.4,
+  4, "1987-88", "Michael Jordan", 35.0,
+  5, "2019-20", "James Harden", 34.3,
+  6, "2023-24", "Luka Dončić", 33.9,
+  7, "1989-90", "Michael Jordan", 33.6,
+  8, "2025-26", "Luka Dončić", 33.5,
+  9, "1979-80", "George Gervin", 33.1,
+  10, "2022-23", "Joel Embiid", 33.1
+)
+
+ppg_historical %>%
+  style_kable(align = "cllc", font_size = 9) %>%
+  row_spec(8, bold = TRUE, background = HILITE)
+```
+
+That league-leading scoring volume does not just stand out this season. It is the eighth-highest mark of the past 50 years, and the second-highest of this decade, trailing only Luka’s own 2023-24 season.
+
+## Playmaking Context
+
+```{r apg-leaders}
+apg_leaders <- tribble(
+  ~Player, ~APG,
+  "Nikola Jokic", 10.9,
+  "Cade Cunningham", 9.8,
+  "Luka Dončić", 8.3,
+  "James Harden", 8.0,
+  "Jalen Johnson", 7.9
+)
+
+apg_leaders %>%
+  style_kable(align = "lc", font_size = 9) %>%
+  row_spec(3, bold = TRUE, background = HILITE)
+```
+
+He is not leading the league in assists, but ranking top three while also leading the league in scoring says a lot about the burden he carries. Luka is not just a scorer who can pass. He is simultaneously one of the league’s best scorers and one of its best playmakers, and the two skills constantly feed into each other.
+
+## Peak Stretch Context (Since 2000)
+
+```{r highest-month-scorers}
+month_scoring_context <- tribble(
+  ~Rank, ~Player, ~PPG, ~Games, ~Month,
+  1, "James Harden", 43.6, 14, "January 2019",
+  2, "Kobe Bryant", 43.4, 13, "January 2006",
+  3, "Kobe Bryant", 40.6, 14, "February 2003",
+  4, "Kobe Bryant", 40.4, 13, "March 2007",
+  5, "James Harden", 39.5, 15, "November 2019",
+  6, "Damian Lillard", 38.5, 10, "February 2023",
+  7, "James Harden", 37.6, 11, "February 2019",
+  8, "Luka Dončić", 37.5, 13, "December 2023",
+  9, "Luka Dončić", 37.5, 16, "March 2026",
+  10, "James Harden", 37.3, 14, "December 2019"
+)
+
+month_scoring_context %>%
+  style_kable(align = "clccl", font_size = 8.5) %>%
+  row_spec(9, bold = TRUE, background = HILITE)
+```
+
+Since January 1st, Luka has taken the burden even further, averaging 34.7 points per game on 61.9 TS% while the Lakers went 16-6 over that stretch. But March is where the season really jumped. Luka averaged 37.5 points per game in March while the Lakers went 14-2, a run that pushed them into the top three in the West before his injury and pulled him right back into the center of the MVP conversation.
+
+And the scoring itself was historic. His 37.5 points per game in March ranks among the highest-scoring months since 2000, right alongside stretches from Kobe and Harden. It was one of the most explosive scoring months of the modern era, arriving exactly when the Lakers needed him to take over.
+
+## Team Context
+
+Overall, Luka led the Lakers to a 43-21 record when he played, a 55-win pace. Without him, they were just 10-8. That split is not overwhelming, but it still says something about how much of the team’s offensive identity depends on him. The Lakers were also 17-6 in clutch games with Luka. That success was not his alone, but his presence gave them one of the league’s elite late-game shotmakers and creators when possessions got harder.
+
+## Defense
+
+### Deflections Per Game Leaderboard
+
+```{r deflections}
+deflections_context <- tribble(
+  ~Rank, ~Player, ~Deflections,
+  13, "VJ Edgecomb", 3.2,
+  13, "Scottie Barnes", 3.2,
+  15, "Zaire Williams", 3.1,
+  15, "Jake Laravia", 3.1,
+  15, "Luka Dončić", 3.1,
+  18, "Anthony Black", 3.0,
+  18, "Bilal Coulibaly", 3.0
+)
+
+deflections_context %>%
+  style_kable(align = "lc", font_size = 8.5) %>%
+  row_spec(5, bold = TRUE, background = HILITE)
+```
+
+### Steals Per Game Leaderboard
+
+```{r steals}
+steals_context <- tribble(
+  ~Rank, ~Player, ~Steals,
+  1, "Ausar Thompson", 2.0,
+  1, "Dyson Daniels", 2.0,
+  3, "Cason Wallace", 1.9,
+  3, "Kawhi Leonard", 1.9,
+  3, "Tyrese Maxey", 1.9,
+  6, "Luka Dončić", 1.6,
+  6, "Kris Dunn", 1.6,
+  6, "OG Anunoby", 1.6
+)
+
+steals_context %>%
+  style_kable(align = "lc", font_size = 8.5) %>%
+  row_spec(6, bold = TRUE, background = HILITE)
+```
+
+Luka’s defensive impact is not what drives his case, but it is also not such a weakness that it sinks it. He grades out as roughly neutral by impact metrics, which is about what you would expect given the offensive load he carries. The Lakers’ defense ranks 20th overall, so he is not operating in an environment that is boosting his impact on that end.
+
+There are still real contributions. He tied for 15th in the league in deflections per game at 3.1 and tied for sixth in steals at 1.6. He has the size to hold up in certain matchups and the awareness to jump passing lanes and disrupt actions. There are limitations, especially in isolation and when repeatedly brought into actions, but overall he holds up well enough.
+
+## Closing
+
+Luka’s case comes down to burden and production. He led the league in scoring, ranked near the top in assists and points created, and did it while carrying one of the heaviest offensive loads we have seen in years. It is not an airtight case, but especially if MVP is meant in the most literal sense, it is a strong one. Few players in the league carry more responsibility, and even fewer produce like this under it.
