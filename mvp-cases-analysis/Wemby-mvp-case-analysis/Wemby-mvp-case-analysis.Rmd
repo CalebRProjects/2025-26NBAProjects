@@ -1,0 +1,447 @@
+---
+title: "Wembanyama MVP Case"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: false
+geometry: margin=0.8in
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  dpi = 300
+)
+
+library(tidyverse)
+library(scales)
+library(showtext)
+library(sysfonts)
+library(knitr)
+library(kableExtra)
+library(forcats)
+
+font_add_google("Inter", "inter")
+showtext_auto()
+options(scipen = 999)
+
+# ------------------------------------------------------------
+# Theme + table helpers
+# ------------------------------------------------------------
+
+BG <- "#f6f4ef"
+TEXT_DARK <- "#141414"
+TEXT_LIGHT <- "#6b6b6b"
+GRID <- "#dedad3"
+ACCENT <- "#1d4ed8"
+HILITE <- "#e8f0ff"
+
+SPURS_BLACK <- "#000000"
+SPURS_GRAY <- "#8A8D8F"
+SPURS_BLUE <- "#00b2a9"
+SPURS_PINK <- "#ef426f"
+
+CAPTION_LINE <- "Data: NBA.com | Viz: @Rambzee_"
+
+theme_caleb <- function() {
+  theme_minimal(base_family = "inter") +
+    theme(
+      plot.background = element_rect(fill = BG, color = NA),
+      panel.background = element_rect(fill = BG, color = NA),
+      panel.grid.major = element_line(color = GRID, linewidth = 0.3),
+      panel.grid.minor = element_blank(),
+      text = element_text(color = TEXT_DARK),
+      plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(size = 11.5, color = TEXT_LIGHT, hjust = 0.5),
+      axis.title = element_text(size = 11.5, face = "bold"),
+      axis.text = element_text(size = 10),
+      axis.ticks = element_blank(),
+      plot.caption = element_text(size = 8, color = "#6e6e6e", hjust = 1, margin = margin(t = 8))
+    )
+}
+
+style_kable <- function(df, align = NULL, font_size = 10, full_width = FALSE) {
+  if (is.null(align)) {
+    align <- strrep("c", ncol(df))
+  }
+
+  kbl(
+    df,
+    booktabs = TRUE,
+    align = align,
+    format = "latex",
+    linesep = ""
+  ) %>%
+    kable_styling(
+      latex_options = c("HOLD_position", "striped"),
+      full_width = full_width,
+      font_size = font_size,
+      stripe_color = "#fbfaf7"
+    )
+}
+```
+
+# Victor Wembanyama
+
+## The Case
+
+Victor Wembanyama entered the league with the highest expectations for any prospect since LeBron, and this season has only reinforced why. At 22 years old, he has already built one of the strongest MVP cases in basketball. The numbers jump out immediately, but it is the way they overlap that makes this season so rare. He has been the Spurs’ primary option, the best defender in the league, and a two-way force in a way very few players in league history ever have.
+
+At 25.0 points, 11.5 rebounds, and 3.1 blocks per game in under 30 minutes a night, his impact reaches every part of the game. This is not just a young star putting up absurd numbers. This is Wemby forcing his way into the MVP conversation while already playing at a level most players spend their careers trying to reach.
+
+## Counting Stats
+
+```{r counting}
+counting <- tribble(
+  ~Stat, ~Value,
+  "Minutes", "29.2",
+  "Points", "25.0",
+  "Rebounds", "11.5",
+  "Assists", "3.1",
+  "Steals", "1.0",
+  "Blocks", "3.1"
+)
+
+counting %>%
+  style_kable(align = "lc", font_size = 9)
+```
+
+## Dominance Contextualized
+
+Wemby’s production is impressive on its own, but it becomes even more striking once you place it in context.
+
+### 2025-26 Scoring Leaders (Under 30 MPG)
+
+```{r under-30-scoring}
+under_30_scoring <- tribble(
+  ~Player, ~PPG, ~MPG,
+  "Victor Wembanyama", 25.0, 29.2,
+  "Norman Powell", 21.7, 29.8,
+  "Zion Williamson", 21.0, 28.6
+)
+
+under_30_scoring %>%
+  style_kable(font_size = 9) %>%
+  row_spec(1, bold = TRUE)
+```
+
+### 2025-26 Points-Per-Minute Leaders (Min 50 GP)
+
+```{r ppm-leaders}
+ppm_leaders <- tribble(
+  ~Rank, ~Player, ~PPM,
+  "T-1", "Shai Gilgeous-Alexander", 0.94,
+  "T-1", "Luka Dončić", 0.94,
+  "3", "Kawhi Leonard", 0.87,
+  "4", "Victor Wembanyama", 0.84,
+  "T-5", "Jaylen Brown", 0.83,
+  "T-5", "Donovan Mitchell", 0.83
+)
+
+ppm_leaders %>%
+  style_kable(font_size = 9) %>%
+  row_spec(4, bold = TRUE)
+```
+
+What stands out is not just that he leads players under 30 minutes in scoring, it is how comfortably he separates from that group. And when you shift to a per-minute lens, the same thing happens. He is right there with the league’s highest-usage stars while playing fewer minutes than all of them.
+
+### All-Time Leaders for 40+ Point Games in <30 MPG
+
+```{r sub-30-40pt-games-all-time}
+sub30_40_all_time <- tribble(
+  ~Player, ~Games, ~`Career Games`,
+  "Stephen Curry", 5, 1068,
+  "Victor Wembanyama", 4, 181,
+  "Klay Thompson", 4, 933,
+  "Joel Embiid", 2, 490,
+  "Jaylen Brown", 2, 674,
+  "James Harden", 2, 1221
+)
+
+sub30_40_all_time %>%
+  style_kable(font_size = 9) %>%
+  row_spec(2, bold = TRUE)
+```
+
+### All-Time Leaders in PPG in <30 MPG
+
+```{r ppg-under-30min-all-time}
+ppg_under_30_all_time <- tribble(
+  ~Season, ~Player, ~PPG, ~MPG,
+  "2025-26", "Giannis Antetokounmpo", 27.6, 28.9,
+  "2025-26", "Victor Wembanyama", 25.0, 29.2,
+  "2024-25", "Zion Williamson", 24.6, 28.6,
+  "1989-90", "Ricky Pierce", 23.0, 29.0,
+  "2019-20", "Joel Embiid", 23.0, 29.5
+)
+
+ppg_under_30_all_time %>%
+  style_kable(font_size = 9) %>%
+  row_spec(2, bold = TRUE)
+```
+
+The historical comparisons tell the same story. The names around him are elite, but the combination of volume, efficiency, and limited minutes is something very few players have sustained, especially this early in a career. He is not just producing a lot in less time, he is producing at a rate that holds up against some of the best offensive players in the league.
+
+## Scoring Profile
+
+```{r shot-profile}
+shot_profile <- tribble(
+  ~Zone, ~Pct, ~Volume, ~Context,
+  "Restricted Area", "75.1%", "6.0 att/G", "+8.2 rFG%",
+  "Paint (Non-RA)", "41.1%", "2.5 att/G", "-3.4 rFG%",
+  "Midrange", "40.9%", "2.9 att/G", "-2.8 rFG%",
+  "3PT", "34.9%", "5.5 att/G", "-1.3 rFG%",
+  "FT", "82.7%", "7.0 FTA/G", "39.7% FTr"
+)
+
+shot_profile %>%
+  style_kable(align = "lccc", font_size = 9) %>%
+  row_spec(1, bold = TRUE)
+```
+
+```{r wemby-shot-plot, fig.height=4.4, fig.width=7.4}
+wemby_shot_plot <- tibble(
+  zone = c("Restricted Area", "Paint (Non-RA)", "Midrange", "3PT"),
+  fga_per_game = c(6.0, 2.5, 2.9, 5.5),
+  wemby_fg = c(75.1, 41.1, 40.9, 34.9),
+  league_fg = c(66.9, 44.5, 43.7, 36.2)
+) %>%
+  mutate(
+    zone = fct_reorder(zone, fga_per_game),
+    pct_label = paste0(wemby_fg, "%"),
+    league_label = paste0("Lg: ", league_fg, "%")
+  )
+
+ggplot(wemby_shot_plot, aes(x = zone, y = fga_per_game)) +
+  geom_col(fill = SPURS_BLACK, width = 0.68) +
+  geom_text(
+    aes(y = fga_per_game + 0.10, label = pct_label),
+    hjust = 0,
+    size = 3.6,
+    family = "inter",
+    fontface = "bold",
+    color = TEXT_DARK
+  ) +
+  geom_text(
+    aes(y = fga_per_game + 0.90, label = league_label),
+    hjust = 0,
+    size = 3.0,
+    family = "inter",
+    color = TEXT_LIGHT,
+    fontface = "italic",
+    alpha = 0.8
+  ) +
+  coord_flip(clip = "off") +
+  labs(
+    title = "Rim dominance, perimeter upside",
+    subtitle = "Labels show Wemby FG% and league average by zone",
+    x = NULL,
+    y = "FGA per game",
+    caption = CAPTION_LINE
+  ) +
+  expand_limits(y = max(wemby_shot_plot$fga_per_game) + 1.5) +
+  theme_caleb()
+```
+
+Wemby’s scoring profile is still developing, but the foundation is already overwhelming. He is dominant at the rim, gets to the line at a high rate, and is already one of the better shooting bigs in the league with real volume from three.
+
+The in-between stuff is what still has to come along, and that is where the best scorers usually separate themselves. Those are hard shots, and the guys who can live there efficiently are usually the ones at the very top. Wemby is not fully there yet, but he is already a serious offensive force because the rim pressure is so overwhelming. That is what makes the long-term outlook so scary. He already has one real scoring superpower, and there is still a lot of room for the rest of his offensive game to grow.
+
+## Offensive Impact
+
+```{r off-impact}
+offensive_impact <- tribble(
+  ~State, ~ORTG, ~`TS%`,
+  "With Wemby", 123.0, "60.7%",
+  "Without Wemby", 116.6, "56.8%"
+)
+
+offensive_impact %>%
+  style_kable(align = "lcc", font_size = 9) %>%
+  row_spec(1, bold = TRUE)
+```
+
+His impact on offense goes well beyond his own scoring numbers. With Wemby on the floor, the Spurs post a 123 offensive rating and a 60.7 TS%. When he sits, that drops to 116.6 and 56.8 TS%. His length and the pressure he creates from high-value areas like the rim and the three-point line bend defenses, open up cleaner looks for his teammates, and make the entire offense flow at a much higher level.
+
+## Defensive Impact
+
+```{r wemby-def-onoff-plot, fig.height=4.4, fig.width=7.4}
+league_avg_drtg <- 116.0
+
+drtg_plot <- tibble(
+  state = c("With Wemby", "Without Wemby"),
+  drtg = c(106.2, 115.9)
+)
+
+ggplot(drtg_plot, aes(x = state, y = drtg)) +
+  geom_col(fill = SPURS_BLACK, width = 0.62) +
+  geom_hline(
+    yintercept = league_avg_drtg,
+    linetype = "dotted",
+    linewidth = 0.6,
+    color = SPURS_GRAY
+  ) +
+  geom_text(
+    aes(label = drtg),
+    vjust = -1.2,
+    size = 3.5,
+    family = "inter",
+    color = TEXT_DARK
+  ) +
+  annotate(
+    "text",
+    x = 1.5,
+    y = league_avg_drtg + 3.5,
+    label = "League Avg: 116",
+    color = SPURS_GRAY,
+    family = "inter",
+    size = 2
+  ) +
+  labs(
+    title = "Spurs defense transforms with Wemby",
+    x = NULL,
+    y = "Defensive rating",
+    caption = CAPTION_LINE
+  ) +
+  expand_limits(y = max(drtg_plot$drtg) + 3) +
+  theme_caleb()
+```
+
+With Wemby on the floor, San Antonio posts a 106.2 defensive rating, a mark that puts them right in line with the league’s elite, just behind Oklahoma City’s 106.1. Without him, that number jumps to 115.9, which would rank 20th league-wide. That gap gets at the scale of his impact. Opponents shoot 4.4% worse in true shooting with him on the floor, and their offensive rebounding drops by 2.4%.
+
+## Rim Protection / Defensive Range
+
+```{r rim-protection-and-defensive-range}
+wemby_defense_zones <- tibble(
+  zone = c("Rim", "Other", "3PT"),
+  dfga = c(6.1, 5.3, 6.7),
+  diff = c(-8.7, -13.1, -5.2),
+  label = paste0(
+    round(dfga, 1), " shots\n",
+    ifelse(diff < 0, paste0(diff, "%"), paste0("+", diff, "%"))
+  )
+)
+
+ggplot(wemby_defense_zones, aes(x = "Wemby", y = dfga, fill = zone)) +
+  geom_col(width = 0.6) +
+  geom_text(
+    aes(label = label),
+    position = position_stack(vjust = 0.5),
+    family = "inter",
+    size = 3.2,
+    color = "white",
+    lineheight = 0.9
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Rim" = SPURS_BLACK,
+      "Other" = SPURS_BLUE,
+      "3PT" = SPURS_PINK
+    )
+  ) +
+  labs(
+    title = "Wemby defends the entire floor",
+    subtitle = "Shot distribution and opponent FG% impact",
+    x = NULL,
+    y = "Defended shots per game",
+    fill = NULL,
+    caption = CAPTION_LINE
+  ) +
+  theme_caleb()
+```
+
+Wemby’s defense starts at the rim, but it reaches far beyond it. Teams attack the basket less often when he is on the floor, with opponent rim frequency dropping from 32% to 26%, and his influence still carries all the way out to the perimeter. He is not just a rim protector. He changes where offenses are willing to operate.
+
+## Defensive Activity
+
+```{r other-def-impact}
+def_activity <- tribble(
+  ~Metric, ~Value,
+  "Deflections / game", "2.6",
+  "Defensive Reb %", "28.7",
+  "Stop %", "5.2"
+)
+
+def_activity %>%
+  style_kable(align = "lc", font_size = 9)
+```
+
+The contests are where the story starts, and the blocks are the loudest part of it. Wemby leads the league in blocks per game, but the impact goes well beyond that. He adds 2.6 deflections a night, blows up actions all over the floor, and once the stop is there, finishes the possession as well as anyone in basketball. That shows up in his league-leading defensive rebounding percentage.
+
+## Historical Context
+
+### Only Player Since 2000 to Average 3+ Blocks
+
+```{r 3-blocks-since-2000}
+players_3_blocks <- tribble(
+  ~Player, ~Times,
+  "Victor Wembanyama", 3
+)
+
+players_3_blocks %>%
+  style_kable(align = "lc", font_size = 9) %>%
+  row_spec(1, bold = TRUE)
+```
+
+### All-Time Stocks Leaders
+
+```{r career-stocks}
+career_stocks <- tribble(
+  ~Player, ~`Stocks/G`, ~`BPG`, ~`SPG`,
+  "Hakeem Olajuwon", 4.8, 3.1, 1.7,
+  "Victor Wembanyama", 4.6, 3.5, 1.1,
+  "David Robinson", 4.4, 3.0, 1.4
+)
+
+career_stocks %>%
+  style_kable(align = "lccc", font_size = 9) %>%
+  row_spec(2, bold = TRUE)
+```
+
+### Stocks This Season
+
+```{r stocks-this-season}
+stocks_this_season <- tribble(
+  ~Player, ~`Stocks/G`,
+  "Victor Wembanyama", 4.1,
+  "Ausar Thompson", 3.0,
+  "Scottie Barnes", 2.9,
+  "Alex Sarr", 2.8,
+  "Tyrese Maxey", 2.7
+)
+
+stocks_this_season %>%
+  style_kable(align = "lc", font_size = 9) %>%
+  row_spec(1, bold = TRUE)
+```
+
+And historically, it gets even crazier. Wemby is the only player since 2000 to average 3+ blocks in a season, and this year marks the third time he has done it. His 4.6 career stocks per game already rank second all time behind only Hakeem, which is ridiculous territory for a player this early in his career. Even narrowing it to this season, he still leads the league comfortably at 4.1. He is not just blocking shots, he is generating defensive events at a rate almost nobody in modern basketball has touched.
+
+## Overall Impact
+
+```{r net-on-off}
+net_onoff_leaders <- tribble(
+  ~Player, ~Team, ~Net_OnOff,
+  "Victor Wembanyama", "SAS", 15.6,
+  "Kawhi Leonard", "LAC", 14.0,
+  "Nikola Jokic", "DEN", 13.9,
+  "Jalen Smith", "CHI", 11.4,
+  "Moussa Diabate", "CHA", 10.2,
+  "Josh Green", "CHA", 10.0
+)
+
+net_onoff_leaders %>%
+  style_kable(align = "lcc", font_size = 9) %>%
+  row_spec(1, bold = TRUE)
+```
+
+Wemby leads the league in net on-off at +15.6, ahead of Kawhi and Jokic. The Spurs are a completely different team when he is on the floor, and that change shows up on both ends. If value is about how much one player changes the level of his team, then the case is sitting right there.
+
+## Closing
+
+You can find historical comparisons for parts of this season, but almost none for the full picture. Wemby is the best defender in basketball, a serious offensive force, and the driving force behind the Spurs’ first 60-win season since 2016-17. At 22 years old, he is no longer a player you talk about in terms of what he might become. He is already one of the best players in basketball.
