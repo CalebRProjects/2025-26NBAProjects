@@ -1,0 +1,289 @@
+---
+title: "Jokic MVP Case"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: false
+geometry: margin=0.8in
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{table}{H}
+  - \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  dpi = 300
+)
+
+library(tidyverse)
+library(scales)
+library(showtext)
+library(sysfonts)
+library(knitr)
+library(kableExtra)
+library(forcats)
+
+font_add_google("Inter", "inter")
+showtext_auto()
+options(scipen = 999)
+
+# ------------------------------------------------------------
+# Theme + table helpers
+# ------------------------------------------------------------
+
+BG <- "#f6f4ef"
+TEXT_DARK <- "#141414"
+TEXT_LIGHT <- "#6b6b6b"
+GRID <- "#dedad3"
+ACCENT <- "#1d4ed8"
+HILITE <- "#e8f0ff"
+
+DENVER_NAVY <- "#0E2240"
+DENVER_GOLD <- "#C69214"
+
+CAPTION_LINE <- "Data: NBA.com | Viz: @Rambzee_"
+
+theme_caleb <- function() {
+  theme_minimal(base_family = "inter") +
+    theme(
+      plot.background = element_rect(fill = BG, color = NA),
+      panel.background = element_rect(fill = BG, color = NA),
+      panel.grid.major = element_line(color = GRID, linewidth = 0.3),
+      panel.grid.minor = element_blank(),
+      text = element_text(color = TEXT_DARK),
+      plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(size = 11.5, color = TEXT_LIGHT, hjust = 0.5),
+      axis.title = element_text(size = 11.5, face = "bold"),
+      axis.text = element_text(size = 10),
+      axis.ticks = element_blank(),
+      plot.caption = element_text(size = 8, color = "#6e6e6e", hjust = 1, margin = margin(t = 8))
+    )
+}
+
+style_kable <- function(df, align = NULL, font_size = 10, full_width = FALSE) {
+  if (is.null(align)) {
+    align <- strrep("c", ncol(df))
+  }
+
+  kbl(
+    df,
+    booktabs = TRUE,
+    align = align,
+    format = "latex",
+    linesep = ""
+  ) %>%
+    kable_styling(
+      latex_options = c("HOLD_position", "striped"),
+      full_width = full_width,
+      font_size = font_size,
+      stripe_color = "#fbfaf7"
+    )
+}
+```
+
+# Nikola Jokic
+
+## The Case
+
+Nikola Jokic is putting together another offensive season that would feel historic for almost anyone else and almost normal for him. At 27.8 points, 12.9 rebounds, and 10.9 assists per game on 66.9 TS%, he is again operating in territory that barely has a historical comparison, even for players with far more conventional roles. Even with the scoring volume down a bit from some of his recent peaks, the role has not really changed. He is still the center of everything Denver does offensively, carrying a level of responsibility very few players in league history have managed from any position.
+
+## Scoring Profile
+
+```{r jokic-shot-profile}
+jokic_shot_profile <- tibble(
+  Zone = c("Restricted Area", "Paint (Non-RA)", "Midrange", "3PT", "FT"),
+  Pct = c("73.3%", "57.8%", "56.0%", "37.9%", "82.8%"),
+  Volume = c("5.0 att/G", "6.1 att/G", "1.8 att/G", "4.6 att/G", "7.4 FTA/G"),
+  Context = c("+4.0 rFG%", "+9.0 rFG%", "+13.0 rFG%", "+2.0 rFG%", "42.1% FTr")
+)
+
+jokic_shot_profile %>%
+  style_kable(align = "lcccc", font_size = 9)
+```
+
+```{r jokic-shot-plot, fig.height=4.4, fig.width=7.4}
+jokic_shot_plot <- tibble(
+  zone = c("Restricted Area", "Paint (Non-RA)", "Midrange", "3PT"),
+  fga_per_game = c(5.0, 6.1, 1.8, 4.6),
+  jokic_fg = c(73.3, 57.8, 56.0, 37.9),
+  league_fg = c(66.9, 44.5, 43.7, 36.2)
+) %>%
+  mutate(
+    zone = fct_reorder(zone, fga_per_game),
+    diff = jokic_fg - league_fg,
+    pct_label = paste0(jokic_fg, "%"),
+    league_label = paste0("Lg: ", league_fg, "%")
+  )
+
+ggplot(jokic_shot_plot, aes(x = zone, y = fga_per_game)) +
+  geom_col(fill = DENVER_NAVY, width = 0.68) +
+  geom_text(
+    aes(y = fga_per_game + 0.10, label = pct_label),
+    hjust = 0,
+    size = 3.6,
+    family = "inter",
+    fontface = "bold",
+    color = TEXT_DARK
+  ) +
+  geom_text(
+    aes(y = fga_per_game + 0.9, label = league_label),
+    hjust = 0,
+    size = 3.0,
+    family = "inter",
+    color = TEXT_LIGHT,
+    fontface = "italic",
+    alpha = 0.8
+  ) +
+  coord_flip(clip = "off") +
+  labs(
+    title = "Efficient across the board, dominant inside",
+    subtitle = "Labels show Jokic FG% and league average by zone",
+    x = NULL,
+    y = "FGA per game",
+    caption = CAPTION_LINE
+  ) +
+  expand_limits(y = max(jokic_shot_plot$fga_per_game) + 1.5) +
+  theme_caleb()
+```
+
+Jokic’s scoring profile is built on all-time great touch. 11.1 of his 17.5 shot attempts per game come in the paint, where his strength, patience, and footwork let that touch completely take over. He gets to short push shots and finesse finishes at a rate no other star can really match. In the modern game, defenses are usually comfortable giving up those non-rim paint shots if it helps take away threes and protect the basket. Against most players, that works. Against Jokic, it does not. He turns those “acceptable” shots into elite offense, generating nearly 1.2 points per shot on more than six paint non-RA attempts per game.
+
+And even when teams do crowd his space and try to push him away from those paint looks, it rarely fixes the problem. He is still absurdly efficient everywhere else, so taking one area away usually just means forcing him into another shot he also makes at a ridiculous rate. That is what makes him so difficult to contain. There is no clean answer for the scoring alone, and that is before you even get to the passing, where he can punish help with skip passes, hit cutters, and pick apart whatever coverage a defense tries to throw at him.
+
+## Playmaking / Offensive Burden
+
+```{r 2026-szn-apg-table}
+szn_apg <- tribble(
+  ~Season, ~Player, ~APG,
+  "2025-26", "Nikola Jokic", 10.9,
+  "2025-26", "Cade Cunningham", 9.8,
+  "2025-26", "Luka Dončić", 8.3,
+  "2025-26", "James Harden", 8.0,
+  "2025-26", "Jalen Johnson", 7.9
+)
+
+szn_apg %>%
+  style_kable(align = "lcc") %>%
+  row_spec(1, bold = TRUE, background = HILITE) %>%
+  row_spec(2, bold = TRUE, background = HILITE)
+```
+
+Jokic leads the NBA in assists per game by more than a full assist, which is absurd on its own before you even consider the position he plays. And the creation is not empty volume or force-feeds either. He ranks first in potential assists per 100 and first in rim assists per 100, which speaks to both how much he is creating and the quality of the looks he is generating.
+
+```{r center-apg-table}
+center_apg <- tribble(
+  ~Season, ~Player, ~APG,
+  "2025-26", "Nikola Jokic", 10.9,
+  "2024-25", "Nikola Jokic", 10.2,
+  "1967-68", "Wilt Chamberlain", 8.6,
+  "1966-67", "Wilt Chamberlain", 7.8,
+  "2023-24", "Joel Embiid", 5.6
+)
+
+center_apg %>%
+  style_kable(align = "lcc") %>%
+  row_spec(1, bold = TRUE, background = HILITE)
+```
+
+He is not just having a great passing season for a center, he is continuing to rewrite what playmaking from the position can even look like. The gap between him and every historical comparison is enormous. The only remotely comparable name is Wilt, and even that came in a completely different context when he shifted into more of a passing hub. Jokic is doing true lead-guard creation from the five while still scoring with elite efficiency, which is why the offensive burden he carries is so hard to compare to anyone else.
+
+## Historic Offensive Context
+
+```{r triple-double-table}
+triple_double_context <- tribble(
+  ~Season, ~Player, ~Points, ~Rebounds, ~Assists, ~Games, ~`TS%`, ~`rTS%`,
+  "2025-26", "Nikola Jokic", 27.8, 12.9, 10.9, 64, "66.9%", "+8.8",
+  "2024-25", "Nikola Jokic", 29.6, 12.7, 10.2, 70, "66.3%", "+8.7",
+  "2020-21", "Russell Westbrook", 22.2, 11.5, 11.7, 65, "50.9%", "-6.3",
+  "2018-19", "Russell Westbrook", 22.9, 11.1, 10.7, 73, "50.1%", "-5.9",
+  "2017-18", "Russell Westbrook", 25.4, 10.1, 10.3, 80, "52.4%", "-3.2",
+  "2016-17", "Russell Westbrook", 31.6, 10.7, 10.4, 81, "55.4%", "+0.2",
+  "1961-62", "Oscar Robertson", 30.8, 12.5, 11.4, 79, "55.4%", "+7.5"
+)
+
+triple_double_context %>%
+  style_kable(align = "llccccc", font_size = 8.5) %>%
+  row_spec(1, bold = TRUE, background = HILITE) %>%
+  row_spec(2, bold = TRUE, background = HILITE)
+```
+
+Jokic is the second player in NBA history to average a triple-double more than once, and he is doing it at the cleanest, most efficient level the league has ever seen. His 2025-26 season sits at the top of this table, with last year right behind it, which tells you how far he has stretched this kind of production. This is not Russ piling up volume as a one-man army or Oscar carrying everything through sheer usage. Jokic is pairing historic all-around numbers with elite scoring efficiency.
+
+## Team Offense / On-Off Impact
+
+```{r offense-context-table}
+offense_context <- tribble(
+  ~Team, ~Season, ~ORTG, ~`rORTG`,
+  "Dallas Mavericks", "2003-04", 112.1, "+9.2",
+  "Phoenix Suns", "2004-05", 114.5, "+8.4",
+  "Golden State Warriors", "2015-16", 114.5, "+8.1",
+  "Boston Celtics", "2023-24", 123.2, "+7.9",
+  "Phoenix Suns", "2009-10", 115.3, "+7.7",
+  "Dallas Mavericks", "2001-02", 112.2, "+7.7",
+  "Phoenix Suns", "2006-07", 113.9, "+7.4",
+  "Cleveland Cavaliers", "2024-25", 121.7, "+7.2",
+  "Dallas Mavericks", "2002-03", 110.7, "+7.1",
+  "Golden State Warriors", "2016-17", 115.6, "+6.8",
+  "Los Angeles Clippers", "2014-15", 112.4, "+6.8",
+  "Denver Nuggets", "2025-26", 122.4, "+6.7"
+)
+
+offense_context %>%
+  style_kable(align = "llcc", font_size = 9) %>%
+  row_spec(12, bold = TRUE, background = HILITE)
+```
+
+The individual numbers are absurd, but the team offense is what really drives the case. Denver posted a 122.4 offensive rating this season, the second-highest mark ever, and finished 1.7 points ahead of the next-best offense in the league. Even after adjusting for era, their +6.7 relative offensive rating still ranks 12th since 2000, putting them firmly among the best offenses of the century. Jokic is the engine behind all of it, driving one of the best offenses we have seen in years.
+
+## Supporting Context / Injuries
+
+```{r injury-context-table}
+injury_context <- tribble(
+  ~Player, ~Games_Missed,
+  "Nikola Jokic", 16,
+  "Christian Braun", 36,
+  "Peyton Watson", 26,
+  "Cam Johnson", 26,
+  "Aaron Gordon", 44
+)
+
+injury_context %>%
+  style_kable(align = "lc", font_size = 9)
+```
+
+Jokic missed 16 games this season and the Nuggets still went 10-6 without him, but the broader context around him was far from stable. Several key rotation players also missed significant time, including Braun, Watson, Cam Johnson, and Aaron Gordon. Even with that inconsistency, Denver still built one of the league’s best offensive environments around Jokic’s creation.
+
+That reliance shows up clearly in the impact numbers. Jokic’s +13.4 net on-off ranks third among qualified players this season, reinforcing how much of Denver’s success is driven directly by whether or not he's on the floor.
+
+## Advanced Stats
+
+```{r advanced-stats-table}
+advanced_stats <- tribble(
+  ~Metric, ~Rank, ~Value,
+  "DPM", 1, 7.5,
+  "3Y RAPM", 1, 8.9,
+  "O-EPM", 1, 6.6
+)
+
+advanced_stats %>%
+  style_kable(align = "lcc", font_size = 9)
+```
+
+Of course, Jokic remains an advanced analytics darling. He does not just look like the league’s best offensive engine in the box score or on film. The impact models agree. He ranks first in offensive EPM, first in DPM, and first in 3-year RAPM, all metrics that try to isolate how much a player is actually driving team success. However you measure it, the conclusion is the same: Jokic is generating more offensive value than anyone else in the league.
+
+## Defense
+
+Jokic’s defense is probably the biggest weakness in his case, and that part is fair. He is not a high-level rim protector, and the numbers reflect that. His rim deterrence and finishing contests at the basket are clear limitations, which is a big part of why Denver’s defense can look vulnerable from game to game.
+
+But the full picture is more nuanced than just calling him a bad defender and moving on. Jokic still has a +2.1 D-DPM, an all-in-one metric meant to estimate defensive impact, which puts him in the 98th percentile. A lot of that value comes from the areas where he really does help. He avoids fouls at an elite level, ranking in the 97th percentile in foul rate, he is disruptive in passing lanes with 3.7 deflections per 100 and 1.9 steals per 100, and he closes possessions as well as almost anyone in the league. His defensive rebounding is probably his biggest strength on that end, and that matters. Ending a possession is still defense. He is not erasing mistakes at the rim, but he is active, smart, and valuable in ways that still show up over the course of a game.
+
+## Closing
+
+Jokic is one of the greatest offensive players ever, and he has added another historic season to a résumé that hardly needed it. He continues to do things that do not really have a clean historical comparison. The scoring is elite, the playmaking is unmatched for his position, and the control he has over an offense is something only a handful of players ever reach. None of this is especially new for him, which almost makes it more absurd. This is another MVP-level season from a player whose offensive résumé is already deep in all-time territory.
