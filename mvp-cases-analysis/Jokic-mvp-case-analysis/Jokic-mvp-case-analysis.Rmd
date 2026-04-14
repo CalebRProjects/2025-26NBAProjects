@@ -92,7 +92,7 @@ style_kable <- function(df, align = NULL, font_size = 10, full_width = FALSE) {
 
 ## The Case
 
-Nikola Jokic is putting together another offensive season that would feel historic for almost anyone else and almost normal for him. At 27.8 points, 12.9 rebounds, and 10.9 assists per game on 66.9 TS%, he is again operating in territory that barely has a historical comparison, even for players with far more conventional roles. Even with the scoring volume down a bit from some of his recent peaks, the role has not really changed. He is still the center of everything Denver does offensively, carrying a level of responsibility very few players in league history have managed from any position.
+Nikola Jokic is putting together another offensive season that would feel historic for almost anyone else and almost normal for him. At 27.7 points, 12.9 rebounds, and 10.7 assists per game on 67 TS%, he is again operating in territory that barely has a historical comparison, even for players with far more conventional roles. Even with the scoring volume down a bit from some of his recent peaks, the role has not really changed. He is still the center of everything Denver does offensively, carrying a level of responsibility very few players in league history have managed from any position.
 
 ## Scoring Profile
 
@@ -153,7 +153,7 @@ ggplot(jokic_shot_plot, aes(x = zone, y = fga_per_game)) +
   theme_caleb()
 ```
 
-Jokic’s scoring profile is built on all-time great touch. 11.1 of his 17.5 shot attempts per game come in the paint, where his strength, patience, and footwork let that touch completely take over. He gets to short push shots and finesse finishes at a rate no other star can really match. In the modern game, defenses are usually comfortable giving up those non-rim paint shots if it helps take away threes and protect the basket. Against most players, that works. Against Jokic, it does not. He turns those “acceptable” shots into elite offense, generating nearly 1.2 points per shot on more than six paint non-RA attempts per game.
+Jokic’s scoring is predicated on all-time great touch. 11.1 of his 17.5 shot attempts per game come in the paint, where his strength, patience, and footwork let that touch completely take over. He gets to short push shots and finesse finishes at a rate no other star can really match. In the modern game, defenses are usually comfortable giving up those non-rim paint shots if it helps take away threes and protect the basket. Against most players, that works. Against Jokic, it does not. He turns those “acceptable” shots into elite offense, generating nearly 1.2 points per shot on more than six paint non-RA attempts per game.
 
 And even when teams do crowd his space and try to push him away from those paint looks, it rarely fixes the problem. He is still absurdly efficient everywhere else, so taking one area away usually just means forcing him into another shot he also makes at a ridiculous rate. That is what makes him so difficult to contain. There is no clean answer for the scoring alone, and that is before you even get to the passing, where he can punish help with skip passes, hit cutters, and pick apart whatever coverage a defense tries to throw at him.
 
@@ -162,12 +162,12 @@ And even when teams do crowd his space and try to push him away from those paint
 ```{r 2026-szn-apg-table}
 szn_apg <- tribble(
   ~Season, ~Player, ~APG,
-  "2025-26", "Nikola Jokic", 10.9,
-  "2025-26", "Cade Cunningham", 9.8,
+  "2025-26", "Nikola Jokic", 10.7,
+  "2025-26", "Cade Cunningham", 9.9,
   "2025-26", "Luka Dončić", 8.3,
   "2025-26", "James Harden", 8.0,
   "2025-26", "Jalen Johnson", 7.9
-)
+  )
 
 szn_apg %>%
   style_kable(align = "lcc") %>%
@@ -175,12 +175,12 @@ szn_apg %>%
   row_spec(2, bold = TRUE, background = HILITE)
 ```
 
-Jokic leads the NBA in assists per game by more than a full assist, which is absurd on its own before you even consider the position he plays. And the creation is not empty volume or force-feeds either. He ranks first in potential assists per 100 and first in rim assists per 100, which speaks to both how much he is creating and the quality of the looks he is generating.
+Jokic led the NBA in assists per game this season, averaging a staggering 10.7 per game. And the creation is not empty volume or force-feeds either. He ranks first in potential assists per 100 and first in rim assists per 100, which speaks to both how much he is creating and the quality of the looks he is generating.
 
 ```{r center-apg-table}
 center_apg <- tribble(
   ~Season, ~Player, ~APG,
-  "2025-26", "Nikola Jokic", 10.9,
+  "2025-26", "Nikola Jokic", 10.7,
   "2024-25", "Nikola Jokic", 10.2,
   "1967-68", "Wilt Chamberlain", 8.6,
   "1966-67", "Wilt Chamberlain", 7.8,
@@ -199,7 +199,7 @@ He is not just having a great passing season for a center, he is continuing to r
 ```{r triple-double-table}
 triple_double_context <- tribble(
   ~Season, ~Player, ~Points, ~Rebounds, ~Assists, ~Games, ~`TS%`, ~`rTS%`,
-  "2025-26", "Nikola Jokic", 27.8, 12.9, 10.9, 64, "66.9%", "+8.8",
+  "2025-26", "Nikola Jokic", 27.7, 12.9, 10.7, 65, "67.0%", "+8.9",
   "2024-25", "Nikola Jokic", 29.6, 12.7, 10.2, 70, "66.3%", "+8.7",
   "2020-21", "Russell Westbrook", 22.2, 11.5, 11.7, 65, "50.9%", "-6.3",
   "2018-19", "Russell Westbrook", 22.9, 11.1, 10.7, 73, "50.1%", "-5.9",
