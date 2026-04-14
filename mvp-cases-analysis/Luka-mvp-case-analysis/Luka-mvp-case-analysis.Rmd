@@ -245,8 +245,8 @@ That league-leading scoring volume does not just stand out this season. It is th
 ```{r apg-leaders}
 apg_leaders <- tribble(
   ~Player, ~APG,
-  "Nikola Jokic", 10.9,
-  "Cade Cunningham", 9.8,
+  "Nikola Jokic", 10.7,
+  "Cade Cunningham", 9.9,
   "Luka Dončić", 8.3,
   "James Harden", 8.0,
   "Jalen Johnson", 7.9
