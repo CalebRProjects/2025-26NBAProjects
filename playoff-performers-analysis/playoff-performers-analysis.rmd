@@ -208,6 +208,7 @@ get_ppg_split <- function(season) {
 }
 
 season_level_ppg <- map_dfr(modern_seasons, get_ppg_split)
+saveRDS(season_level_ppg, "season_level_ppg.rds")
 
 season_level_filtered <- season_level_ppg %>%
   filter(
@@ -243,29 +244,32 @@ career_ppg <- season_level_ppg %>%
 # ------------------------------------------------------------
 
 league_scoring <- map_dfr(long_seasons, function(season) {
-  rs <- safe_pull_team(season, "Regular Season")
-  po <- safe_pull_team(season, "Playoffs")
+  rs <- tryCatch(pull_team_per_game(season, "Regular Season"), error = function(e) NULL)
+  po <- tryCatch(pull_team_per_game(season, "Playoffs"), error = function(e) NULL)
 
   bind_rows(
-    if (nrow(rs) > 0) {
-      tibble(
-        season = season,
-        season_start = as.numeric(substr(season, 1, 4)),
-        context = "Regular Season",
-        ppg = mean(as.numeric(rs$pts), na.rm = TRUE)
-      )
-    },
-    if (nrow(po) > 0) {
-      tibble(
-        season = season,
-        season_start = as.numeric(substr(season, 1, 4)),
-        context = "Playoffs",
-        ppg = mean(as.numeric(po$pts), na.rm = TRUE)
-      )
-    }
+    if (!is.null(rs) && nrow(rs) > 0) tibble(
+      season = season,
+      season_start = as.numeric(substr(season, 1, 4)),
+      context = "Regular Season",
+      ppg = mean(as.numeric(rs$pts), na.rm = TRUE)
+    ),
+    if (!is.null(po) && nrow(po) > 0) tibble(
+      season = season,
+      season_start = as.numeric(substr(season, 1, 4)),
+      context = "Playoffs",
+      ppg = mean(as.numeric(po$pts), na.rm = TRUE)
+    )
   )
 }) %>%
   filter(!is.na(ppg))
+saveRDS(league_scoring, "league_scoring.rds")
+
+league_ts <- tibble(
+  season = c("2000-01", "2001-02", ...),
+  rs_ts = c(...),
+  po_ts = c(...)
+)
 
 # ------------------------------------------------------------
 # All-time playoff production leaderboards
@@ -289,6 +293,7 @@ all_time_playoff_raw <- map_dfr(long_seasons, function(season) {
       po_rebounds = as.numeric(reb) * as.numeric(gp)
     )
 })
+saveRDS(all_time_playoff_raw, "all_time_playoff_raw.rds")
 
 all_time_playoff <- all_time_playoff_raw %>%
   group_by(player_id, player_name) %>%
