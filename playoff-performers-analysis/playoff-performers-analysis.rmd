@@ -110,6 +110,9 @@ MIN_LEADERBOARD_PO_GAMES <- 50
 
 TOP_N <- 12
 
+CACHE_REBUILD <- FALSE
+VALIDATE_DATA <- TRUE
+
 season_labels <- function(start_year, end_year) {
   yrs <- start_year:end_year
   paste0(yrs, "-", stringr::str_sub(yrs + 1, 3, 4))
@@ -117,14 +120,47 @@ season_labels <- function(start_year, end_year) {
 
 modern_seasons <- season_labels(START_SEASON, END_SEASON)
 
-pull_player_per_game <- function(season, season_type = "Regular Season") {
-  out <- nba_leaguedashplayerstats(
-    season = season,
-    season_type = season_type,
-    per_mode = "PerGame"
+pull_player_per_game <- function(season, season_type = "Regular Season", max_attempts = 3) {
+  for (i in seq_len(max_attempts)) {
+    out <- tryCatch(
+      nba_leaguedashplayerstats(
+        season = season,
+        season_type = season_type,
+        per_mode = "PerGame"
+      ),
+      error = function(e) NULL
+    )
+
+    if (!is.null(out$LeagueDashPlayerStats) && nrow(out$LeagueDashPlayerStats) > 0) {
+      return(out$LeagueDashPlayerStats %>% clean_names())
+    }
+
+    message(sprintf(
+      "EMPTY pull_player_per_game: %s | %s | attempt %s",
+      season, season_type, i
+    ))
+
+    Sys.sleep(2 * i)
+  }
+
+  tibble()
+}
+
+pull_player_totals <- function(season, season_type = "Regular Season") {
+  out <- tryCatch(
+    nba_leaguedashplayerstats(
+      season = season,
+      season_type = season_type,
+      per_mode = "Totals"
+    ),
+    error = function(e) {
+      message(sprintf("FAILED pull_player_totals: %s | %s | %s", season, season_type, e$message))
+      return(NULL)
+    }
   )
 
-  if (is.null(out$LeagueDashPlayerStats) || nrow(out$LeagueDashPlayerStats) == 0) {
+  if (is.null(out) || is.null(out$LeagueDashPlayerStats) || nrow(out$LeagueDashPlayerStats) == 0) {
+    message(sprintf("EMPTY pull_player_totals: %s | %s", season, season_type))
     return(tibble())
   }
 
@@ -133,13 +169,20 @@ pull_player_per_game <- function(season, season_type = "Regular Season") {
 }
 
 pull_team_per_game <- function(season, season_type = "Regular Season") {
-  out <- nba_leaguedashteamstats(
-    season = season,
-    season_type = season_type,
-    per_mode = "PerGame"
+  out <- tryCatch(
+    nba_leaguedashteamstats(
+      season = season,
+      season_type = season_type,
+      per_mode = "PerGame"
+    ),
+    error = function(e) {
+      message(sprintf("FAILED pull_team_per_game: %s | %s | %s", season, season_type, e$message))
+      return(NULL)
+    }
   )
 
-  if (is.null(out$LeagueDashTeamStats) || nrow(out$LeagueDashTeamStats) == 0) {
+  if (is.null(out) || is.null(out$LeagueDashTeamStats) || nrow(out$LeagueDashTeamStats) == 0) {
+    message(sprintf("EMPTY pull_team_per_game: %s | %s", season, season_type))
     return(tibble())
   }
 
@@ -168,14 +211,69 @@ league_ts <- tibble(
   )
 )
 
-read_or_build <- function(path, builder) {
-  if (file.exists(path)) {
-    readRDS(path)
-  } else {
-    obj <- builder()
-    saveRDS(obj, path)
-    obj
+read_or_build <- function(path, builder, rebuild = FALSE, allow_empty = FALSE) {
+  if (file.exists(path) && !rebuild) {
+    return(readRDS(path))
   }
+
+  obj <- builder()
+
+  if (!allow_empty) {
+    if (is.null(obj)) {
+      stop(sprintf("Builder returned NULL for: %s", path))
+    }
+
+    if (inherits(obj, "data.frame") && nrow(obj) == 0) {
+      stop(sprintf("Builder returned 0 rows for: %s", path))
+    }
+  }
+
+  saveRDS(obj, path)
+  obj
+}
+
+audit_season_coverage <- function(df, seasons = modern_seasons) {
+  df %>%
+    count(season, name = "rows") %>%
+    tidyr::complete(season = seasons, fill = list(rows = 0)) %>%
+    arrange(season)
+}
+
+check_missing_seasons <- function(df, seasons = modern_seasons, dataset_name = deparse(substitute(df))) {
+  audit_tbl <- audit_season_coverage(df, seasons)
+
+  missing_tbl <- audit_tbl %>%
+    filter(rows == 0)
+
+  if (nrow(missing_tbl) > 0) {
+    stop(
+      sprintf(
+        "Missing season data in %s: %s",
+        dataset_name,
+        paste(missing_tbl$season, collapse = ', ')
+      )
+    )
+  }
+
+  audit_tbl
+}
+
+audit_player_presence <- function(player_search, df = season_level_ppg) {
+  df %>%
+    filter(
+      stringr::str_detect(
+        stringr::str_to_lower(player_name),
+        stringr::str_to_lower(player_search)
+      ) |
+        player_id == as.character(player_search)
+    ) %>%
+    arrange(player_name, season) %>%
+    select(
+      player_id, player_name, season,
+      rs_games, po_games,
+      rs_pts_pg, po_pts_pg,
+      rs_ts, po_ts
+    )
 }
 
 get_ppg_split <- function(season) {
@@ -183,7 +281,7 @@ get_ppg_split <- function(season) {
   po <- pull_player_per_game(season, "Playoffs")
 
   if (nrow(rs) == 0 || nrow(po) == 0) {
-    return(tibble())
+    stop(sprintf("Missing RS or PO data for season %s", season))
   }
 
   rs_tbl <- rs %>%
@@ -193,6 +291,7 @@ get_ppg_split <- function(season) {
       team_abbreviation,
       season = season,
       rs_games = as.numeric(gp),
+      rs_mpg = as.numeric(min),
       rs_pts_pg = as.numeric(pts),
       rs_ast_pg = as.numeric(ast),
       rs_reb_pg = as.numeric(reb),
@@ -203,15 +302,14 @@ get_ppg_split <- function(season) {
       rs_fta = as.numeric(fta) * as.numeric(gp),
       rs_load = as.numeric(fga) + 0.44 * as.numeric(fta)
     ) %>%
-    mutate(
-      rs_ts = calc_ts(rs_points, rs_fga, rs_fta)
-    )
+    mutate(rs_ts = calc_ts(rs_points, rs_fga, rs_fta))
 
   po_tbl <- po %>%
     transmute(
       player_id = as.character(player_id),
       season = season,
       po_games = as.numeric(gp),
+      po_mpg = as.numeric(min),
       po_pts_pg = as.numeric(pts),
       po_ast_pg = as.numeric(ast),
       po_reb_pg = as.numeric(reb),
@@ -222,9 +320,7 @@ get_ppg_split <- function(season) {
       po_fta = as.numeric(fta) * as.numeric(gp),
       po_load = as.numeric(fga) + 0.44 * as.numeric(fta)
     ) %>%
-    mutate(
-      po_ts = calc_ts(po_points, po_fga, po_fta)
-    )
+    mutate(po_ts = calc_ts(po_points, po_fga, po_fta))
 
   rs_tbl %>%
     inner_join(po_tbl, by = c("player_id", "season")) %>%
@@ -236,16 +332,46 @@ get_ppg_split <- function(season) {
       pct_change = safe_percent_change(po_pts_pg, rs_pts_pg),
       fga_change = po_fga_pg - rs_fga_pg,
       load_change = po_load - rs_load,
+      mpg_change = po_mpg - rs_mpg,
       rs_rts = 100 * (rs_ts - league_rs_ts / 100),
       po_rts = 100 * (po_ts - league_po_ts / 100),
       rts_change = po_rts - rs_rts
     )
 }
 
-season_level_ppg <- read_or_build(
-  "season_level_ppg.rds",
-  function() map_dfr(modern_seasons, get_ppg_split)
-)
+season_level_list <- lapply(modern_seasons, function(s) {
+  message("Building: ", s)
+  get_ppg_split(s)
+})
+
+season_level_ppg <- bind_rows(season_level_list)
+
+season_level_audit <- audit_season_coverage(season_level_ppg)
+
+if (VALIDATE_DATA) {
+  missing_seasons_initial <- season_level_audit %>%
+    filter(rows == 0) %>%
+    pull(season)
+
+  if (length(missing_seasons_initial) > 0) {
+    message(
+      sprintf(
+        "Incomplete cached season_level_ppg detected. Force rebuilding missing/incomplete cache. Missing seasons: %s",
+        paste(missing_seasons_initial, collapse = ", ")
+      )
+    )
+
+    season_level_ppg <- read_or_build(
+      "season_level_ppg.rds",
+      function() map_dfr(modern_seasons, get_ppg_split),
+      rebuild = TRUE
+    )
+
+    season_level_audit <- audit_season_coverage(season_level_ppg)
+  }
+
+  check_missing_seasons(season_level_ppg, dataset_name = "season_level_ppg")
+}
 
 season_level_filtered <- season_level_ppg %>%
   filter(
@@ -276,7 +402,13 @@ modern_playoff_raw <- read_or_build(
         )
     })
   }
+,
+  rebuild = CACHE_REBUILD
 )
+
+modern_playoff_audit <- modern_playoff_raw %>%
+  count(player_name, name = "rows_captured") %>%
+  arrange(desc(rows_captured), player_name)
 
 modern_playoff <- modern_playoff_raw %>%
   group_by(player_id, player_name) %>%
@@ -342,6 +474,9 @@ career_translation <- season_level_ppg %>%
     career_rs_load = weighted.mean(rs_load, w = rs_games, na.rm = TRUE),
     career_po_load = weighted.mean(po_load, w = po_games, na.rm = TRUE),
     career_load_change = career_po_load - career_rs_load,
+    career_rs_mpg = weighted.mean(rs_mpg, w = rs_games, na.rm = TRUE),
+    career_po_mpg = weighted.mean(po_mpg, w = po_games, na.rm = TRUE),
+    career_mpg_change = career_po_mpg - career_rs_mpg,
     .groups = "drop"
   ) %>%
   filter(
@@ -349,8 +484,20 @@ career_translation <- season_level_ppg %>%
     career_po_games >= MIN_CAREER_PO_GAMES
   )
 
-career_risers <- career_translation %>%
-  arrange(desc(career_ppg_diff), desc(career_rts_change)) %>%
+career_filtered <- career_translation %>%
+  filter(
+    career_po_games >= 50,
+    career_rs_mpg >= 20,
+    career_po_mpg >= 20
+  )
+
+career_risers <- career_filtered %>%
+  filter(
+    career_ppg_diff >= 1,
+    career_po_rts >= 0,
+    career_rts_change >= -8
+  ) %>%
+  arrange(desc(career_ppg_diff), desc(career_po_rts), desc(career_rts_change)) %>%
   transmute(
     Player = player_name,
     `RS G` = career_rs_games,
@@ -360,14 +507,17 @@ career_risers <- career_translation %>%
     Diff = round(career_ppg_diff, 1),
     `% Change` = round(career_pct_change, 1),
     `rTS Change` = round(career_rts_change, 1),
-    `PO rTS` = round(career_po_rts, 1),
-    `Load Δ` = round(career_load_change, 1)
+    `PO rTS` = round(career_po_rts, 1)
   ) %>%
   slice_head(n = TOP_N)
 
-career_maintainers <- career_translation %>%
-  filter(abs(career_ppg_diff) <= 1) %>%
-  arrange(desc(career_po_ppg), desc(career_rts_change)) %>%
+career_maintainers <- career_filtered %>%
+  filter(
+    dplyr::between(career_ppg_diff, -1, 1.5),
+    career_po_rts >= 1,
+    career_rts_change >= -2
+  ) %>%
+  arrange(desc(career_po_ppg), desc(career_po_rts), desc(career_rts_change)) %>%
   transmute(
     Player = player_name,
     `RS G` = career_rs_games,
@@ -377,14 +527,18 @@ career_maintainers <- career_translation %>%
     Diff = round(career_ppg_diff, 1),
     `% Change` = round(career_pct_change, 1),
     `rTS Change` = round(career_rts_change, 1),
-    `PO rTS` = round(career_po_rts, 1),
-    `Load Δ` = round(career_load_change, 1)
+    `PO rTS` = round(career_po_rts, 1)
   ) %>%
   slice_head(n = TOP_N)
 
-career_droppers <- career_translation %>%
-  filter(career_load_change >= -1.5) %>%
-  arrange(career_ppg_diff, career_rts_change) %>%
+career_droppers <- career_filtered %>%
+  filter(
+    career_rs_ppg >= 15,
+    career_ppg_diff <= -1,
+    career_rts_change <= -1.5,
+    career_po_rts <= 0
+  ) %>%
+  arrange(career_ppg_diff, desc(career_rs_ppg), career_rts_change) %>%
   transmute(
     Player = player_name,
     `RS G` = career_rs_games,
@@ -394,13 +548,17 @@ career_droppers <- career_translation %>%
     Diff = round(career_ppg_diff, 1),
     `% Change` = round(career_pct_change, 1),
     `rTS Change` = round(career_rts_change, 1),
-    `PO rTS` = round(career_po_rts, 1),
-    `Load Δ` = round(career_load_change, 1)
+    `PO rTS` = round(career_po_rts, 1)
   ) %>%
   slice_head(n = TOP_N)
 
 biggest_risers_season <- season_level_filtered %>%
-  arrange(desc(ppg_diff), desc(rts_change)) %>%
+  filter(
+    ppg_diff >= 1,
+    po_rts >= 0,
+    rts_change >= -8
+  ) %>%
+  arrange(desc(ppg_diff), desc(po_rts), desc(rts_change)) %>%
   transmute(
     Player = player_name,
     Season = season,
@@ -411,15 +569,19 @@ biggest_risers_season <- season_level_filtered %>%
     `PO PPG` = round(po_pts_pg, 1),
     Diff = round(ppg_diff, 1),
     `% Change` = round(pct_change, 1),
-    `Load Δ` = round(load_change, 1),
     `rTS Change` = round(rts_change, 1),
     `PO rTS` = round(po_rts, 1)
   ) %>%
   slice_head(n = TOP_N)
 
 biggest_droppers_season <- season_level_filtered %>%
-  filter(load_change >= -1.5) %>%
-  arrange(ppg_diff, rts_change) %>%
+  filter(
+    mpg_change >= -5,
+    ppg_diff <= -1,
+    rts_change <= -1.5,
+    po_rts <= 2
+  ) %>%
+  arrange(ppg_diff, rts_change, po_rts) %>%
   transmute(
     Player = player_name,
     Season = season,
@@ -430,15 +592,18 @@ biggest_droppers_season <- season_level_filtered %>%
     `PO PPG` = round(po_pts_pg, 1),
     Diff = round(ppg_diff, 1),
     `% Change` = round(pct_change, 1),
-    `Load Δ` = round(load_change, 1),
     `rTS Change` = round(rts_change, 1),
     `PO rTS` = round(po_rts, 1)
   ) %>%
   slice_head(n = TOP_N)
 
 maintainers_season <- season_level_filtered %>%
-  filter(dplyr::between(ppg_diff, -1, 1)) %>%
-  arrange(desc(po_pts_pg), desc(rts_change)) %>%
+  filter(
+    dplyr::between(ppg_diff, -1, 1),
+    po_rts >= 1,
+    rts_change >= -2
+  ) %>%
+  arrange(desc(po_pts_pg), desc(po_rts), desc(rts_change)) %>%
   transmute(
     Player = player_name,
     Season = season,
@@ -449,7 +614,6 @@ maintainers_season <- season_level_filtered %>%
     `PO PPG` = round(po_pts_pg, 1),
     Diff = round(ppg_diff, 1),
     `% Change` = round(pct_change, 1),
-    `Load Δ` = round(load_change, 1),
     `rTS Change` = round(rts_change, 1),
     `PO rTS` = round(po_rts, 1)
   ) %>%
@@ -483,16 +647,44 @@ league_scoring <- read_or_build(
     }) %>%
       filter(!is.na(ppg))
   }
+,
+  rebuild = CACHE_REBUILD
 )
+
+league_scoring_audit <- league_scoring %>%
+  count(season, name = "rows") %>%
+  tidyr::complete(
+    season = modern_seasons,
+    fill = list(rows = 0)
+  ) %>%
+  arrange(season)
+
+if (VALIDATE_DATA) {
+  bad_league_scoring <- league_scoring_audit %>%
+    filter(rows != 2)
+
+  if (nrow(bad_league_scoring) > 0) {
+    stop(
+      sprintf(
+        "League scoring is missing a regular-season or playoff row for: %s",
+        paste(bad_league_scoring$season, collapse = ", ")
+      )
+    )
+  }
+}
 ```
 
 # Project Overview
 
-Playoff basketball is a different environment. Scoring drops, possessions tighten, and defenses are built to take away what a player does best.
+The playoffs change everything.
 
-That makes the idea of “rising in the playoffs” more complicated than it sounds. A scoring jump in a worse environment means something very different than it would in the regular season.
+Scoring drops. Possessions slow down. Defenses stop reacting and start targeting. Every weakness gets tested over and over again until something breaks.
 
-This analysis looks at how scoring actually changes once players reach the playoffs, with a focus on whether production, efficiency, and scoring load carry over.
+That is what makes playoff performance so difficult to evaluate. Raw production still matters, but it does not tell the full story. A player scoring 27 points per game in April is not the same as scoring 27 in June.
+
+This project looks at that gap.
+
+Not just who produces in the playoffs, but whose scoring actually translates when the environment turns against them.
 
 ## Definitions
 
@@ -502,7 +694,7 @@ This study focuses on scoring translation: how a player’s playoff scoring comp
 
 Regular-season production is measured only from seasons in which the player reached the playoffs.
 
-This keeps the comparison focused on a player’s playoff-era role and avoids early-career or non-playoff seasons from distorting the baseline. Controlling this variability is essential to interpreting how players truly played relative to the level they were at.
+This keeps the comparison focused on a player’s playoff-era version of himself, rather than being dragged down by early-career or non-playoff seasons.
 
 ### Scoring Change
 
@@ -512,27 +704,11 @@ Positive values = increase in scoring. Negative values = decline.
 
 ### Efficiency 
 
-rTS Change measures how a player’s scoring efficiency changes relative to league average between the regular season and playoffs.
+rTS Change measures how a player’s scoring efficiency shifts relative to league average from the regular season to the playoffs.
 
-It is calculated as a player’s playoff rTS minus their regular-season rTS.
+It is calculated as playoff rTS minus regular-season rTS.
 
-A negative value indicates the player became less efficient relative to league average, even if overall league efficiency also declined. The change should be read alongside playoff rTS itself, as a player can decline relative to their own average while still remaining highly efficient overall.
-
-### Load
-
-Load estimates a player’s scoring responsibility, calculated as:
-
-FGA + 0.44 × FTA
-
-It reflects how often a player is involved in scoring plays.
-
-### Load Change
-
-Load Δ = Playoff Load – Regular Season Load
-
-This helps separate role from performance.
-
-If scoring drops along with load, it likely reflects reduced responsibility. If scoring drops while load stays similar, it points to a real decline. The same idea applies to increases in scoring.
+A negative value means the player became less efficient relative to the league, even if overall league efficiency also declined. That change should always be read alongside playoff rTS itself.
 
 ### Classification
 
@@ -574,32 +750,294 @@ In that context, “rising” takes on a different meaning. In a lower-scoring s
 
 # Best Playoff Performers of All-Time and of the Modern Era
 
-Raw playoff production still matters, especially over larger samples. Before getting into translation, it helps to establish the players who have simply produced the most on the playoff stage in the modern era.
+Before looking at how scoring changes, it helps to establish a baseline: who has actually produced the most in playoff settings.
 
-## Top playoff scorers
+Because translation only matters if the production exists in the first place.
+
+## All-Time Leaders
+
+These are the most productive playoff performers in NBA history, filtered for players with at least 50 postseason games.
+
+```{r all-time-leaders}
+# ------------------------------------------------------------
+# All-time playoff production leaders (NBA only)
+# Minimum 50 playoff games
+# ------------------------------------------------------------
+
+all_time_ppg <- tibble(
+  Rank = 1:13,
+  Player = c(
+    "Michael Jordan", "Luka Dončić*", "Allen Iverson", "Kevin Durant*",
+    "Jerry West", "Donovan Mitchell*", "LeBron James*", "Nikola Jokić*",
+    "Elgin Baylor", "Giannis Antetokounmpo*", "George Gervin",
+    "Stephen Curry*", "Anthony Davis*"
+  ),
+  GP = c(179, 55, 71, 170, 153, 65, 293, 94, 134, 84, 59, 155, 60),
+  PPG = c(33.45, 30.85, 29.73, 29.32, 29.13, 28.38, 28.35, 27.39, 27.04, 27.02, 26.98, 26.75, 26.10)
+) %>%
+  mutate(PPG = round(PPG, 2))
+
+all_time_rpg <- tibble(
+  Rank = 1:13,
+  Player = c(
+    "Bill Russell", "Wilt Chamberlain", "Wes Unseld", "Bob Pettit",
+    "Dave Cowens", "George Mikan", "Moses Malone", "Nate Thurmond",
+    "Elvin Hayes", "Elgin Baylor", "Charles Barkley", "Nikola Jokić*",
+    "Dolph Schayes"
+  ),
+  GP = c(165, 160, 119, 88, 89, 60, 94, 81, 96, 134, 123, 94, 97),
+  RPG = c(24.87, 24.46, 14.93, 14.82, 14.44, 13.85, 13.78, 13.59, 12.96, 12.87, 12.86, 12.36, 12.22)
+) %>%
+  mutate(RPG = round(RPG, 2))
+
+all_time_apg <- tibble(
+  Rank = 1:13,
+  Player = c(
+    "Magic Johnson", "John Stockton", "Oscar Robertson", "Kevin Johnson",
+    "Isiah Thomas", "Steve Nash", "Bob Cousy", "Rajon Rondo",
+    "Chris Paul", "Norm Nixon", "Jason Kidd", "Luka Dončić*", "Nikola Jokić*"
+  ),
+  GP = c(190, 182, 86, 105, 111, 120, 109, 134, 149, 58, 158, 55, 94),
+  APG = c(12.35, 10.10, 8.94, 8.90, 8.89, 8.84, 8.60, 8.48, 8.28, 8.02, 7.99, 7.76, 7.61)
+) %>%
+  mutate(APG = round(APG, 2))
+
+style_leaderboard <- function(df, caption_text = NULL, align = "c") {
+  align_vec <- c("c", "l", "c", "c")
+  
+  kbl(
+    df,
+    format = "latex",
+    booktabs = TRUE,
+    align = align_vec,
+    caption = caption_text,
+    linesep = ""
+  ) %>%
+    kable_styling(
+      latex_options = c("HOLD_position", "striped"),
+      full_width = FALSE,
+      font_size = 9.5,
+      stripe_color = "#fbfaf7"
+    )
+}
+
+style_leaderboard <- function(df, stat_col) {
+  df_fmt <- df
+  df_fmt[[stat_col]] <- ifelse(
+    df_fmt$Rank <= 3,
+    cell_spec(df_fmt[[stat_col]], bold = TRUE, format = "latex"),
+    as.character(df_fmt[[stat_col]])
+  )
+  
+  df_fmt$Player <- ifelse(
+    df_fmt$Rank <= 3,
+    cell_spec(df_fmt$Player, bold = TRUE, format = "latex"),
+    df_fmt$Player
+  )
+  
+  kbl(
+    df_fmt,
+    format = "latex",
+    escape = FALSE,
+    booktabs = TRUE,
+    align = c("c", "l", "c", "c"),
+    linesep = ""
+  ) %>%
+    kable_styling(
+      latex_options = c("HOLD_position", "striped"),
+      full_width = FALSE,
+      font_size = 9.5,
+      stripe_color = "#fbfaf7"
+    )
+}
+```
+
+*Minimum 50 playoff games | star = active player | Data: Basketball-Reference*
+
+### Scoring
+
+```{r all-time-ppg}
+all_time_ppg %>% style_leaderboard("PPG")
+```
+
+### Rebounding
+
+```{r all-time-rpg}
+all_time_rpg %>% style_leaderboard("RPG")
+```
+
+### Playmaking
+
+```{r all-time-apg}
+all_time_apg %>% style_leaderboard("APG")
+```
+
+These tables highlight two different ways playoff averages get built: overwhelming dominance and sustained longevity. To narrow the lens, it helps to look at playoff production again in the modern era.
+
+## Modern Leaders
+
+Looking only at the modern game helps remove some of the stylistic and era differences that shape all-time leaderboards.
+
+### Top playoff scorers
 
 ```{r ppg-leaders}
 modern_ppg_leaders %>%
   style_kable(align = "lcc", font_size = 9.5)
 ```
 
-## Top playoff playmakers
-
-```{r apg-leaders}
-modern_apg_leaders %>%
-  style_kable(align = "lcc", font_size = 9.5)
-```
-
-## Top playoff rebounders
+### Top playoff rebounders
 
 ```{r rpg-leaders}
 modern_rpg_leaders %>%
   style_kable(align = "lcc", font_size = 9.5)
 ```
 
-Those tables tell us who has produced the most in the playoffs. They do not tell us whose games actually translate best.
+### Top playoff playmakers
 
-The more revealing question is what happens when playoff scoring is compared to a player's regular-season baseline, then layered with efficiency and scoring load.
+```{r apg-leaders}
+modern_apg_leaders %>%
+  style_kable(align = "lcc", font_size = 9.5)
+```
+
+These tables show who produces.
+
+They do not show whose game survives.
+
+Because playoff basketball is not just about output. It is about what happens when that output is put under pressure.
+
+That is where translation matters.
+
+```{r leaders-for-run}
+# ------------------------------------------------------------
+# Biggest single-run playoff totals (modern era)
+# ------------------------------------------------------------
+
+modern_single_run_raw <- read_or_build(
+  "modern_single_run_raw.rds",
+  function() {
+    map_dfr(modern_seasons, function(season) {
+      po <- tryCatch(
+        pull_player_totals(season, "Playoffs"),
+        error = function(e) NULL
+      )
+
+      if (is.null(po) || nrow(po) == 0) return(tibble())
+
+      po %>%
+        transmute(
+          player_id = as.character(player_id),
+          player_name,
+          season = season,
+          team_abbreviation,
+          po_games = as.numeric(gp),
+          total_points = as.numeric(pts),
+          total_rebounds = as.numeric(reb),
+          total_assists = as.numeric(ast),
+          total_steals = as.numeric(stl),
+          total_blocks = as.numeric(blk)
+        )
+    })
+  }
+,
+  rebuild = CACHE_REBUILD
+)
+
+single_run_audit <- audit_season_coverage(modern_single_run_raw)
+
+if (VALIDATE_DATA) {
+  check_missing_seasons(modern_single_run_raw, dataset_name = "modern_single_run_raw")
+}
+
+single_run_points <- modern_single_run_raw %>%
+  arrange(desc(total_points)) %>%
+  transmute(
+    Player = player_name,
+    Season = season,
+    Team = team_abbreviation,
+    `PO G` = po_games,
+    Points = total_points
+  ) %>%
+  slice_head(n = 5)
+
+single_run_rebounds <- modern_single_run_raw %>%
+  arrange(desc(total_rebounds)) %>%
+  transmute(
+    Player = player_name,
+    Season = season,
+    Team = team_abbreviation,
+    `PO G` = po_games,
+    Rebounds = total_rebounds
+  ) %>%
+  slice_head(n = 5)
+
+single_run_assists <- modern_single_run_raw %>%
+  arrange(desc(total_assists)) %>%
+  transmute(
+    Player = player_name,
+    Season = season,
+    Team = team_abbreviation,
+    `PO G` = po_games,
+    Assists = total_assists
+  ) %>%
+  slice_head(n = 5)
+
+single_run_steals <- modern_single_run_raw %>%
+  arrange(desc(total_steals)) %>%
+  transmute(
+    Player = player_name,
+    Season = season,
+    Team = team_abbreviation,
+    `PO G` = po_games,
+    Steals = total_steals
+  ) %>%
+  slice_head(n = 5)
+
+single_run_blocks <- modern_single_run_raw %>%
+  arrange(desc(total_blocks)) %>%
+  transmute(
+    Player = player_name,
+    Season = season,
+    Team = team_abbreviation,
+    `PO G` = po_games,
+    Blocks = total_blocks
+  ) %>%
+  slice_head(n = 5)
+```
+
+## Biggest Single-Run Playoff Totals
+
+Per-game production captures consistency, but it does not fully reflect the scale of a single postseason run.  
+These totals capture the biggest modern playoff workloads in one run.
+
+### Points
+```{r single-run-points}
+single_run_points %>%
+  style_kable(align = "lcccc", font_size = 9.2)
+```
+
+### Rebounds
+```{r single-run-rebounds}
+single_run_rebounds %>%
+  style_kable(align = "lcccc", font_size = 9.2)
+```
+
+### Assists
+```{r single-run-assists}
+single_run_assists %>%
+  style_kable(align = "lcccc", font_size = 9.2)
+```
+
+### Steals
+```{r single_run_steals}
+single_run_steals%>%
+  style_kable(align = "lcccc", font_size = 9.2)
+```
+
+### Blocks
+```{r single_run_blocks}
+single_run_blocks %>%
+  style_kable(align = "lcccc", font_size = 9.2)
+```
 
 # Playoff-Season Baseline Translation
 
@@ -607,20 +1045,20 @@ To keep the comparison cleaner, the regular-season side here uses only seasons i
 
 This is not trying to answer who had the bigger career arc. It is trying to answer who held up best once they were actually in playoff environments.
 
-## Quick takeaways
-
-The riser table is not as clean as it looks if efficiency falls at the same time. Some players do find another gear, but many “risers” are really trading a bit of efficiency for more responsibility.
-
-The maintainer table is the real signal. In a postseason environment where most scorers lose something, the players who can keep their volume and avoid a big efficiency drop are usually the ones whose games travel best.
-
-The dropper table is filtered to remove most obvious role-loss cases. If scoring falls while load stays roughly stable, that is much more meaningful than a player simply getting phased into a smaller offensive role.
-
-## Biggest career risers
+## Largest career playoff scoring lifts
 
 ```{r career-risers}
 career_risers %>%
   style_kable(align = "lcccccccc", font_size = 8.6)
 ```
+
+This group is more nuanced than it looks.
+
+Some players here genuinely elevate — increasing both scoring and maintaining strong efficiency. Others are taking on more responsibility, trading a bit of efficiency for volume.
+
+That distinction matters.
+
+A player adding four points per game at the cost of efficiency is not the same as one who maintains or improves it. The table captures both, but they are not equal forms of “rising.”
 
 ## Best career maintainers
 
@@ -629,12 +1067,26 @@ career_maintainers %>%
   style_kable(align = "lcccccccc", font_size = 8.6)
 ```
 
+This is the most important group in the entire analysis.
+
+Most players decline in the playoffs. That is the baseline.
+
+So maintaining production is not neutral. It is a signal.
+
+These are the players whose scoring holds up even when defenses are built specifically to stop them. That is what real playoff scalability looks like.
+
 ## Biggest career droppers
 
 ```{r career-droppers}
 career_droppers %>%
   style_kable(align = "lcccccccc", font_size = 8.6)
 ```
+
+Not all drops are the same.
+
+Some players lose role. Others lose efficiency. The table is filtered to remove most obvious role-loss cases, which means what remains is closer to true scoring decline.
+
+These are players whose production fell even when their offensive responsibility stayed relatively stable.
 
 # Since 2000: Who Actually Scales?
 
@@ -651,15 +1103,6 @@ biggest_risers_season %>%
   style_kable(align = "lcccccccccc", font_size = 8.1)
 ```
 
-## Biggest playoff droppers by season
-
-This is the cleaner version of the dropper idea. The table is filtered to strip out most obvious role-loss seasons, so what remains is closer to true scoring slippage: players whose production fell even without a major reduction in scoring load.
-
-```{r season-droppers}
-biggest_droppers_season %>%
-  style_kable(align = "lcccccccccc", font_size = 8.1)
-```
-
 ## Most important: the maintainers
 
 Most players drop. These players do not.
@@ -671,17 +1114,11 @@ maintainers_season %>%
   style_kable(align = "lcccccccccc", font_size = 8.1)
 ```
 
-# What This Suggests
+## Biggest playoff droppers by season
 
-The playoffs do not just test talent. They test translation.
+This is the cleaner version of the dropper idea. The table is filtered to strip out most obvious role-loss seasons, so what remains is closer to true scoring slippage: players whose production fell even without a major reduction in scoring load.
 
-League-wide scoring comes down, possessions get tighter, and defenses spend entire series attacking the weak points of a player's offensive game. That is why playoff production by itself is not enough. The more useful question is what happens to a player's scoring, efficiency, and load once the environment turns against him.
-
-Most players decline. A few rise. But the rarest outcome is simpler than that: maintaining star-level production in a setting built to take it away.
-
-That is the group worth paying attention to.
-
-\bigskip
-
-\small
-\textit{* RS PPG in the career tables is based only on seasons in which the player reached the playoffs, so the baseline reflects the player’s playoff-era regular seasons rather than every season of his career.}
+```{r season-droppers}
+biggest_droppers_season %>%
+  style_kable(align = "lcccccccccc", font_size = 8.1)
+```
