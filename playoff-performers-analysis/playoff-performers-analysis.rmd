@@ -146,48 +146,56 @@ pull_player_per_game <- function(season, season_type = "Regular Season", max_att
   tibble()
 }
 
-pull_player_totals <- function(season, season_type = "Regular Season") {
-  out <- tryCatch(
-    nba_leaguedashplayerstats(
-      season = season,
-      season_type = season_type,
-      per_mode = "Totals"
-    ),
-    error = function(e) {
-      message(sprintf("FAILED pull_player_totals: %s | %s | %s", season, season_type, e$message))
-      return(NULL)
-    }
-  )
+pull_player_totals <- function(season, season_type = "Regular Season", max_attempts = 3) {
+  for (i in seq_len(max_attempts)) {
+    out <- tryCatch(
+      nba_leaguedashplayerstats(
+        season = season,
+        season_type = season_type,
+        per_mode = "Totals"
+      ),
+      error = function(e) NULL
+    )
 
-  if (is.null(out) || is.null(out$LeagueDashPlayerStats) || nrow(out$LeagueDashPlayerStats) == 0) {
-    message(sprintf("EMPTY pull_player_totals: %s | %s", season, season_type))
-    return(tibble())
+    if (!is.null(out$LeagueDashPlayerStats) && nrow(out$LeagueDashPlayerStats) > 0) {
+      return(out$LeagueDashPlayerStats %>% clean_names())
+    }
+
+    message(sprintf(
+      "EMPTY pull_player_totals: %s | %s | attempt %s",
+      season, season_type, i
+    ))
+
+    Sys.sleep(2 * i)
   }
 
-  out$LeagueDashPlayerStats %>%
-    clean_names()
+  tibble()
 }
 
-pull_team_per_game <- function(season, season_type = "Regular Season") {
-  out <- tryCatch(
-    nba_leaguedashteamstats(
-      season = season,
-      season_type = season_type,
-      per_mode = "PerGame"
-    ),
-    error = function(e) {
-      message(sprintf("FAILED pull_team_per_game: %s | %s | %s", season, season_type, e$message))
-      return(NULL)
-    }
-  )
+pull_team_per_game <- function(season, season_type = "Regular Season", max_attempts = 3) {
+  for (i in seq_len(max_attempts)) {
+    out <- tryCatch(
+      nba_leaguedashteamstats(
+        season = season,
+        season_type = season_type,
+        per_mode = "PerGame"
+      ),
+      error = function(e) NULL
+    )
 
-  if (is.null(out) || is.null(out$LeagueDashTeamStats) || nrow(out$LeagueDashTeamStats) == 0) {
-    message(sprintf("EMPTY pull_team_per_game: %s | %s", season, season_type))
-    return(tibble())
+    if (!is.null(out$LeagueDashTeamStats) && nrow(out$LeagueDashTeamStats) > 0) {
+      return(out$LeagueDashTeamStats %>% clean_names())
+    }
+
+    message(sprintf(
+      "EMPTY pull_team_per_game: %s | %s | attempt %s",
+      season, season_type, i
+    ))
+
+    Sys.sleep(2 * i)
   }
 
-  out$LeagueDashTeamStats %>%
-    clean_names()
+  tibble()
 }
 
 league_ts <- tibble(
@@ -619,37 +627,25 @@ maintainers_season <- season_level_filtered %>%
   ) %>%
   slice_head(n = TOP_N)
 
-league_scoring <- read_or_build(
-  "league_scoring_modern.rds",
-  function() {
-    map_dfr(modern_seasons, function(season) {
-      rs <- tryCatch(pull_team_per_game(season, "Regular Season"), error = function(e) NULL)
-      po <- tryCatch(pull_team_per_game(season, "Playoffs"), error = function(e) NULL)
+league_scoring <- map_dfr(modern_seasons, function(season) {
+  rs <- pull_team_per_game(season, "Regular Season")
+  po <- pull_team_per_game(season, "Playoffs")
 
-      bind_rows(
-        if (!is.null(rs) && nrow(rs) > 0) {
-          tibble(
-            season = season,
-            season_start = as.numeric(substr(season, 1, 4)),
-            context = "Regular Season",
-            ppg = mean(as.numeric(rs$pts), na.rm = TRUE)
-          )
-        },
-        if (!is.null(po) && nrow(po) > 0) {
-          tibble(
-            season = season,
-            season_start = as.numeric(substr(season, 1, 4)),
-            context = "Playoffs",
-            ppg = mean(as.numeric(po$pts), na.rm = TRUE)
-          )
-        }
-      )
-    }) %>%
-      filter(!is.na(ppg))
-  }
-,
-  rebuild = CACHE_REBUILD
-)
+  bind_rows(
+    if (nrow(rs) > 0) tibble(
+      season = season,
+      season_start = as.numeric(substr(season, 1, 4)),
+      context = "Regular Season",
+      ppg = mean(as.numeric(rs$pts), na.rm = TRUE)
+    ),
+    if (nrow(po) > 0) tibble(
+      season = season,
+      season_start = as.numeric(substr(season, 1, 4)),
+      context = "Playoffs",
+      ppg = mean(as.numeric(po$pts), na.rm = TRUE)
+    )
+  )
+})
 
 league_scoring_audit <- league_scoring %>%
   count(season, name = "rows") %>%
