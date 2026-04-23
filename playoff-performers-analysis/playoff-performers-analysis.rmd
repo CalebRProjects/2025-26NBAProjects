@@ -35,6 +35,10 @@ font_add_google("Inter", "inter")
 showtext_auto()
 options(scipen = 999)
 
+# ------------------------------------------------------------
+# Theme + table helpers
+# ------------------------------------------------------------
+
 BG <- "#f6f4ef"
 TEXT_DARK <- "#141414"
 TEXT_LIGHT <- "#6b6b6b"
@@ -97,12 +101,16 @@ calc_ts <- function(pts, fga, fta) {
 ```
 
 ```{r parameters-and-helpers, include=FALSE}
+# ------------------------------------------------------------
+# Parameters
+# ------------------------------------------------------------
+
 START_SEASON <- 2000
-END_SEASON   <- 2024
+END_SEASON <- 2024
 
 MIN_RS_GAMES <- 40
 MIN_PO_GAMES <- 8
-MIN_RS_PPG   <- 10
+MIN_RS_PPG <- 10
 
 MIN_CAREER_RS_GAMES <- 250
 MIN_CAREER_PO_GAMES <- 50
@@ -113,12 +121,20 @@ TOP_N <- 10
 CACHE_REBUILD <- FALSE
 VALIDATE_DATA <- FALSE
 
+# ------------------------------------------------------------
+# Season helpers
+# ------------------------------------------------------------
+
 season_labels <- function(start_year, end_year) {
   yrs <- start_year:end_year
   paste0(yrs, "-", stringr::str_sub(yrs + 1, 3, 4))
 }
 
 modern_seasons <- season_labels(START_SEASON, END_SEASON)
+
+# ------------------------------------------------------------
+# Data pull helpers
+# ------------------------------------------------------------
 
 pull_player_per_game <- function(season, season_type = "Regular Season", max_attempts = 3) {
   for (i in seq_len(max_attempts)) {
@@ -198,6 +214,10 @@ pull_team_per_game <- function(season, season_type = "Regular Season", max_attem
   tibble()
 }
 
+# ------------------------------------------------------------
+# League context
+# ------------------------------------------------------------
+
 league_ts <- tibble(
   season = c(
     "2000-01", "2001-02", "2002-03", "2003-04", "2004-05", "2005-06",
@@ -218,6 +238,10 @@ league_ts <- tibble(
     55.1, 57.4, 57.1, 56.7, 56.6, 56.6, 56.6
   )
 )
+
+# ------------------------------------------------------------
+# Cache helpers
+# ------------------------------------------------------------
 
 read_or_build <- function(path, builder, rebuild = FALSE, allow_empty = FALSE) {
   if (file.exists(path) && !rebuild) {
@@ -258,7 +282,7 @@ check_missing_seasons <- function(df, seasons = modern_seasons, dataset_name = d
       sprintf(
         "Missing season data in %s: %s",
         dataset_name,
-        paste(missing_tbl$season, collapse = ', ')
+        paste(missing_tbl$season, collapse = ", ")
       )
     )
   }
@@ -283,6 +307,10 @@ audit_player_presence <- function(player_search, df = season_level_ppg) {
       rs_ts, po_ts
     )
 }
+
+# ------------------------------------------------------------
+# Split construction
+# ------------------------------------------------------------
 
 get_ppg_split <- function(season, max_attempts = 5) {
   rs <- tibble()
@@ -420,7 +448,7 @@ if (VALIDATE_DATA) {
   bad_modern_playoff <- modern_playoff_audit %>%
     filter(rows == 0)
 
-  if (nrow(bad_modern_playoff) > 0) {
+    if (nrow(bad_modern_playoff) > 0) {
     message(
       sprintf(
         "Incomplete cached modern_playoff_raw detected. Rebuilding cache. Missing seasons: %s",
@@ -455,7 +483,7 @@ if (VALIDATE_DATA) {
             )
         })
       },
-      rebuild = T
+      rebuild = TRUE
     )
 
     modern_playoff_audit <- modern_playoff_raw %>%
@@ -773,7 +801,7 @@ if (VALIDATE_DATA) {
           )
         })
       },
-      rebuild = T
+      rebuild = TRUE
     )
 
     league_scoring_audit <- league_scoring %>%
@@ -823,7 +851,7 @@ PPG Difference (Diff) = Playoff PPG – Regular Season PPG
 
 Positive values = increase in scoring. Negative values = decline.
 
-### Efficiency 
+### Efficiency
 
 rTS Change measures how a player’s scoring efficiency shifts relative to league average from the regular season to the playoffs.
 
@@ -835,15 +863,15 @@ A negative value means the player became less efficient relative to the league, 
 
 Players are grouped into three categories:
 
-* Risers: scoring increases in the playoffs
-* Maintainers: scoring remains within ±1 PPG
-* Droppers: scoring decreases
+- Risers: scoring increases in the playoffs
+- Maintainers: scoring remains within ±1 PPG
+- Droppers: scoring decreases
 
 For droppers, results are filtered to remove most obvious role-loss cases. This helps isolate players whose scoring declined despite similar offensive responsibility, making the drop more meaningful.
 
 Riser seasons are interpreted with more context. Some increases come from higher scoring load, while others reflect genuine shotmaking and efficiency gains.
 
-## Playoff Scoring (Regular Season vs Playoffs - Since 2000) 
+## Playoff Scoring (Regular Season vs Playoffs - Since 2000)
 
 ```{r league-scoring-plot, fig.height=4.7, fig.width=7.5}
 ggplot(
@@ -921,25 +949,6 @@ all_time_apg <- tibble(
 ) %>%
   mutate(APG = round(APG, 2))
 
-style_leaderboard <- function(df, caption_text = NULL, align = "c") {
-  align_vec <- c("c", "l", "c", "c")
-  
-  kbl(
-    df,
-    format = "latex",
-    booktabs = TRUE,
-    align = align_vec,
-    caption = caption_text,
-    linesep = ""
-  ) %>%
-    kable_styling(
-      latex_options = c("HOLD_position", "striped"),
-      full_width = FALSE,
-      font_size = 9.5,
-      stripe_color = "#fbfaf7"
-    )
-}
-
 style_leaderboard <- function(df, stat_col) {
   df_fmt <- df
   df_fmt[[stat_col]] <- ifelse(
@@ -947,13 +956,13 @@ style_leaderboard <- function(df, stat_col) {
     cell_spec(df_fmt[[stat_col]], bold = TRUE, format = "latex"),
     as.character(df_fmt[[stat_col]])
   )
-  
+
   df_fmt$Player <- ifelse(
     df_fmt$Rank <= 3,
     cell_spec(df_fmt$Player, bold = TRUE, format = "latex"),
     df_fmt$Player
   )
-  
+
   kbl(
     df_fmt,
     format = "latex",
@@ -1152,31 +1161,36 @@ single_run_blocks <- modern_single_run_raw %>%
 These totals capture the biggest modern playoff performances over a single run.
 
 ### Points
+
 ```{r single-run-points}
 single_run_points %>%
   style_kable(align = "lcccc", font_size = 9.2)
 ```
 
 ### Rebounds
+
 ```{r single-run-rebounds}
 single_run_rebounds %>%
   style_kable(align = "lcccc", font_size = 9.2)
 ```
 
 ### Assists
+
 ```{r single-run-assists}
 single_run_assists %>%
   style_kable(align = "lcccc", font_size = 9.2)
 ```
 
 ### Steals
-```{r single_run_steals}
-single_run_steals%>%
+
+```{r single-run-steals}
+single_run_steals %>%
   style_kable(align = "lcccc", font_size = 9.2)
 ```
 
 ### Blocks
-```{r single_run_blocks}
+
+```{r single-run-blocks}
 single_run_blocks %>%
   style_kable(align = "lcccc", font_size = 9.2)
 ```
@@ -1195,7 +1209,7 @@ Beyond averages and single runs, most playoff conversations come down to who ros
 
 Here, regular-season production only comes from seasons where a player actually reached the playoffs, so the comparison stays tied to his real playoff window. This is not a career-value assessment. It is a look at whose scoring still translated once the game got tougher.
 
-## Largest career playoff scoring lifts
+## Largest Career Playoff Scoring Lifts
 
 ```{r career-risers}
 career_risers %>%
@@ -1212,7 +1226,7 @@ Then there are players like Nash, Durant, and Chris Paul. The increases are smal
 
 That is the line this table is trying to draw. More points does not always mean better playoff translation. Sometimes it just means more shots. The players who really stand out are the ones whose games still scale when the pressure rises.
 
-## Best career maintainers
+## Best Career Maintainers
 
 ```{r career-maintainers}
 career_maintainers %>%
@@ -1225,7 +1239,7 @@ Most players drop in the playoffs. Holding your level is not neutral, it is one 
 
 Kobe. Wade. AD. Tatum. Players who stayed near their regular-season production even as possessions got harder and defenses loaded up.
 
-## Biggest career droppers
+## Biggest Career Droppers
 
 ```{r career-droppers}
 career_droppers %>%
@@ -1238,13 +1252,13 @@ A lot of these names line up with playoff frustrations people already remember. 
 
 That points to the bigger question underneath all of this: what kinds of scoring actually hold up in the playoffs? Some styles survive playoff attention. Others persist as weak points and crack once a defense has a full series to exploit them.
 
-# Modern Single-Run Performers Translation 
+# Modern Single-Run Performers Translation
 
 Career numbers smooth everything out. Single runs don’t.
 
 They capture what happens when everything clicks, or when everything breaks, over the course of one playoff run.
 
-## Biggest playoff risers by season
+## Biggest Playoff Risers by Season
 
 ```{r season-risers}
 biggest_risers_season %>%
@@ -1259,7 +1273,7 @@ Then there are different kinds of rises. Role players becoming lifesavers for a 
 
 That is what makes riser discourse so tricky. Not every rise means the same thing. Some players caught fire for one run. Others reached a level their teams could actually lean on deep into the playoffs. But in every case, this is what a real postseason jump looks like when it happens all at once.
 
-## Most important: the maintainers
+## Most Important: The Maintainers
 
 ```{r season-maintainers}
 maintainers_season %>%
@@ -1274,7 +1288,7 @@ That is what makes these performances so impressive. There is no surprise factor
 
 That is also where a lot of playoff discourse gets warped. A player does not need some giant scoring spike to have had an incredible postseason. Sometimes the most impressive thing is just holding your level while everything around you gets harder.
 
-## Biggest playoff droppers by season
+## Biggest Playoff Droppers by Season
 
 ```{r season-droppers}
 biggest_droppers_season %>%
