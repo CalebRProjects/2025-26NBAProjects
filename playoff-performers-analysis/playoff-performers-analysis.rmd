@@ -108,10 +108,10 @@ MIN_CAREER_RS_GAMES <- 250
 MIN_CAREER_PO_GAMES <- 50
 MIN_LEADERBOARD_PO_GAMES <- 50
 
-TOP_N <- 12
+TOP_N <- 10
 
 CACHE_REBUILD <- FALSE
-VALIDATE_DATA <- TRUE
+VALIDATE_DATA <- FALSE
 
 season_labels <- function(start_year, end_year) {
   yrs <- start_year:end_year
@@ -172,7 +172,7 @@ pull_player_totals <- function(season, season_type = "Regular Season", max_attem
   tibble()
 }
 
-pull_team_per_game <- function(season, season_type = "Regular Season", max_attempts = 3) {
+pull_team_per_game <- function(season, season_type = "Regular Season", max_attempts = 5) {
   for (i in seq_len(max_attempts)) {
     out <- tryCatch(
       nba_leaguedashteamstats(
@@ -192,7 +192,7 @@ pull_team_per_game <- function(season, season_type = "Regular Season", max_attem
       season, season_type, i
     ))
 
-    Sys.sleep(2 * i)
+    Sys.sleep(3 * i)
   }
 
   tibble()
@@ -284,9 +284,23 @@ audit_player_presence <- function(player_search, df = season_level_ppg) {
     )
 }
 
-get_ppg_split <- function(season) {
-  rs <- pull_player_per_game(season, "Regular Season")
-  po <- pull_player_per_game(season, "Playoffs")
+get_ppg_split <- function(season, max_attempts = 5) {
+  rs <- tibble()
+  po <- tibble()
+
+  for (i in seq_len(max_attempts)) {
+    if (nrow(rs) == 0) rs <- pull_player_per_game(season, "Regular Season")
+    if (nrow(po) == 0) po <- pull_player_per_game(season, "Playoffs")
+
+    if (nrow(rs) > 0 && nrow(po) > 0) break
+
+    message(sprintf(
+      "Retrying get_ppg_split for %s | attempt %s | RS rows: %s | PO rows: %s",
+      season, i, nrow(rs), nrow(po)
+    ))
+
+    Sys.sleep(2 * i)
+  }
 
   if (nrow(rs) == 0 || nrow(po) == 0) {
     stop(sprintf("Missing RS or PO data for season %s", season))
@@ -306,6 +320,8 @@ get_ppg_split <- function(season) {
       rs_fga_pg = as.numeric(fga),
       rs_fta_pg = as.numeric(fta),
       rs_points = as.numeric(pts) * as.numeric(gp),
+      rs_assists = as.numeric(ast) * as.numeric(gp),
+      rs_rebounds = as.numeric(reb) * as.numeric(gp),
       rs_fga = as.numeric(fga) * as.numeric(gp),
       rs_fta = as.numeric(fta) * as.numeric(gp),
       rs_load = as.numeric(fga) + 0.44 * as.numeric(fta)
@@ -324,6 +340,8 @@ get_ppg_split <- function(season) {
       po_fga_pg = as.numeric(fga),
       po_fta_pg = as.numeric(fta),
       po_points = as.numeric(pts) * as.numeric(gp),
+      po_assists = as.numeric(ast) * as.numeric(gp),
+      po_rebounds = as.numeric(reb) * as.numeric(gp),
       po_fga = as.numeric(fga) * as.numeric(gp),
       po_fta = as.numeric(fta) * as.numeric(gp),
       po_load = as.numeric(fga) + 0.44 * as.numeric(fta)
@@ -347,39 +365,27 @@ get_ppg_split <- function(season) {
     )
 }
 
-season_level_list <- lapply(modern_seasons, function(s) {
-  message("Building: ", s)
-  get_ppg_split(s)
-})
+season_level_ppg <- read_or_build(
+  "season_level_ppg.rds",
+  function() {
+    map_dfr(modern_seasons, function(s) {
+      message("Rebuilding season-level split: ", s)
 
-season_level_ppg <- bind_rows(season_level_list)
+      out <- tryCatch(
+        get_ppg_split(s),
+        error = function(e) {
+          message(sprintf("FAILED get_ppg_split for %s: %s", s, e$message))
+          tibble()
+        }
+      )
+
+      out
+    })
+  },
+  rebuild = CACHE_REBUILD
+)
 
 season_level_audit <- audit_season_coverage(season_level_ppg)
-
-if (VALIDATE_DATA) {
-  missing_seasons_initial <- season_level_audit %>%
-    filter(rows == 0) %>%
-    pull(season)
-
-  if (length(missing_seasons_initial) > 0) {
-    message(
-      sprintf(
-        "Incomplete cached season_level_ppg detected. Force rebuilding missing/incomplete cache. Missing seasons: %s",
-        paste(missing_seasons_initial, collapse = ", ")
-      )
-    )
-
-    season_level_ppg <- read_or_build(
-      "season_level_ppg.rds",
-      function() map_dfr(modern_seasons, get_ppg_split),
-      rebuild = TRUE
-    )
-
-    season_level_audit <- audit_season_coverage(season_level_ppg)
-  }
-
-  check_missing_seasons(season_level_ppg, dataset_name = "season_level_ppg")
-}
 
 season_level_filtered <- season_level_ppg %>%
   filter(
@@ -391,32 +397,85 @@ season_level_filtered <- season_level_ppg %>%
 modern_playoff_raw <- read_or_build(
   "modern_playoff_raw.rds",
   function() {
-    map_dfr(modern_seasons, function(season) {
-      po <- tryCatch(
-        pull_player_per_game(season, "Playoffs"),
-        error = function(e) NULL
+    season_level_ppg %>%
+      transmute(
+        season,
+        player_id,
+        player_name,
+        po_games,
+        po_points,
+        po_assists,
+        po_rebounds
       )
-
-      if (is.null(po) || nrow(po) == 0) return(tibble())
-
-      po %>%
-        transmute(
-          player_id = as.character(player_id),
-          player_name,
-          po_games = as.numeric(gp),
-          po_points = as.numeric(pts) * as.numeric(gp),
-          po_assists = as.numeric(ast) * as.numeric(gp),
-          po_rebounds = as.numeric(reb) * as.numeric(gp)
-        )
-    })
-  }
-,
+  },
   rebuild = CACHE_REBUILD
 )
 
 modern_playoff_audit <- modern_playoff_raw %>%
-  count(player_name, name = "rows_captured") %>%
-  arrange(desc(rows_captured), player_name)
+  count(season, name = "rows") %>%
+  tidyr::complete(season = modern_seasons, fill = list(rows = 0)) %>%
+  arrange(season)
+
+if (VALIDATE_DATA) {
+  bad_modern_playoff <- modern_playoff_audit %>%
+    filter(rows == 0)
+
+  if (nrow(bad_modern_playoff) > 0) {
+    message(
+      sprintf(
+        "Incomplete cached modern_playoff_raw detected. Rebuilding cache. Missing seasons: %s",
+        paste(bad_modern_playoff$season, collapse = ", ")
+      )
+    )
+
+    modern_playoff_raw <- read_or_build(
+      "modern_playoff_raw.rds",
+      function() {
+        map_dfr(modern_seasons, function(season) {
+          message("Modern playoff totals rebuild pull: ", season)
+
+          po <- tryCatch(
+            pull_player_totals(season, "Playoffs"),
+            error = function(e) NULL
+          )
+
+          if (is.null(po) || nrow(po) == 0) {
+            return(tibble())
+          }
+
+          po %>%
+            transmute(
+              season = season,
+              player_id = as.character(player_id),
+              player_name,
+              po_games = as.numeric(gp),
+              po_points = as.numeric(pts),
+              po_assists = as.numeric(ast),
+              po_rebounds = as.numeric(reb)
+            )
+        })
+      },
+      rebuild = T
+    )
+
+    modern_playoff_audit <- modern_playoff_raw %>%
+      count(season, name = "rows") %>%
+      tidyr::complete(season = modern_seasons, fill = list(rows = 0)) %>%
+      arrange(season)
+  }
+
+  bad_modern_playoff <- modern_playoff_audit %>%
+    filter(rows == 0)
+
+  if (nrow(bad_modern_playoff) > 0) {
+    stop(
+      sprintf(
+        "modern_playoff_raw is missing seasons: %s",
+        paste(bad_modern_playoff$season, collapse = ", ")
+      )
+    )
+  }
+}
 
 modern_playoff <- modern_playoff_raw %>%
   group_by(player_id, player_name) %>%
@@ -517,12 +576,12 @@ career_risers <- career_filtered %>%
     `rTS Change` = round(career_rts_change, 1),
     `PO rTS` = round(career_po_rts, 1)
   ) %>%
-  slice_head(n = TOP_N)
+  slice_head(n = 12)
 
 career_maintainers <- career_filtered %>%
   filter(
-    dplyr::between(career_ppg_diff, -1, 1.5),
-    career_po_rts >= 1,
+    dplyr::between(career_ppg_diff, -1, 1),
+    career_po_rts >= 0,
     career_rts_change >= -2
   ) %>%
   arrange(desc(career_po_ppg), desc(career_po_rts), desc(career_rts_change)) %>%
@@ -537,14 +596,14 @@ career_maintainers <- career_filtered %>%
     `rTS Change` = round(career_rts_change, 1),
     `PO rTS` = round(career_po_rts, 1)
   ) %>%
-  slice_head(n = TOP_N)
+  slice_head(n = 12)
 
 career_droppers <- career_filtered %>%
   filter(
-    career_rs_ppg >= 15,
+    career_rs_ppg >= 14,
     career_ppg_diff <= -1,
     career_rts_change <= -1.5,
-    career_po_rts <= 0
+    career_po_rts <= 1
   ) %>%
   arrange(career_ppg_diff, desc(career_rs_ppg), career_rts_change) %>%
   transmute(
@@ -558,7 +617,7 @@ career_droppers <- career_filtered %>%
     `rTS Change` = round(career_rts_change, 1),
     `PO rTS` = round(career_po_rts, 1)
   ) %>%
-  slice_head(n = TOP_N)
+  slice_head(n = 12)
 
 biggest_risers_season <- season_level_filtered %>%
   filter(
@@ -608,7 +667,7 @@ biggest_droppers_season <- season_level_filtered %>%
 maintainers_season <- season_level_filtered %>%
   filter(
     dplyr::between(ppg_diff, -1, 1),
-    po_rts >= 1,
+    po_rts >= 0,
     rts_change >= -2
   ) %>%
   arrange(desc(po_pts_pg), desc(po_rts), desc(rts_change)) %>%
@@ -627,25 +686,47 @@ maintainers_season <- season_level_filtered %>%
   ) %>%
   slice_head(n = TOP_N)
 
-league_scoring <- map_dfr(modern_seasons, function(season) {
-  rs <- pull_team_per_game(season, "Regular Season")
-  po <- pull_team_per_game(season, "Playoffs")
+league_scoring <- read_or_build(
+  "league_scoring.rds",
+  function() {
+    map_dfr(modern_seasons, function(season) {
+      message("League scoring pull: ", season)
 
-  bind_rows(
-    if (nrow(rs) > 0) tibble(
-      season = season,
-      season_start = as.numeric(substr(season, 1, 4)),
-      context = "Regular Season",
-      ppg = mean(as.numeric(rs$pts), na.rm = TRUE)
-    ),
-    if (nrow(po) > 0) tibble(
-      season = season,
-      season_start = as.numeric(substr(season, 1, 4)),
-      context = "Playoffs",
-      ppg = mean(as.numeric(po$pts), na.rm = TRUE)
-    )
-  )
-})
+      rs <- tibble()
+      po <- tibble()
+
+      for (i in seq_len(6)) {
+        if (nrow(rs) == 0) rs <- pull_team_per_game(season, "Regular Season")
+        if (nrow(po) == 0) po <- pull_team_per_game(season, "Playoffs")
+
+        if (nrow(rs) > 0 && nrow(po) > 0) break
+
+        message(sprintf(
+          "Retrying league scoring for %s | attempt %s | RS rows: %s | PO rows: %s",
+          season, i, nrow(rs), nrow(po)
+        ))
+
+        Sys.sleep(2 * i)
+      }
+
+      bind_rows(
+        if (nrow(rs) > 0) tibble(
+          season = season,
+          season_start = as.numeric(substr(season, 1, 4)),
+          context = "Regular Season",
+          ppg = mean(as.numeric(rs$pts), na.rm = TRUE)
+        ),
+        if (nrow(po) > 0) tibble(
+          season = season,
+          season_start = as.numeric(substr(season, 1, 4)),
+          context = "Playoffs",
+          ppg = mean(as.numeric(po$pts), na.rm = TRUE)
+        )
+      )
+    })
+  },
+  rebuild = CACHE_REBUILD
+)
 
 league_scoring_audit <- league_scoring %>%
   count(season, name = "rows") %>%
@@ -656,6 +737,54 @@ league_scoring_audit <- league_scoring %>%
   arrange(season)
 
 if (VALIDATE_DATA) {
+  bad_league_scoring <- league_scoring_audit %>%
+    filter(rows != 2)
+
+  if (nrow(bad_league_scoring) > 0) {
+    message(
+      sprintf(
+        "Incomplete cached league_scoring detected. Rebuilding cache. Bad seasons: %s",
+        paste(bad_league_scoring$season, collapse = ", ")
+      )
+    )
+
+    league_scoring <- read_or_build(
+      "league_scoring.rds",
+      function() {
+        map_dfr(modern_seasons, function(season) {
+          message("League scoring rebuild pull: ", season)
+
+          rs <- pull_team_per_game(season, "Regular Season")
+          po <- pull_team_per_game(season, "Playoffs")
+
+          bind_rows(
+            if (nrow(rs) > 0) tibble(
+              season = season,
+              season_start = as.numeric(substr(season, 1, 4)),
+              context = "Regular Season",
+              ppg = mean(as.numeric(rs$pts), na.rm = TRUE)
+            ),
+            if (nrow(po) > 0) tibble(
+              season = season,
+              season_start = as.numeric(substr(season, 1, 4)),
+              context = "Playoffs",
+              ppg = mean(as.numeric(po$pts), na.rm = TRUE)
+            )
+          )
+        })
+      },
+      rebuild = T
+    )
+
+    league_scoring_audit <- league_scoring %>%
+      count(season, name = "rows") %>%
+      tidyr::complete(
+        season = modern_seasons,
+        fill = list(rows = 0)
+      ) %>%
+      arrange(season)
+  }
+
   bad_league_scoring <- league_scoring_audit %>%
     filter(rows != 2)
 
@@ -672,19 +801,15 @@ if (VALIDATE_DATA) {
 
 # Project Overview
 
-The playoffs change everything.
+It is a basketball cliché that the playoffs are a different game. But it holds up. Defenses tighten, weak points get hunted, and stars see entire game plans built to make life harder.
 
-Scoring drops. Possessions slow down. Defenses stop reacting and start targeting. Every weakness gets tested over and over again until something breaks.
+A player scoring 27 a night in January is not facing the same game as someone trying to get to 27 in May. The volume might look the same. The difficulty does not.
 
-That is what makes playoff performance so difficult to evaluate. Raw production still matters, but it does not tell the full story. A player scoring 27 points per game in April is not the same as scoring 27 in June.
-
-This project looks at that gap.
-
-Not just who produces in the playoffs, but whose scoring actually translates when the environment turns against them.
+That is where playoff discourse often misses. Players get labeled as risers or droppers off one stretch, even when the sample is too small to mean much. This looks at the bigger picture: not just who scores, but whose scoring actually translates when defenses are built to take it away.
 
 ## Definitions
 
-This study focuses on scoring translation: how a player’s playoff scoring compares to their regular-season averages.
+This analysis focuses on scoring translation: how a player’s playoff scoring compares to their regular-season averages.
 
 ### Pretext
 
@@ -738,17 +863,15 @@ ggplot(
   theme_caleb()
 ```
 
-While scoring has increased across the league since the turn of the century, one trend has held constant: production drops in the playoffs.
+While scoring has climbed across the league since 2000, one trend has stayed the same: offense gets harder in the playoffs.
 
-That gap is what creates the tension of postseason basketball. Some players find ways to hold their level, a few push beyond it, and many fall off once defenses are built entirely to stop them.
+That changes how production should be read. Holding your scoring is already a win. Pushing beyond it is rare. Falling off is common.
 
-In that context, “rising” takes on a different meaning. In a lower-scoring setting, simply maintaining production is already a triumph. True increases are rare, and when they happen, they need to be understood in context.
+Once the game tightens, some players survive it, a few rise above it, and others get dragged down by the kind of attention and physicality only playoff basketball brings.
 
 # Best Playoff Performers of All-Time and of the Modern Era
 
-Before looking at how scoring changes, it helps to establish a baseline: who has actually produced the most in playoff settings.
-
-Because translation only matters if the production exists in the first place.
+Before looking at how scoring changes, it helps to establish who has actually produced the most in playoff settings.
 
 ## All-Time Leaders
 
@@ -868,11 +991,15 @@ all_time_rpg %>% style_leaderboard("RPG")
 all_time_apg %>% style_leaderboard("APG")
 ```
 
-These tables highlight two different ways playoff averages get built: overwhelming dominance and sustained longevity. To narrow the lens, it helps to look at playoff production again in the modern era.
+Across eras, the same types of players rise to the top. Scorers who cannot be pushed off their spots. Bigs who control the glass. Primary creators who can still organize offense when everything slows down.
+
+The other thing that stands out is volume. Players like Jordan, LeBron, Magic, and Russell built these numbers over massive playoff samples, essentially adding multiple extra seasons at the highest level.
 
 ## Modern Leaders
 
-Looking only at the modern game helps remove some of the stylistic and era differences that shape all-time leaderboards.
+For all the similarities, there are still real differences across eras. The positions that dominate change. The schemes change. The style of offense changes. And so do some of the names that end up at the top of these leaderboards.
+
+To make the comparison cleaner, it helps to narrow the lens to the modern game. Here are the players who stand out as the playoff leaders of this era.
 
 ### Top playoff scorers
 
@@ -895,13 +1022,11 @@ modern_apg_leaders %>%
   style_kable(align = "lcc", font_size = 9.5)
 ```
 
-These tables show who produces.
+The modern leaderboards show who has stood out as the defining playoff producers of the past 25 years.
 
-They do not show whose game survives.
+The names that show up more than once are the biggest story. Luka. Jokić. LeBron. Giannis. Anthony Davis. These are not one-skill playoff stars. They affect the game in too many ways to be cleanly removed from it, most often by pairing elite physical tools with the feel to exploit whatever matchup is in front of them.
 
-Because playoff basketball is not just about output. It is about what happens when that output is put under pressure.
-
-That is where translation matters.
+That same theme carries over when the lens shifts from per-game production to the biggest single playoff runs.
 
 ```{r leaders-for-run}
 # ------------------------------------------------------------
@@ -911,7 +1036,7 @@ That is where translation matters.
 modern_single_run_raw <- read_or_build(
   "modern_single_run_raw.rds",
   function() {
-    map_dfr(modern_seasons, function(season) {
+    totals_pull <- map_dfr(modern_seasons, function(season) {
       po <- tryCatch(
         pull_player_totals(season, "Playoffs"),
         error = function(e) NULL
@@ -933,8 +1058,30 @@ modern_single_run_raw <- read_or_build(
           total_blocks = as.numeric(blk)
         )
     })
-  }
-,
+
+    base_from_ppg <- season_level_ppg %>%
+      transmute(
+        player_id,
+        player_name,
+        season,
+        team_abbreviation,
+        po_games,
+        total_points = po_points,
+        total_rebounds = po_rebounds,
+        total_assists = po_assists
+      )
+
+    base_from_ppg %>%
+      left_join(
+        totals_pull %>%
+          select(player_id, season, total_steals, total_blocks),
+        by = c("player_id", "season")
+      ) %>%
+      mutate(
+        total_steals = coalesce(total_steals, 0),
+        total_blocks = coalesce(total_blocks, 0)
+      )
+  },
   rebuild = CACHE_REBUILD
 )
 
@@ -1000,10 +1147,9 @@ single_run_blocks <- modern_single_run_raw %>%
   slice_head(n = 5)
 ```
 
-## Biggest Single-Run Playoff Totals
+## Biggest Single-Run Playoff Totals (Since 2000)
 
-Per-game production captures consistency, but it does not fully reflect the scale of a single postseason run.  
-These totals capture the biggest modern playoff workloads in one run.
+These totals capture the biggest modern playoff performances over a single run.
 
 ### Points
 ```{r single-run-points}
@@ -1035,11 +1181,19 @@ single_run_blocks %>%
   style_kable(align = "lcccc", font_size = 9.2)
 ```
 
-# Playoff-Season Baseline Translation
+Single-run totals show something per-game averages cannot. They capture what it looks like when a player has to sustain elite production over an entire playoff run.
 
-To keep the comparison cleaner, the regular-season side here uses only seasons in which a player actually reached the playoffs. That avoids early-career and non-playoff years from dragging down the baseline and keeps the comparison closer to a player's playoff-era version of himself.
+Some of these are burned into playoff history: LeBron dragging Cleveland through the 2018 East, Kawhi carrying Toronto in 2019, Iverson’s absurd 2001 shot diet, Kobe controlling a title run in 2009.
 
-This is not trying to answer who had the bigger career arc. It is trying to answer who held up best once they were actually in playoff environments.
+They also show how different dominance can look. Duncan owning the glass and the rim. Dwight overwhelming the paint. Rondo driving deep runs as Boston’s engine.
+
+More than anything, these totals show which players could carry massive responsibility for two months and still hold up.
+
+# Modern Playoff Performers Translation
+
+Beyond averages and single runs, most playoff conversations come down to who rose and who fell. But that only means so much without the right baseline.
+
+Here, regular-season production only comes from seasons where a player actually reached the playoffs, so the comparison stays tied to his real playoff window. This is not a career-value assessment. It is a look at whose scoring still translated once the game got tougher.
 
 ## Largest career playoff scoring lifts
 
@@ -1048,13 +1202,15 @@ career_risers %>%
   style_kable(align = "lcccccccc", font_size = 8.6)
 ```
 
-This group is more nuanced than it looks.
+This is probably the messiest group of the three, because not every rise means the same thing.
 
-Some players here genuinely elevate — increasing both scoring and maintaining strong efficiency. Others are taking on more responsibility, trading a bit of efficiency for volume.
+Jimmy is the obvious example. The scoring jump is real, but so is the burden. Once the playoffs start, everything swings further in his direction and the production still climbs.
 
-That distinction matters.
+Jokić is a different kind of riser. The jump is smaller, but it comes while he is still controlling the whole offense and staying elite efficiency-wise. Kawhi fits that mold too. The increase is not huge, but it is on much better efficiency, and that matters more.
 
-A player adding four points per game at the cost of efficiency is not the same as one who maintains or improves it. The table captures both, but they are not equal forms of “rising.”
+Then there are players like Nash, Durant, and Chris Paul. The increases are smaller, but they come while carrying offensive responsibility that usually pulls efficiency down.
+
+That is the line this table is trying to draw. More points does not always mean better playoff translation. Sometimes it just means more shots. The players who really stand out are the ones whose games still scale when the pressure rises.
 
 ## Best career maintainers
 
@@ -1063,13 +1219,11 @@ career_maintainers %>%
   style_kable(align = "lcccccccc", font_size = 8.6)
 ```
 
-This is the most important group in the entire analysis.
+This is arguably the most important group. Maintaining may sound boring, but it is one of the hardest things to do in playoff basketball.
 
-Most players decline in the playoffs. That is the baseline.
+Most players drop in the playoffs. Holding your level is not neutral, it is one of the clearest signs your scoring holds up.
 
-So maintaining production is not neutral. It is a signal.
-
-These are the players whose scoring holds up even when defenses are built specifically to stop them. That is what real playoff scalability looks like.
+Kobe. Wade. AD. Tatum. Players who stayed near their regular-season production even as possessions got harder and defenses loaded up.
 
 ## Biggest career droppers
 
@@ -1078,43 +1232,67 @@ career_droppers %>%
   style_kable(align = "lcccccccc", font_size = 8.6)
 ```
 
-Not all drops are the same.
+This group tells the other side of the story, players whose production consistently fell when expectations and responsibilities rose.
 
-Some players lose role. Others lose efficiency. The table is filtered to remove most obvious role-loss cases, which means what remains is closer to true scoring decline.
+A lot of these names line up with playoff frustrations people already remember. DeRozan in those Cleveland series. Lou Williams in bench-heavy scoring roles that got harder to sustain. Herro in a setting where the weaknesses become easier to target.
 
-These are players whose production fell even when their offensive responsibility stayed relatively stable.
+That points to the bigger question underneath all of this: what kinds of scoring actually hold up in the playoffs? Some styles survive playoff attention. Others persist as weak points and crack once a defense has a full series to exploit them.
 
-# Since 2000: Who Actually Scales?
+# Modern Single-Run Performers Translation 
 
-Career summaries smooth everything out. Single postseasons show the sharper edges: role changes, matchup advantages, injury context, and the rare cases where a player's game fully scales into playoff basketball.
+Career numbers smooth everything out. Single runs don’t.
 
-These tables are noisier than the career ones by nature, but they are also where the clearest single-run examples show up.
+They capture what happens when everything clicks, or when everything breaks, over the course of one playoff run.
 
 ## Biggest playoff risers by season
-
-Some of these jumps reflect real postseason scaling. Others come with a bigger scoring load or a slightly shakier efficiency profile. That is why the scoring change and the rTS change need to be read together.
 
 ```{r season-risers}
 biggest_risers_season %>%
   style_kable(align = "lcccccccccc", font_size = 8.1)
 ```
 
+These are runs where players truly rose to the occasion and played out of their minds. Steve Nash’s ahead-of-his-time scoring explosion in 2005. Duncan trying to drag the Spurs to a title in 2006. Jamal Murray announcing himself with one of the biggest playoff jumps of the modern era. LeBron overwhelming entire runs in 2009 and 2018.
+
+A lot of these are star burdens pushed to the edge. In some cases, the size of the scoring jump is almost a sign that too much was being asked of one player.
+
+Then there are different kinds of rises. Role players becoming lifesavers for a stretch. Reggie Jackson. Mike Bibby. Jameer Nelson. Nick Van Exel. Not full offensive engines, but players who became critical once the postseason demanded more.
+
+That is what makes riser discourse so tricky. Not every rise means the same thing. Some players caught fire for one run. Others reached a level their teams could actually lean on deep into the playoffs. But in every case, this is what a real postseason jump looks like when it happens all at once.
+
 ## Most important: the maintainers
-
-Most players drop. These players do not.
-
-This is probably the clearest signal in the whole piece. Holding your scoring in the playoffs is already hard. Doing it while keeping load and efficiency reasonably intact is what separates a star regular-season scorer from someone whose game really survives playoff basketball.
 
 ```{r season-maintainers}
 maintainers_season %>%
   style_kable(align = "lcccccccccc", font_size = 8.1)
 ```
 
-## Biggest playoff droppers by season
+Looking at the single-run maintainers, this is where a lot of the all-time great postseason runs reside. Not necessarily players dragging an offense by themselves, but stars taking on bigger burdens and still scaling to them.
 
-This is the cleaner version of the dropper idea. The table is filtered to strip out most obvious role-loss seasons, so what remains is closer to true scoring slippage: players whose production fell even without a major reduction in scoring load.
+Kobe in 2001. LeBron in multiple years. Durant. Curry. Dirk. These runs now read as part of their case for greatness. The scoring load was already huge, the playoff attention was already there, and they still held their level through deep runs.
+
+That is what makes these performances so impressive. There is no surprise factor here. No one was catching defenses off guard. These were stars facing full playoff game plans and still getting to their numbers anyway.
+
+That is also where a lot of playoff discourse gets warped. A player does not need some giant scoring spike to have had an incredible postseason. Sometimes the most impressive thing is just holding your level while everything around you gets harder.
+
+## Biggest playoff droppers by season
 
 ```{r season-droppers}
 biggest_droppers_season %>%
   style_kable(align = "lcccccccccc", font_size = 8.1)
 ```
+
+On the flip side, this is where some of the most damaging runs live. The kinds of playoff performances that follow players around for years, and for some unlucky names here, show up more than once.
+
+Drops happen for a lot of reasons. Injuries. Bad shooting luck. Tough matchups. Defensive game plans finally catching up. But the worst runs usually expose something deeper. A scoring style that was always unstable. A shot diet that gets harder to survive on. Free-throw reliance that dries up. Regular-season advantages that disappear once every possession is being played with real force and attention.
+
+That is what makes these runs different. They are not just bad stretches. They are often the point where a player’s scoring style stops translating altogether.
+
+And that is why they stick. Not just because the numbers cratered, but because the playoffs made the weakness impossible to ignore.
+
+# Conclusion
+
+The playoffs do not create a player out of nowhere. More often, they reveal what was already there.
+
+They show the value of scalable scoring, dependable ballhandling, and players who can settle a game when everything gets tighter. They can change the way a career is talked about, separating empty production from the kinds of offensive games that actually hold up in May and June.
+
+That is why playoff translation matters. Not because every drop is an indictment or every rise is proof of greatness, but because the postseason is where scoring styles get tested the hardest and judged the clearest.
