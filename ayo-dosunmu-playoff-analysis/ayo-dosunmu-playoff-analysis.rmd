@@ -6,6 +6,7 @@ output:
   pdf_document:
     latex_engine: xelatex
     number_sections: false
+    fig_crop: false
 geometry: margin=0.78in
 header-includes:
   - \usepackage{float}
@@ -222,17 +223,13 @@ shot_story <- shot_summary %>%
 
 pnr_tbl <- pnr_leaders %>%
   mutate(
-    player = player,
     poss_g = as.numeric(poss_g),
     ppp = as.numeric(ppp),
     Rank = row_number()
   ) %>%
   transmute(
     Rank,
-    Player = if_else(
-  player == "Ayo Dosunmu",
-  cell_spec(player, bold = TRUE, format = "latex"),
-  player), 
+    Player = player,
     `Poss/G` = fmt_num(poss_g, 1),
     PPP = fmt_num(ppp, 2)
   )
@@ -240,18 +237,14 @@ pnr_tbl <- pnr_leaders %>%
 three_tbl <- three_leaders %>%
   mutate(
     attempts = as.numeric(attempts),
-    x3fga_percent = as.numeric(x3fg_percent),
+    three_pct = as.numeric(x3fg_percent),
     Rank = row_number()
   ) %>%
   transmute(
     Rank,
-    Player = if_else(
-      player == "Ayo Dosunmu",
-      cell_spec(player, bold = TRUE, color = "white", background = WOLVES_NAVY, format = "latex"),
-      player
-    ),
+    Player = player,
     `3PA/G` = fmt_num(attempts, 1),
-    `3P\\%` = paste0(fmt_num(x3fg_percent, 1), "\\%")
+    `3P%` = paste0(fmt_num(three_pct, 1), "%")
   )
 
 regular <- ayo_recent_form %>% filter(Split == "Regular Season")
@@ -270,17 +263,15 @@ Ayo Dosunmu has been one of the more interesting bench pieces in the NBA over th
 
 At the deadline, Chicago moved on from its hometown guard. For Dosunmu, the move to Minnesota was an opening. For the Wolves, it was a bet on a guard who could fit around stars while still handling real on-ball responsibility in smaller doses.
 
-That bet has more than paid off thus far. 
+That bet has more than paid off. 
 
 Dosunmu took an already efficient offensive profile and added another layer Minnesota’s offense needed: more rim pressure, more downhill creation, and enough ballhandling to take some of the burden off Julius Randle and Anthony Edwards.
 
-Now, with the Wolves up 3-2 despite losing both Edwards and Donte DiVincenzo, that skill set has become central to the series. Denver has made a habit of surviving deficits, and Minnesota cannot afford to let this turn into another one of those comebacks. Through five playoff games, Dosunmu is up to **`r post$PTS` points per game** on **`r fmt_pct(post$TS_PCT)` true shooting**, with a free throw rate that has jumped from **`r fmt_pct(regular$FTR)` to `r fmt_pct(post$FTR)`**.
-
-That does not mean he has to replace Edwards outright. But if Minnesota is going to close this out without letting Denver back into the series, Dosunmu has to keep giving them enough creation to avoid offensive droughts.
+Now, with the Wolves up 3-2 despite losing both Edwards and Donte DiVincenzo, that skill set has become central to the series. Denver has made a habit of surviving deficits, and Minnesota cannot afford to let this turn into another one of those comebacks. If Minnesota is going to close this out, Dosunmu has to keep giving them enough creation to avoid offensive droughts.
 
 # Deadline Context
 
-The trade was not the biggest move of the deadline, but it has paid off as one of the best so far. Dillingham still has plenty of questions to answer, and Miller has shown flashes of being a real rotation wing. Still, Minnesota found a guard who gave them exactly what they needed: efficient offense that could bend around Edwards or scale into more on-ball responsibility when needed.
+The trade was not the biggest move of the deadline, but it has paid off as one of the best so far. Dillingham still has plenty of questions to answer, and Miller has shown flashes of being a real rotation wing. Still, Minnesota found a guard who gave them exactly what they needed.
 
 Next to Edwards, Dosunmu can defend, space, cut, run, and attack second-side gaps. Without Edwards, he has enough burst and feel to take on more pick-and-roll responsibility without turning every possession into isolation basketball. That flexibility is what has led to Dosunmu excelling. 
 
@@ -304,7 +295,7 @@ The post-deadline box score did not scream transformation, but it showed why the
 
 That kind of margin improvement is crucial for a team already built around stars, and his role has only grown in the playoffs. 
 
-# The Role
+# Ayo's Playoff Arrival
 
 ```{r recent-form-table, results='asis'}
 recent_form_tbl <- ayo_recent_form %>%
@@ -398,39 +389,58 @@ The more important shift is how often he is getting downhill. Dosunmu has used h
 
 # Shot Profile
 
-```{r shot-zone-profile, fig.height=4.7, fig.width=7.3}
-ggplot(shot_story, aes(y = fct_reorder(zone, FGA), x = FGA)) +
-  geom_col(fill = WOLVES_NAVY, width = 0.62) +
-  geom_text(aes(label = paste0(fga_label, " (", fg_label, ")")), hjust = -0.08, size = 2.5, color = TEXT_DARK) +
-  scale_x_continuous(expand = expansion(mult = c(0, 0.25))) +
-  labs(
-    title = "A clean shot diet defines Ayo’s efficiency",
-    x = "Field goal attempts",
-    y = NULL,
-    caption = "Data: NBA.com | Viz: @Rambzee_"
-  ) +
-  theme_ayo() +
-  theme(panel.grid.major.y = element_blank())
+```{r ayo-shot-profile, results='asis'}
+league_avg <- tribble(
+  ~Zone, ~LG_PCT,
+  "Restricted Area", 0.669,
+  "Paint (Non-RA)", 0.445,
+  "Midrange", 0.433,
+  "3PT", 0.362
+)
+
+ayo_shot_profile <- shot_summary %>%
+  mutate(
+    Zone = case_when(
+      zone == "Restricted Area" ~ "Restricted Area",
+      zone == "In The Paint (Non-RA)" ~ "Paint (Non-RA)",
+      zone == "Midrange" ~ "Midrange",
+      zone %in% c("Corner Threes", "ATB Threes") ~ "3PT",
+      TRUE ~ as.character(zone)
+    )
+  ) %>%
+  group_by(Zone) %>%
+  summarise(
+    FGM = sum(FGM, na.rm = TRUE),
+    FGA = sum(FGA, na.rm = TRUE),
+    FG_PCT = FGM / FGA,
+    .groups = "drop"
+  ) %>%
+  left_join(league_avg, by = "Zone") %>%
+  mutate(
+    Zone = factor(
+      Zone,
+      levels = c("Restricted Area", "Paint (Non-RA)", "Midrange", "3PT")
+    ),
+    Volume = paste0(FGA, " att"),
+    `FG% (League Avg)` = paste0(fmt_pct(FG_PCT), " (", fmt_pct(LG_PCT), ")"),
+    `rFG%` = paste0(fmt_plus(100 * (FG_PCT - LG_PCT)), "%")
+  ) %>%
+  arrange(Zone) %>%
+  select(Zone, Volume, `FG% (League Avg)`, `rFG%`)
+
+style_kable(
+  ayo_shot_profile,
+  "Ayo Dosunmu shot profile by zone",
+  align = "lccc",
+  font_size = 9
+) %>%
+  row_spec(1, bold = TRUE) %>%
+  row_spec(4, bold = TRUE)
 ```
 
-The shot diet is exactly what Minnesota needed around Edwards, Gobert, and Randle. Dosunmu can run, attack space, and stretch the floor without turning into a midrange-heavy guard. The profile is balanced in a useful way: strong three-point shooting, enough touch in the paint, and real downhill pressure built on his quickness.
+The shot diet fits what Minnesota needed around Edwards, Gobert, and Randle. Dosunmu can run, attack space, and stretch the floor without drifting into a midrange-heavy diet
 
-That is why the playoff burst does not feel completely out of nowhere. Some shooting regression is likely, especially from three, but the underlying indicators and baseline efficiency are all encouraging. He is already comfortable living at the rim and from three, and the postseason has added more free throw pressure on top of that. When defenders go under, he can punish them. When they load up or chase, he has enough burst to get downhill.
-
-```{r shot-zone-table, results='asis'}
-shot_table <- shot_summary %>%
-  arrange(desc(FGA)) %>%
-  transmute(
-    Zone = as.character(zone),
-    FGM,
-    FGA,
-    `Share of FGA` = fmt_pct(Share),
-    `FG%` = fmt_pct(FG_PCT)
-  )
-
-style_kable(shot_table, "Ayo Dosunmu shot-zone profile", align = "lcccc") %>%
-  column_spec(1, bold = TRUE)
-```
+That is why the playoff burst does not feel completely random. Some shooting regression is likely, especially from three, but the foundation is strong with consistent rim pressure, enough touch in the paint, strong spot-up value, and added free throw pressure in the postseason. When defenders go under, he can punish them. When they chase, he has enough burst to get downhill.
 
 # Playtype Translation
 
@@ -530,40 +540,97 @@ style_kable(
 The improvement is not just internal. Relative to the rest of the playoff field, Dosunmu has held up well as both a shooter and a pick-and-roll ballhandler.
 
 ```{r pnr-table, results='asis'}
-style_kable(pnr_tbl, "Top playoff pick-and-roll scorers by PPP (Min 4 GP, 4 Poss/G)", align = "clcc", escape = FALSE) %>%
+ayo_row <- which(pnr_tbl$Player == "Ayo Dosunmu")
+
+style_kable(
+  pnr_tbl,
+  "Top playoff pick-and-roll scorers by PPP (Min 4 GP, 4 Poss/G)",
+  align = "clcc",
+  escape = TRUE
+) %>%
   column_spec(1, bold = TRUE) %>%
-  column_spec(2, bold = TRUE)
+  row_spec(ayo_row, bold = TRUE, color = "white", background = WOLVES_NAVY)
 ```
 
 ```{r three-table, results='asis'}
-style_kable(three_tbl, "Top playoff three-point shooters by percentage (Min 4 GP, 3+ 3PA/G)", align = "clcc", escape = FALSE) %>%
+ayo_row <- which(three_tbl$Player == "Ayo Dosunmu")
+
+style_kable(
+  three_tbl,
+  "Top playoff three-point shooters by percentage (Min 4 GP, 3+ 3PA/G)",
+  align = "clcc",
+  escape = TRUE
+) %>%
   column_spec(1, bold = TRUE) %>%
-  column_spec(2, bold = TRUE)
+  row_spec(ayo_row, bold = TRUE, color = "white", background = WOLVES_NAVY)
 ```
 
 
 
 # The Game 4 Swing
 
-Game 4 was the proof of concept. Edwards and DiVincenzo went down. The Wolves were staring at the kind of game that usually turns into offensive survival basketball, then Ayo took over. His heroic 43 point game stamped his name as one of the best bench guards in basketball, and his performance was up there with some other bench greats.
+```{r game-four-context-data, include=FALSE}
+bench_40_tbl <- tribble(
+  ~Rank, ~Player, ~Points, ~`TS%`,
+  1, "Fred Brown", 45, "59.1%",
+  2, "Ayo Dosunmu", 43, "96.5%",
+  3, "Steph Curry", 40, "60.0%",
+  4, "Nick Van Exel", 40, "68.8%"
+)
 
+efficient_40_tbl <- tribble(
+  ~Rank, ~Player, ~Points, ~`TS%`, ~Playoffs,
+  1, "Terry Porter", 41, "101.7%", "1992",
+  2, "Damian Lillard", 55, "96.8%", "2021",
+  3, "Ayo Dosunmu", 43, "96.5%", "2026",
+  4, "Dirk Nowitzki", 48, "93.9%", "2011",
+  5, "Devin Booker", 47, "90.8%", "2023",
+  6, "Anthony Davis", 43, "90.6%", "2020",
+  7, "Devin Booker", 47, "90.5%", "2021",
+  8, "Shai Gilgeous-Alexander", 42, "90.2%", "2026",
+  9, "Jason Richardson", 42, "89.7%", "2010",
+  10, "Jamal Murray", 50, "89.4%", "2020"
+)
+```
 
-Beyond just the bench role, his 40-point explosion also sits among the most efficient we've seen in Playoff History.
+```{r game-four-bench-40-table, results='asis'}
+ayo_row <- which(bench_40_tbl$Player == "Ayo Dosunmu")
 
-# What This Means for Minnesota
+style_kable(
+  bench_40_tbl,
+  "40+ point playoff games off the bench in NBA history",
+  align = "clcc",
+  escape = TRUE
+) %>%
+  column_spec(1, bold = TRUE) %>%
+  row_spec(ayo_row, bold = TRUE, color = "white", background = WOLVES_NAVY)
+```
 
-The Wolves are not better without Edwards. That part does not need much explanation. But with him out, more of the offensive burden falls on Julius Randle and Ayo Dosunmu.
+Game 4 was the proof of concept. Edwards and DiVincenzo went down. The Wolves were staring down a team that is more talented, more offensively explosive, powered by one of the best offensive duos ever, and they cut off the faucet defensively while Ayo took over. His heroic 43 point game stamped his name as one of the best bench guards in basketball, and his performance was up there with some other bench greats.
 
-Minnesota’s game plan has been strong, and the execution has mostly matched it. Still, Denver is not the kind of team you can assume is finished. If the Wolves are going to close out a former championship core, they need steady contributions across the roster, and Dosunmu’s efficiency has become one of the cleaner paths to surviving those stretches.
+```{r game-four-efficient-40-table, results='asis'}
+ayo_row <- which(efficient_40_tbl$Player == "Ayo Dosunmu")
 
-That matters beyond this series too. If Minnesota advances before Edwards returns, Ayo is going to keep carrying a larger creation burden than expected. He does not have to save the offense by himself, but he does have to keep giving the Wolves enough downhill pressure, shooting, and decision-making to hold things together.
+style_kable(
+  efficient_40_tbl,
+  "Most efficient 40+ point playoff games in NBA history",
+  align = "clccc",
+  escape = TRUE
+) %>%
+  column_spec(1, bold = TRUE) %>%
+  row_spec(ayo_row, bold = TRUE, color = "white", background = WOLVES_NAVY)
+```
+
+Beyond just the bench role, his 40-point explosion also sits among the most efficient we've seen in NBA Playoff History. 
 
 # Closing
 
-This is not a clean star leap. It is not supposed to be.
+Losing both Edwards and DiVincenzo is a massive hit to Minnesota’s deep playoff hopes. Dosunmu was not brought in to carry this kind of offensive burden, but the injuries have pushed him into a role larger than the Wolves likely expected when they traded for him.
 
-It is a playoff stress test for a guard who was acquired to make Minnesota harder to break. So far, Dosunmu has passed the most important parts of it. He has scaled his scoring, held his efficiency, taken on more creation, and kept his mistakes under control.
+So far, he has given them a real answer. Minnesota’s game plan has been strong, and the execution has mostly matched it, but Denver is not the kind of team you can treat as finished. If the Wolves are going to close out a former championship core, they need steady contributions across the roster. Dosunmu’s efficiency has become one of the more reliable ways they have managed the non-Edwards stretches.
 
-The shooting will probably cool. The sample will get harsher. Denver will keep adjusting. But the broader takeaway should last beyond one series.
+That matters beyond this series too. If Minnesota advances before Edwards returns, Dosunmu will likely keep carrying more creation responsibility than expected. He does not have to save the offense by himself, but he does have to keep giving the Wolves enough downhill pressure, shooting, and decision-making to give their offense a chance.
 
-Ayo Dosunmu is not just giving Minnesota a hot week. He is giving the Wolves a version of guard play they badly needed: quick, efficient, defensively competitive, and flexible enough to survive playoff chaos.
+For a bench guard, this is already one of the better offensive playoff series on record: substantial scoring volume, absurd efficiency, and a 43-point game that sits near the top of multiple historical lists. Dosunmu cannot be held to the ridiculous standard he has set so far, but this stretch has shown why Minnesota targeted him in the first place.
+
+He can fit around stars, but he is not useless without them. For a Wolves team trying to survive long enough for its franchise player to return, that flexibility has become one of the biggest reasons their season is still alive.
