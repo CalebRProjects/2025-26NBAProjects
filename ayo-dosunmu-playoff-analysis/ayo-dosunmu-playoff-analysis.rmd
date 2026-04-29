@@ -1,0 +1,569 @@
+---
+title: "Ayo Dosunmu and the Value of Playoff Stability"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: false
+geometry: margin=0.78in
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+  - \usepackage{booktabs}
+  - \usepackage{array}
+  - \usepackage{caption}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  dpi = 300,
+  out.width = "95%"
+)
+
+library(tidyverse)
+library(readxl)
+library(readr)
+library(janitor)
+library(scales)
+library(kableExtra)
+library(showtext)
+library(sysfonts)
+library(forcats)
+
+try(font_add_google("Inter", "inter"), silent = TRUE)
+showtext_auto()
+options(scipen = 999)
+
+BG <- "#f6f4ef"
+TEXT_DARK <- "#141414"
+TEXT_LIGHT <- "#5f5f5f"
+GRID <- "#dedad3"
+WOLVES_NAVY <- "#0C2340"
+WOLVES_GREEN <- "#78BE20"
+WOLVES_BLUE <- "#236192"
+WOLVES_GRAY <- "#9EA2A2"
+RISE <- "#15803d"
+DROP <- "#b91c1c"
+CAPTION_LINE <- "Data: NBA.com & Databallr | Viz: @Rambzee_"
+
+theme_ayo <- function(base_size = 11) {
+  theme_minimal(base_family = "inter", base_size = base_size) +
+    theme(
+      plot.background = element_rect(fill = BG, color = NA),
+      panel.background = element_rect(fill = BG, color = NA),
+      panel.grid.major = element_line(color = GRID, linewidth = 0.3),
+      panel.grid.minor = element_blank(),
+      text = element_text(color = TEXT_DARK),
+      plot.title = element_text(size = 19, face = "bold", hjust = 0.5, margin = margin(b = 4)),
+      plot.subtitle = element_text(size = 10.5, color = TEXT_LIGHT, hjust = 0.5, margin = margin(b = 8)),
+      axis.title = element_text(size = 10.5, face = "bold"),
+      axis.text = element_text(size = 9.4, color = "#333333"),
+      axis.ticks = element_blank(),
+      legend.position = "top",
+      legend.title = element_blank(),
+      legend.text = element_text(size = 9.2),
+      plot.caption = element_text(size = 7.8, color = "#6e6e6e", hjust = 1, margin = margin(t = 7)),
+      plot.margin = margin(10, 12, 12, 12)
+    )
+}
+
+style_kable <- function(
+  df,
+  caption = NULL,
+  align = NULL,
+  font_size = 8.8,
+  full_width = FALSE,
+  escape = TRUE
+) {
+  if (is.null(align)) align <- strrep("c", ncol(df))
+
+  kbl(
+    df,
+    booktabs = TRUE,
+    format = "latex",
+    caption = caption,
+    align = align,
+    linesep = "",
+    escape = escape
+  ) %>%
+    kable_styling(
+      latex_options = c("HOLD_position", "striped"),
+      full_width = full_width,
+      font_size = font_size,
+      stripe_color = "#fbfaf7"
+    )
+}
+
+fmt_num <- function(x, digits = 1) sprintf(paste0("%.", digits, "f"), x)
+fmt_plus <- function(x, digits = 1) sprintf(paste0("%+.", digits, "f"), x)
+fmt_pct <- function(x, accuracy = 0.1) scales::percent(x, accuracy = accuracy)
+scale_pct <- function(x) if_else(abs(x) > 1, x / 100, x)
+
+file_required <- function(path) {
+  if (!file.exists(path)) {
+    stop(paste0("Missing file: ", path, ". Put this Excel file in the same folder as the RMD."))
+  }
+  path
+}
+```
+
+```{r data-inputs, include=FALSE}
+ayo_team_splits <- tribble(
+  ~Split, ~Team, ~GP, ~GS, ~MIN, ~FGM, ~FGA, ~FG_PCT, ~FG3M, ~FG3A, ~FG3_PCT, ~FTM, ~FTA, ~FT_PCT,
+  ~OREB, ~DREB, ~REB, ~AST, ~BLK, ~STL, ~PF, ~TOV, ~PTS,
+  "Pre-Trade",  "Chicago",   24,  9, 28.9, 5.7, 10.9, 0.521, 1.5, 3.6, 0.414, 1.5, 1.7, 0.925,
+  0.6, 3.6, 4.2, 3.5, 0.3, 1.0, 2.2, 1.5, 14.4,
+  "Post-Trade", "Minnesota", 45, 10, 26.4, 5.6, 10.8, 0.514, 1.9, 4.3, 0.451, 2.0, 2.3, 0.857,
+  0.7, 2.3, 3.0, 3.6, 0.3, 0.8, 1.7, 1.4, 15.0
+)
+
+ayo_recent_form <- tribble(
+  ~Split, ~GP, ~PTS, ~AST, ~REB, ~TS_PCT, ~FG2_PCT, ~FG3_PCT, ~FT_PCT, ~FTA, ~TOV, ~STL, ~BLK, ~MPG, ~PLUS_MINUS, ~FG2A, ~FG3A, ~FTR,
+  "Regular Season", 69, 14.8, 3.6, 3.4, 0.630, 0.563, 0.439, 0.876, 2.1, 1.4, 0.8, 0.3, 27.1, -0.9, 6.8, 4.1, 0.194,
+  "Postseason",     5, 21.8, 4.0, 2.8, 0.749, 0.643, 0.545, 0.950, 4.0, 1.4, 0.4, 0.2, 32.4, -1.4, 8.4, 4.4, 0.313
+)
+
+ayo_playtypes_po <- read_excel(file_required("Ayo Dosunmu Offensive Playtypes (2025-26 Playoffs).xlsx")) %>% clean_names()
+ayo_playtypes_rs <- read_excel(file_required("Ayo Dosunmu Offensive Playtypes (2025-26).xlsx")) %>% clean_names()
+ayo_shots <- read_excel(file_required("Ayo Dosunmu Shot Zones (2025-26).xlsx")) %>% clean_names()
+pnr_leaders <- read_excel(file_required("Playoff Leaders (PnR PPP).xlsx")) %>% clean_names()
+three_leaders <- read_excel(file_required("Playoff Leaders (3FG%).xlsx")) %>% clean_names()
+
+clean_playtypes <- function(df) {
+  df %>%
+    clean_names() %>%
+    mutate(
+      across(
+        any_of(c(
+          "possessions", "percent_time", "points", "ppp",
+          "fgm", "fga", "fg_percent", "e_fg_percent",
+          "to_percent", "x2fgm", "x2fga", "x2fg_percent",
+          "x3fgm", "x3fga", "x3fga_percent"
+        )),
+        ~ suppressWarnings(as.numeric(.))
+      ),
+      ppp_rank_num = suppressWarnings(parse_number(as.character(ppp_rank))),
+      percent_time_rank_num = suppressWarnings(parse_number(as.character(percent_time_rank))),
+      playtype_clean = case_when(
+        str_detect(str_to_lower(playtype), "pnr|pick") ~ "PnR Ballhandler",
+        str_detect(str_to_lower(playtype), "transition") ~ "Transition",
+        str_detect(str_to_lower(playtype), "spot") ~ "Spot Up",
+        str_detect(str_to_lower(playtype), "isolation") ~ "Isolation",
+        str_detect(str_to_lower(playtype), "handoff") ~ "Handoffs",
+        str_detect(str_to_lower(playtype), "off") ~ "Off Screen",
+        str_detect(str_to_lower(playtype), "cut") ~ "Cut",
+        TRUE ~ playtype
+      )
+    )
+}
+
+play_rs <- clean_playtypes(ayo_playtypes_rs)
+play_po <- clean_playtypes(ayo_playtypes_po)
+
+play_compare <- play_rs %>%
+  select(playtype_clean, rs_poss = possessions, rs_time = percent_time, rs_ppp = ppp, rs_efg = e_fg_percent, rs_tov = to_percent) %>%
+  inner_join(
+    play_po %>%
+      select(playtype_clean, po_poss = possessions, po_time = percent_time, po_ppp = ppp, po_efg = e_fg_percent, po_tov = to_percent),
+    by = "playtype_clean"
+  ) %>%
+  mutate(
+    ppp_change = po_ppp - rs_ppp,
+    time_change = po_time - rs_time
+  ) %>%
+  filter(rs_poss >= 8 | po_poss >= 3)
+
+play_compare_long <- play_compare %>%
+  select(playtype_clean, rs_ppp, po_ppp) %>%
+  pivot_longer(c(rs_ppp, po_ppp), names_to = "Split", values_to = "PPP") %>%
+  mutate(
+    Split = recode(Split, rs_ppp = "Regular Season", po_ppp = "Postseason"),
+    playtype_clean = fct_reorder(playtype_clean, PPP, .fun = max)
+  )
+
+play_volume_long <- play_compare %>%
+  select(playtype_clean, rs_time, po_time) %>%
+  pivot_longer(c(rs_time, po_time), names_to = "Split", values_to = "Time") %>%
+  mutate(
+    Split = recode(Split, rs_time = "Regular Season", po_time = "Postseason"),
+    playtype_clean = fct_reorder(playtype_clean, Time, .fun = max)
+  )
+
+shot_summary <- ayo_shots %>%
+  transmute(
+    zone,
+    FGM = as.numeric(fgm),
+    FGA = as.numeric(fga),
+    FG_PCT = scale_pct(as.numeric(fg_percent))
+  ) %>%
+  group_by(zone) %>%
+  summarise(
+    FGM = sum(FGM, na.rm = TRUE),
+    FGA = sum(FGA, na.rm = TRUE),
+    FG_PCT = sum(FGM, na.rm = TRUE) / sum(FGA, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    Share = FGA / sum(FGA),
+    zone = factor(zone, levels = c("Restricted Area", "In The Paint (Non-RA)", "Midrange", "Corner Threes", "ATB Threes"))
+  )
+
+shot_story <- shot_summary %>%
+  mutate(
+    fga_label = paste0(FGA, " FGA"),
+    fg_label = fmt_pct(FG_PCT)
+  )
+
+pnr_tbl <- pnr_leaders %>%
+  mutate(
+    player = player,
+    poss_g = as.numeric(poss_g),
+    ppp = as.numeric(ppp),
+    Rank = row_number()
+  ) %>%
+  transmute(
+    Rank,
+    Player = if_else(
+  player == "Ayo Dosunmu",
+  cell_spec(player, bold = TRUE, format = "latex"),
+  player), 
+    `Poss/G` = fmt_num(poss_g, 1),
+    PPP = fmt_num(ppp, 2)
+  )
+
+three_tbl <- three_leaders %>%
+  mutate(
+    attempts = as.numeric(attempts),
+    x3fga_percent = as.numeric(x3fg_percent),
+    Rank = row_number()
+  ) %>%
+  transmute(
+    Rank,
+    Player = if_else(
+      player == "Ayo Dosunmu",
+      cell_spec(player, bold = TRUE, color = "white", background = WOLVES_NAVY, format = "latex"),
+      player
+    ),
+    `3PA/G` = fmt_num(attempts, 1),
+    `3P\\%` = paste0(fmt_num(x3fg_percent, 1), "\\%")
+  )
+
+regular <- ayo_recent_form %>% filter(Split == "Regular Season")
+post <- ayo_recent_form %>% filter(Split == "Postseason")
+
+ppg_change <- post$PTS - regular$PTS
+ts_change <- post$TS_PCT - regular$TS_PCT
+ftr_change <- post$FTR - regular$FTR
+pnp_ppp <- play_po %>% filter(playtype_clean == "PnR Ballhandler") %>% pull(ppp) %>% .[1]
+post_3p <- post$FG3_PCT
+```
+
+# Introduction
+
+Ayo Dosunmu has been one of the more interesting bench pieces in the NBA over the last half decade. Even on a middling Bulls roster where young talent often seemed to stall out, his efficiency stood out.
+
+At the deadline, Chicago moved on from its hometown guard. For Dosunmu, the move to Minnesota was an opening. For the Wolves, it was a bet on a guard who could fit around stars while still handling real on-ball responsibility in smaller doses.
+
+That bet has more than paid off thus far. 
+
+Dosunmu took an already efficient offensive profile and added another layer Minnesota’s offense needed: more rim pressure, more downhill creation, and enough ballhandling to take some of the burden off Julius Randle and Anthony Edwards.
+
+Now, with the Wolves up 3-2 despite losing both Edwards and Donte DiVincenzo, that skill set has become central to the series. Denver has made a habit of surviving deficits, and Minnesota cannot afford to let this turn into another one of those comebacks. Through five playoff games, Dosunmu is up to **`r post$PTS` points per game** on **`r fmt_pct(post$TS_PCT)` true shooting**, with a free throw rate that has jumped from **`r fmt_pct(regular$FTR)` to `r fmt_pct(post$FTR)`**.
+
+That does not mean he has to replace Edwards outright. But if Minnesota is going to close this out without letting Denver back into the series, Dosunmu has to keep giving them enough creation to avoid offensive droughts.
+
+# Deadline Context
+
+The trade was not the biggest move of the deadline, but it has paid off as one of the best so far. Dillingham still has plenty of questions to answer, and Miller has shown flashes of being a real rotation wing. Still, Minnesota found a guard who gave them exactly what they needed: efficient offense that could bend around Edwards or scale into more on-ball responsibility when needed.
+
+Next to Edwards, Dosunmu can defend, space, cut, run, and attack second-side gaps. Without Edwards, he has enough burst and feel to take on more pick-and-roll responsibility without turning every possession into isolation basketball. That flexibility is what has led to Dosunmu excelling. 
+
+```{r pre-post-table, results='asis'}
+pre_post_tbl <- ayo_team_splits %>%
+  mutate(
+    `FG%` = fmt_pct(FG_PCT),
+    `3P%` = fmt_pct(FG3_PCT),
+    `FT%` = fmt_pct(FT_PCT)
+  ) %>%
+  transmute(
+    Split, Team, GP, MPG = MIN, PTS, REB, AST, STL, TOV, `FG%`, `3P%`, `FT%`, FTA
+  )
+
+style_kable(pre_post_tbl, "Ayo Dosunmu pre-trade vs post-trade production", align = "llccccccccccc") %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(2, bold = TRUE)
+```
+
+The post-deadline box score did not scream transformation, but it showed why the fit made sense. In Minnesota, Dosunmu added a little more free throw pressure, shot the ball better from three, kept his assist production steady, and fouled less despite playing real rotation minutes. 
+
+That kind of margin improvement is crucial for a team already built around stars, and his role has only grown in the playoffs. 
+
+# The Role
+
+```{r recent-form-table, results='asis'}
+recent_form_tbl <- ayo_recent_form %>%
+  mutate(
+    `TS%` = fmt_pct(TS_PCT),
+    `2P%` = fmt_pct(FG2_PCT),
+    `3P%` = fmt_pct(FG3_PCT),
+    `FT%` = fmt_pct(FT_PCT),
+    `FTr` = fmt_pct(FTR),
+    `+/-` = fmt_plus(PLUS_MINUS)
+  ) %>%
+  transmute(
+    Split, GP, PTS, AST, REB, `TS%`, `2P%`, `3P%`, `FT%`, FTA, TOV, MPG, `+/-`, FG2A, FG3A, FTr
+  )
+
+style_kable(recent_form_tbl, "Season baseline vs current playoff series", align = "lccccccccccccccc") %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(6, bold = TRUE)
+```
+
+```{r role-expansion-plot, fig.height=4.4, fig.width=7.4}
+role_plot <- ayo_recent_form %>%
+  select(Split, PTS, AST, REB, FTA, MPG) %>%
+  pivot_longer(-Split, names_to = "Metric", values_to = "Value") %>%
+  mutate(
+    Split = factor(Split, levels = c("Regular Season", "Postseason")),
+    Metric = factor(Metric, levels = c("PTS", "AST", "REB", "FTA", "MPG"))
+  )
+
+ggplot(role_plot, aes(x = Metric, y = Value, fill = Split)) +
+  geom_col(position = position_dodge(width = 0.74), width = 0.64) +
+  geom_text(
+    aes(label = fmt_num(Value, 1)),
+    position = position_dodge(width = 0.74),
+    vjust = -0.35,
+    size = 3.0
+  ) +
+  scale_fill_manual(values = c(
+  "Regular Season" = WOLVES_GRAY,
+  "Postseason" = WOLVES_NAVY)) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.12))) +
+  labs(
+    title = "Ayo's role has expanded without more mistakes",
+    subtitle = "Regular season baseline vs first five playoff games",
+    x = NULL,
+    y = "Per game",
+    caption = CAPTION_LINE
+  ) +
+  theme_ayo()
+```
+
+The bump is not just points. His minutes are up, his shot volume is up, and his free throws have nearly doubled. Dosunmu has taken advantage of a disappointing Denver defense and punished the gaps they have given him.
+
+The more interesting part is that the added responsibility has not come with a turnover spike. More on-ball work usually brings more mistakes, but Dosunmu has stayed at **`r post$TOV` turnovers per game**, the same as his regular-season baseline, while taking on a bit more creation.
+
+```{r efficiency-plot, fig.height=4.35, fig.width=7.4}
+efficiency_plot <- ayo_recent_form %>%
+  select(Split, TS_PCT, FG2_PCT, FG3_PCT, FT_PCT, FTR) %>%
+  pivot_longer(-Split, names_to = "Metric", values_to = "Value") %>%
+  mutate(
+    Split = factor(Split, levels = c("Regular Season", "Postseason")),
+    Metric = recode(Metric, TS_PCT = "TS%", FG2_PCT = "2P%", FG3_PCT = "3P%", FT_PCT = "FT%", FTR = "FTr"),
+    Metric = factor(Metric, levels = c("TS%", "2P%", "3P%", "FT%", "FTr"))
+  )
+
+ggplot(efficiency_plot, aes(x = Metric, y = Value, fill = Split)) +
+  geom_col(position = position_dodge(width = 0.74), width = 0.64) +
+  geom_text(
+    aes(label = fmt_pct(Value)),
+    position = position_dodge(width = 0.74),
+    vjust = -0.35,
+    size = 2.9
+  ) +
+  scale_fill_manual(values = c(
+  "Regular Season" = WOLVES_GRAY,
+  "Postseason" = WOLVES_NAVY)) +
+  scale_y_continuous(labels = percent_format(), limits = c(0, 1), expand = expansion(mult = c(0, 0.08))) +
+  labs(
+    title = "The scoring jump has held efficiency",
+subtitle = "More usage, no clear drop in shot quality",
+    x = NULL,
+    y = NULL,
+    caption = CAPTION_LINE
+  ) +
+  theme_ayo()
+```
+
+Ayo was already one of the most efficient guards in basketball during the regular season, sitting around +5 rTS. The playoffs have pushed that even further. He is at a staggering 75% TS, which is not sustainable, but it is not built only on three-point variance either.
+
+The more important shift is how often he is getting downhill. Dosunmu has used his quickness to create advantages earlier in possessions, which has opened cleaner looks for both himself and his teammates. That added pressure has shown up in the numbers too, with his free throw rate and true shooting both jumping by nearly 10 percentage points.
+
+# Shot Profile
+
+```{r shot-zone-profile, fig.height=4.7, fig.width=7.3}
+ggplot(shot_story, aes(y = fct_reorder(zone, FGA), x = FGA)) +
+  geom_col(fill = WOLVES_NAVY, width = 0.62) +
+  geom_text(aes(label = paste0(fga_label, " (", fg_label, ")")), hjust = -0.08, size = 2.5, color = TEXT_DARK) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.25))) +
+  labs(
+    title = "A clean shot diet defines Ayo’s efficiency",
+    x = "Field goal attempts",
+    y = NULL,
+    caption = "Data: NBA.com | Viz: @Rambzee_"
+  ) +
+  theme_ayo() +
+  theme(panel.grid.major.y = element_blank())
+```
+
+The shot diet is exactly what Minnesota needed around Edwards, Gobert, and Randle. Dosunmu can run, attack space, and stretch the floor without turning into a midrange-heavy guard. The profile is balanced in a useful way: strong three-point shooting, enough touch in the paint, and real downhill pressure built on his quickness.
+
+That is why the playoff burst does not feel completely out of nowhere. Some shooting regression is likely, especially from three, but the underlying indicators and baseline efficiency are all encouraging. He is already comfortable living at the rim and from three, and the postseason has added more free throw pressure on top of that. When defenders go under, he can punish them. When they load up or chase, he has enough burst to get downhill.
+
+```{r shot-zone-table, results='asis'}
+shot_table <- shot_summary %>%
+  arrange(desc(FGA)) %>%
+  transmute(
+    Zone = as.character(zone),
+    FGM,
+    FGA,
+    `Share of FGA` = fmt_pct(Share),
+    `FG%` = fmt_pct(FG_PCT)
+  )
+
+style_kable(shot_table, "Ayo Dosunmu shot-zone profile", align = "lcccc") %>%
+  column_spec(1, bold = TRUE)
+```
+
+# Playtype Translation
+
+```{r playtype-efficiency, fig.height=4.7, fig.width=7.4}
+play_compare_long_plot <- play_compare_long %>%
+  filter(!playtype_clean %in% c("Isolation", "Handoffs"))
+
+ggplot(play_compare_long_plot, aes(x = PPP, y = playtype_clean, fill = Split)) +
+  geom_col(position = position_dodge(width = 0.72), width = 0.62) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "#bcbcbc") +
+  geom_text(
+    aes(label = fmt_num(PPP, 2)),
+    position = position_dodge(width = 0.72),
+    hjust = -0.08,
+    size = 2.5
+  ) +
+  scale_fill_manual(values = c(
+  "Regular Season" = WOLVES_GRAY,
+  "Postseason" = WOLVES_NAVY)) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.16))) +
+  labs(
+    title = "Efficiency has improved across playtypes",
+    subtitle = "Points per possession by playtype, regular season vs postseason",
+    x = "Points per possession",
+    y = NULL,
+    caption = "Data: Synergy/SportsRadar | Viz: @Rambzee_"
+  ) +
+  theme_ayo() +
+  theme(panel.grid.major.y = element_blank())
+```
+
+Ayo has been even more effective within the same playtypes that defined his scoring all season. The most important one is pick-and-roll.
+
+He’s at **`r fmt_num(pnp_ppp, 2)` PPP** as a postseason pick-and-roll ballhandler, even if it’s only about 20 possessions. That sample isn’t enough to treat him like a primary initiator, but it does show that Minnesota can put the ball in his hands, run a simple action, and get a good outcome.
+
+That matters more with Edwards out. The Wolves don’t need Dosunmu to become a high-end creator. They need him to handle second-side actions, attack soft coverage, and keep the offense from sputtering out when the initial play breaks down. So far, he’s been able to do that without forcing possessions or turning the game into isolation-heavy offense.
+
+```{r playtype-volume, fig.height=4.7, fig.width=7.4}
+play_volume_long_plot <- play_volume_long %>%
+  filter(!playtype_clean %in% c("Isolation", "Handoffs"))
+
+ggplot(play_volume_long_plot, aes(x = Time, y = playtype_clean, fill = Split)) +
+  geom_col(position = position_dodge(width = 0.72), width = 0.62) +
+  geom_text(
+    aes(label = fmt_pct(Time)),
+    position = position_dodge(width = 0.72),
+    hjust = -0.08,
+    size = 2.9
+  ) +
+  scale_fill_manual(values = c(
+    "Regular Season" = WOLVES_GRAY,
+    "Postseason" = WOLVES_NAVY
+  )) +
+  scale_x_continuous(labels = percent_format(), expand = expansion(mult = c(0, 0.18))) +
+  labs(
+    title = "The usage shift confirms the eye test",
+    subtitle = "Ayo is carrying more ballhandler offense, not just finishing plays",
+    x = "Share of Possessions",
+    y = NULL,
+    caption = "Data: Synergy/SportsRadar | Viz: @Rambzee_"
+  ) +
+  theme_ayo() +
+  theme(panel.grid.major.y = element_blank())
+```
+
+The volume shift is just as important as the efficiency. Transition and spot-ups are still a major part of his value, but the postseason role has included more direct creation, especially as a pick-and-roll ballhandler. That was the part people were less sure he had in him. Through this series, he has shown he can handle more responsibility without moving too far away from what already made him effective.
+
+```{r playtype-table, results='asis'}
+playtype_table <- play_compare %>%
+  filter(playtype_clean %in% c("Transition", "PnR Ballhandler", "Spot Up")) %>%
+  arrange(desc(po_poss)) %>%
+  transmute(
+    Playtype = playtype_clean,
+    `RS Poss` = rs_poss,
+    `RS Time%` = fmt_pct(rs_time),
+    `RS PPP` = fmt_num(rs_ppp, 3),
+    `PO Poss` = po_poss,
+    `PO Time%` = fmt_pct(po_time),
+    `PO PPP` = fmt_num(po_ppp, 3),
+    `PPP Δ` = fmt_plus(ppp_change, 3)
+  )
+
+style_kable(
+  playtype_table,
+  "Ayo Dosunmu core offensive playtypes: regular season vs postseason",
+  align = "lccccccc",
+  font_size = 8.3
+) %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(4, bold = TRUE) %>%
+  column_spec(7, bold = TRUE) %>%
+  column_spec(8, bold = TRUE)
+```
+
+# League Context
+
+The improvement is not just internal. Relative to the rest of the playoff field, Dosunmu has held up well as both a shooter and a pick-and-roll ballhandler.
+
+```{r pnr-table, results='asis'}
+style_kable(pnr_tbl, "Top playoff pick-and-roll scorers by PPP (Min 4 GP, 4 Poss/G)", align = "clcc", escape = FALSE) %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(2, bold = TRUE)
+```
+
+```{r three-table, results='asis'}
+style_kable(three_tbl, "Top playoff three-point shooters by percentage (Min 4 GP, 3+ 3PA/G)", align = "clcc", escape = FALSE) %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(2, bold = TRUE)
+```
+
+
+
+# The Game 4 Swing
+
+Game 4 was the proof of concept. Edwards and DiVincenzo went down. The Wolves were staring at the kind of game that usually turns into offensive survival basketball, then Ayo took over. His heroic 43 point game stamped his name as one of the best bench guards in basketball, and his performance was up there with some other bench greats.
+
+
+Beyond just the bench role, his 40-point explosion also sits among the most efficient we've seen in Playoff History.
+
+# What This Means for Minnesota
+
+The Wolves are not better without Edwards. That part does not need much explanation. But with him out, more of the offensive burden falls on Julius Randle and Ayo Dosunmu.
+
+Minnesota’s game plan has been strong, and the execution has mostly matched it. Still, Denver is not the kind of team you can assume is finished. If the Wolves are going to close out a former championship core, they need steady contributions across the roster, and Dosunmu’s efficiency has become one of the cleaner paths to surviving those stretches.
+
+That matters beyond this series too. If Minnesota advances before Edwards returns, Ayo is going to keep carrying a larger creation burden than expected. He does not have to save the offense by himself, but he does have to keep giving the Wolves enough downhill pressure, shooting, and decision-making to hold things together.
+
+# Closing
+
+This is not a clean star leap. It is not supposed to be.
+
+It is a playoff stress test for a guard who was acquired to make Minnesota harder to break. So far, Dosunmu has passed the most important parts of it. He has scaled his scoring, held his efficiency, taken on more creation, and kept his mistakes under control.
+
+The shooting will probably cool. The sample will get harsher. Denver will keep adjusting. But the broader takeaway should last beyond one series.
+
+Ayo Dosunmu is not just giving Minnesota a hot week. He is giving the Wolves a version of guard play they badly needed: quick, efficient, defensively competitive, and flexible enough to survive playoff chaos.
