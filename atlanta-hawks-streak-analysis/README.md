@@ -1,67 +1,58 @@
-# Overview
+# An 11-Game Run, and a Reality Check
 
-This project analyzes the Atlanta Hawks’ 11-game winning streak and evaluates whether the run reflects real structural improvement or a temporary surge.
+## Overview
 
-After an inconsistent start to the season, Atlanta has put together one of the most dominant stretches in the league, improving from a negative point differential to winning by nearly +18 per game during the streak (page 3).
+This project evaluates the Atlanta Hawks’ 11-game winning streak during the 2025–26 season. The analysis looks at how the run compares historically, where Atlanta stood in the Eastern Conference before and after the streak, and whether the process behind the run looks sustainable. It focuses on the balance between real improvement, especially defensively, and likely regression from hot shooting and short-sample performance.
 
-The focus is not just on results, but on why the run is happening. Examining offensive balance, defensive improvement, and how the roster has begun to fit more cleanly.
+## Main Question
 
-# Purpose
+How real was Atlanta’s 11-game run, and which parts of the streak looked sustainable versus likely to cool off?
 
-The goal of this project is:
+## Data Sources
 
-* Evaluate how sustainable Atlanta’s recent run is
+- NBA.com
+- hoopR / NBA Stats API
+- StatMuse
+- Manually entered franchise streak history
+- Manually entered standings context
+- Manually entered remaining strength-of-schedule table
 
-* Identify what has actually changed during the streak
+## Tools Used
 
-* Separate process-driven improvement from hot shooting
+- R
+- tidyverse
+- ggplot2
+- R Markdown
+- hoopR
+- janitor
+- kableExtra
+- showtext / sysfonts
+- lubridate
+- stringi
 
-* Analyze team-level metrics (offense, defense, net rating)
+## Key Outputs
 
-* Understand how individual roles are driving team success
+- Knitted PDF report
+- Cleaned R Markdown analysis file
+- Hawks franchise streak history table
+- Longest winning streaks this season table
+- Eastern Conference standings shift table
+- Season vs. recent form table
+- Point differential trend chart
+- Last-11 league context table
+- Top-10 offense, defense, and net rating tables
+- Process vs. results table
+- Core player production table
+- Remaining strength-of-schedule table
 
-# Method & Data
+## Notes and Limitations
 
-* Team game logs (season vs last 11 games splits)
+This report depends on live NBA Stats API pulls through `hoopR`, with optional local caching enabled through the YAML parameters. If NBA.com changes its schema, blocks requests, or rate-limits calls, the report may require cached `.rds` files or small code adjustments. Some context tables are manually entered, including franchise streak history, standings movement, and remaining strength of schedule. The analysis is also centered on an 11-game sample, so shooting efficiency, defensive rating, and individual hot stretches should be interpreted with regression risk in mind.
 
-* League context over the same stretch (Net Rating, ORtg, DRtg ranks)
+## File Guide
 
-* Efficiency indicators (eFG%, TOV%, FTr, opponent metrics)
-
-* Player production during the streak
-
-* Strength of schedule context for forward-looking evaluation
-
-# Why This Matters
-
-## For Team Evaluation
-
-Atlanta’s jump is not random. Both offense and defense have improved, with the biggest shift coming defensively -- dropping from ~111 DRtg to ~103 during the streak (page 5).
-
-## For Sustainability
-
-Some of the production is likely to regress, particularly shooting efficiency. The key question is whether the defensive gains and role clarity hold.
-
-## For Roster Fit
-
-The core pieces now complement each other more cleanly:
-
-* Jalen Johnson as the primary creator
-
-* Dyson Daniels as a defensive and connective piece
-
-* Nickeil Alexander-Walker as an efficient scorer
-
-* Onyeka Okongwu adding spacing and interior stability
-
-## For Interpreting the Run
-
-Atlanta currently ranks near the top of the league in both offense and defense during this stretch, leading to the best net rating in the NBA over the last 11 games (page 4).
-
-## For What Comes Next
-
-The upcoming schedule provides a real test. Stronger opponents and tighter margins will determine whether this is a true shift or a well-timed run.
-
-# Authors
-
-Caleb Ramsey -- Statistics & Sports Media and Analytics (Virginia Tech)
+- `analysis.Rmd` — cleaned source analysis
+- `analysis.pdf` — rendered report
+- `README.md` — project overview
+- `hawks_run/cache/` — optional local cache for NBA API pulls
+- `data/` — local or excluded data files, if applicable
