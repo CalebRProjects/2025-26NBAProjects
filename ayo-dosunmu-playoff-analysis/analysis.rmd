@@ -8,6 +8,12 @@ output:
     number_sections: false
     fig_crop: false
 geometry: margin=0.78in
+params:
+  playtypes_po_xlsx: "Ayo Dosunmu Offensive Playtypes (2025-26 Playoffs).xlsx"
+  playtypes_rs_xlsx: "Ayo Dosunmu Offensive Playtypes (2025-26).xlsx"
+  shots_xlsx: "Ayo Dosunmu Shot Zones (2025-26).xlsx"
+  pnr_leaders_xlsx: "Playoff Leaders (PnR PPP).xlsx"
+  three_leaders_xlsx: "Playoff Leaders (3FG%).xlsx"
 header-includes:
   - \usepackage{float}
   - \floatplacement{figure}{H}
@@ -26,7 +32,9 @@ knitr::opts_chunk$set(
   dpi = 300,
   out.width = "95%"
 )
+```
 
+```{r libraries}
 library(tidyverse)
 library(readxl)
 library(readr)
@@ -36,38 +44,53 @@ library(kableExtra)
 library(showtext)
 library(sysfonts)
 library(forcats)
+```
+
+```{r constants-and-parameters}
+# Theme constants
+bg_color    <- "#f6f4ef"
+text_dark   <- "#141414"
+text_light  <- "#5f5f5f"
+grid_color  <- "#dedad3"
+
+# Timberwolves palette
+wolves_navy  <- "#0C2340"
+wolves_green <- "#78BE20"
+wolves_blue  <- "#236192"
+wolves_gray  <- "#9EA2A2"
+
+# Change colors
+rise_color <- "#15803d"
+drop_color <- "#b91c1c"
+
+caption_line <- "Data: NBA.com & Databallr | Viz: @Rambzee_"
 
 try(font_add_google("Inter", "inter"), silent = TRUE)
 showtext_auto()
 options(scipen = 999)
+```
 
-# ------------------------------------------------------------
-# Theme + palette
-# ------------------------------------------------------------
-
-BG <- "#f6f4ef"
-TEXT_DARK <- "#141414"
-TEXT_LIGHT <- "#5f5f5f"
-GRID <- "#dedad3"
-WOLVES_NAVY <- "#0C2340"
-WOLVES_GREEN <- "#78BE20"
-WOLVES_BLUE <- "#236192"
-WOLVES_GRAY <- "#9EA2A2"
-RISE <- "#15803d"
-DROP <- "#b91c1c"
-
-CAPTION_LINE <- "Data: NBA.com & Databallr | Viz: @Rambzee_"
-
+```{r helper-functions}
 theme_ayo <- function(base_size = 11) {
   theme_minimal(base_family = "inter", base_size = base_size) +
     theme(
-      plot.background = element_rect(fill = BG, color = NA),
-      panel.background = element_rect(fill = BG, color = NA),
-      panel.grid.major = element_line(color = GRID, linewidth = 0.3),
+      plot.background  = element_rect(fill = bg_color, color = NA),
+      panel.background = element_rect(fill = bg_color, color = NA),
+      panel.grid.major = element_line(color = grid_color, linewidth = 0.3),
       panel.grid.minor = element_blank(),
-      text = element_text(color = TEXT_DARK),
-      plot.title = element_text(size = 19, face = "bold", hjust = 0.5, margin = margin(b = 4)),
-      plot.subtitle = element_text(size = 10.5, color = TEXT_LIGHT, hjust = 0.5, margin = margin(b = 8)),
+      text = element_text(color = text_dark),
+      plot.title = element_text(
+        size = 19,
+        face = "bold",
+        hjust = 0.5,
+        margin = margin(b = 4)
+      ),
+      plot.subtitle = element_text(
+        size = 10.5,
+        color = text_light,
+        hjust = 0.5,
+        margin = margin(b = 8)
+      ),
       axis.title = element_text(size = 10.5, face = "bold"),
       axis.text = element_text(size = 9.4, color = "#333333"),
       axis.ticks = element_blank(),
@@ -79,10 +102,6 @@ theme_ayo <- function(base_size = 11) {
     )
 }
 
-# ------------------------------------------------------------
-# Table helpers
-# ------------------------------------------------------------
-
 style_kable <- function(
   df,
   caption = NULL,
@@ -91,7 +110,9 @@ style_kable <- function(
   full_width = FALSE,
   escape = TRUE
 ) {
-  if (is.null(align)) align <- strrep("c", ncol(df))
+  if (is.null(align)) {
+    align <- strrep("c", ncol(df))
+  }
 
   kbl(
     df,
@@ -103,51 +124,36 @@ style_kable <- function(
     escape = escape
   ) %>%
     kable_styling(
-      latex_options = c("HOLD_position", "striped"),
+      latex_options = c("hold_position", "striped"),
       full_width = full_width,
       font_size = font_size,
       stripe_color = "#fbfaf7"
     )
 }
 
-fmt_num <- function(x, digits = 1) sprintf(paste0("%.", digits, "f"), x)
-fmt_plus <- function(x, digits = 1) sprintf(paste0("%+.", digits, "f"), x)
-fmt_pct <- function(x, accuracy = 0.1) scales::percent(x, accuracy = accuracy)
-scale_pct <- function(x) if_else(abs(x) > 1, x / 100, x)
+fmt_num <- function(x, digits = 1) {
+  sprintf(paste0("%.", digits, "f"), x)
+}
+
+fmt_plus <- function(x, digits = 1) {
+  sprintf(paste0("%+.", digits, "f"), x)
+}
+
+fmt_pct <- function(x, accuracy = 0.1) {
+  scales::percent(x, accuracy = accuracy)
+}
+
+scale_pct <- function(x) {
+  if_else(abs(x) > 1, x / 100, x)
+}
 
 file_required <- function(path) {
   if (!file.exists(path)) {
-    stop(paste0("Missing file: ", path, ". Put this Excel file in the same folder as the RMD."))
+    stop(paste0("Missing file: ", path, ". Put this Excel file in the same folder as the RMD or update the YAML params."))
   }
+
   path
 }
-```
-
-```{r data-inputs, include=FALSE}
-# ------------------------------------------------------------
-# Hand-entered inputs + file reads
-# ------------------------------------------------------------
-
-ayo_team_splits <- tribble(
-  ~Split, ~Team, ~GP, ~GS, ~MIN, ~FGM, ~FGA, ~FG_PCT, ~FG3M, ~FG3A, ~FG3_PCT, ~FTM, ~FTA, ~FT_PCT,
-  ~OREB, ~DREB, ~REB, ~AST, ~BLK, ~STL, ~PF, ~TOV, ~PTS,
-  "Pre-Trade",  "Chicago",   24,  9, 28.9, 5.7, 10.9, 0.521, 1.5, 3.6, 0.414, 1.5, 1.7, 0.925,
-  0.6, 3.6, 4.2, 3.5, 0.3, 1.0, 2.2, 1.5, 14.4,
-  "Post-Trade", "Minnesota", 45, 10, 26.4, 5.6, 10.8, 0.514, 1.9, 4.3, 0.451, 2.0, 2.3, 0.857,
-  0.7, 2.3, 3.0, 3.6, 0.3, 0.8, 1.7, 1.4, 15.0
-)
-
-ayo_recent_form <- tribble(
-  ~Split, ~GP, ~PTS, ~AST, ~REB, ~TS_PCT, ~FG2_PCT, ~FG3_PCT, ~FT_PCT, ~FTA, ~TOV, ~STL, ~BLK, ~MPG, ~PLUS_MINUS, ~FG2A, ~FG3A, ~FTR,
-  "Regular Season", 69, 14.8, 3.6, 3.4, 0.630, 0.563, 0.439, 0.876, 2.1, 1.4, 0.8, 0.3, 27.1, -0.9, 6.8, 4.1, 0.194,
-  "Postseason",     5, 21.8, 4.0, 2.8, 0.749, 0.643, 0.545, 0.950, 4.0, 1.4, 0.4, 0.2, 32.4, -1.4, 8.4, 4.4, 0.313
-)
-
-ayo_playtypes_po <- read_excel(file_required("Ayo Dosunmu Offensive Playtypes (2025-26 Playoffs).xlsx")) %>% clean_names()
-ayo_playtypes_rs <- read_excel(file_required("Ayo Dosunmu Offensive Playtypes (2025-26).xlsx")) %>% clean_names()
-ayo_shots <- read_excel(file_required("Ayo Dosunmu Shot Zones (2025-26).xlsx")) %>% clean_names()
-pnr_leaders <- read_excel(file_required("Playoff Leaders (PnR PPP).xlsx")) %>% clean_names()
-three_leaders <- read_excel(file_required("Playoff Leaders (3FG%).xlsx")) %>% clean_names()
 
 clean_playtypes <- function(df) {
   df %>%
@@ -176,15 +182,89 @@ clean_playtypes <- function(df) {
       )
     )
 }
+```
 
+```{r hand-input-data}
+ayo_team_splits <- tribble(
+  ~Split, ~Team, ~GP, ~GS, ~MIN, ~FGM, ~FGA, ~FG_PCT, ~FG3M, ~FG3A, ~FG3_PCT, ~FTM, ~FTA, ~FT_PCT,
+  ~OREB, ~DREB, ~REB, ~AST, ~BLK, ~STL, ~PF, ~TOV, ~PTS,
+  "Pre-Trade",  "Chicago",   24,  9, 28.9, 5.7, 10.9, 0.521, 1.5, 3.6, 0.414, 1.5, 1.7, 0.925,
+  0.6, 3.6, 4.2, 3.5, 0.3, 1.0, 2.2, 1.5, 14.4,
+  "Post-Trade", "Minnesota", 45, 10, 26.4, 5.6, 10.8, 0.514, 1.9, 4.3, 0.451, 2.0, 2.3, 0.857,
+  0.7, 2.3, 3.0, 3.6, 0.3, 0.8, 1.7, 1.4, 15.0
+)
+
+ayo_recent_form <- tribble(
+  ~Split, ~GP, ~PTS, ~AST, ~REB, ~TS_PCT, ~FG2_PCT, ~FG3_PCT, ~FT_PCT, ~FTA, ~TOV, ~STL, ~BLK, ~MPG, ~PLUS_MINUS, ~FG2A, ~FG3A, ~FTR,
+  "Regular Season", 69, 14.8, 3.6, 3.4, 0.630, 0.563, 0.439, 0.876, 2.1, 1.4, 0.8, 0.3, 27.1, -0.9, 6.8, 4.1, 0.194,
+  "Postseason",     5, 21.8, 4.0, 2.8, 0.749, 0.643, 0.545, 0.950, 4.0, 1.4, 0.4, 0.2, 32.4, -1.4, 8.4, 4.4, 0.313
+)
+
+bench_40_tbl <- tribble(
+  ~Rank, ~Player, ~Points, ~`TS%`,
+  1, "Fred Brown", 45, "59.1%",
+  2, "Ayo Dosunmu", 43, "96.5%",
+  3, "Steph Curry", 40, "60.0%",
+  4, "Nick Van Exel", 40, "68.8%"
+)
+
+efficient_40_tbl <- tribble(
+  ~Rank, ~Player, ~Points, ~`TS%`, ~Playoffs,
+  1, "Terry Porter", 41, "101.7%", "1992",
+  2, "Damian Lillard", 55, "96.8%", "2021",
+  3, "Ayo Dosunmu", 43, "96.5%", "2026",
+  4, "Dirk Nowitzki", 48, "93.9%", "2011",
+  5, "Devin Booker", 47, "90.8%", "2023",
+  6, "Anthony Davis", 43, "90.6%", "2020",
+  7, "Devin Booker", 47, "90.5%", "2021",
+  8, "Shai Gilgeous-Alexander", 42, "90.2%", "2026",
+  9, "Jason Richardson", 42, "89.7%", "2010",
+  10, "Jamal Murray", 50, "89.4%", "2020"
+)
+```
+
+```{r proprietary-file-inputs}
+# These Excel inputs are local/proprietary project files.
+# Do not commit the raw files to a public GitHub repository unless you have permission.
+ayo_playtypes_po <- read_excel(file_required(params$playtypes_po_xlsx)) %>%
+  clean_names()
+
+ayo_playtypes_rs <- read_excel(file_required(params$playtypes_rs_xlsx)) %>%
+  clean_names()
+
+ayo_shots <- read_excel(file_required(params$shots_xlsx)) %>%
+  clean_names()
+
+pnr_leaders <- read_excel(file_required(params$pnr_leaders_xlsx)) %>%
+  clean_names()
+
+three_leaders <- read_excel(file_required(params$three_leaders_xlsx)) %>%
+  clean_names()
+```
+
+```{r data-cleaning}
 play_rs <- clean_playtypes(ayo_playtypes_rs)
 play_po <- clean_playtypes(ayo_playtypes_po)
 
 play_compare <- play_rs %>%
-  select(playtype_clean, rs_poss = possessions, rs_time = percent_time, rs_ppp = ppp, rs_efg = e_fg_percent, rs_tov = to_percent) %>%
+  select(
+    playtype_clean,
+    rs_poss = possessions,
+    rs_time = percent_time,
+    rs_ppp = ppp,
+    rs_efg = e_fg_percent,
+    rs_tov = to_percent
+  ) %>%
   inner_join(
     play_po %>%
-      select(playtype_clean, po_poss = possessions, po_time = percent_time, po_ppp = ppp, po_efg = e_fg_percent, po_tov = to_percent),
+      select(
+        playtype_clean,
+        po_poss = possessions,
+        po_time = percent_time,
+        po_ppp = ppp,
+        po_efg = e_fg_percent,
+        po_tov = to_percent
+      ),
     by = "playtype_clean"
   ) %>%
   mutate(
@@ -225,13 +305,16 @@ shot_summary <- ayo_shots %>%
   ) %>%
   mutate(
     Share = FGA / sum(FGA),
-    zone = factor(zone, levels = c("Restricted Area", "In The Paint (Non-RA)", "Midrange", "Corner Threes", "ATB Threes"))
-  )
-
-shot_story <- shot_summary %>%
-  mutate(
-    fga_label = paste0(FGA, " FGA"),
-    fg_label = fmt_pct(FG_PCT)
+    zone = factor(
+      zone,
+      levels = c(
+        "Restricted Area",
+        "In The Paint (Non-RA)",
+        "Midrange",
+        "Corner Threes",
+        "ATB Threes"
+      )
+    )
   )
 
 pnr_tbl <- pnr_leaders %>%
@@ -259,14 +342,24 @@ three_tbl <- three_leaders %>%
     `3PA/G` = fmt_num(attempts, 1),
     `3P%` = paste0(fmt_num(three_pct, 1), "%")
   )
+```
 
-regular <- ayo_recent_form %>% filter(Split == "Regular Season")
-post <- ayo_recent_form %>% filter(Split == "Postseason")
+```{r analysis-summary-objects}
+regular <- ayo_recent_form %>%
+  filter(Split == "Regular Season")
+
+post <- ayo_recent_form %>%
+  filter(Split == "Postseason")
 
 ppg_change <- post$PTS - regular$PTS
 ts_change <- post$TS_PCT - regular$TS_PCT
 ftr_change <- post$FTR - regular$FTR
-pnp_ppp <- play_po %>% filter(playtype_clean == "PnR Ballhandler") %>% pull(ppp) %>% .[1]
+
+pnp_ppp <- play_po %>%
+  filter(playtype_clean == "PnR Ballhandler") %>%
+  pull(ppp) %>%
+  .[1]
+
 post_3p <- post$FG3_PCT
 ```
 
@@ -276,7 +369,7 @@ Ayo Dosunmu has been one of the more interesting bench pieces in the NBA over th
 
 At the deadline, Chicago moved on from its hometown guard. For Dosunmu, the move to Minnesota was an opening. For the Wolves, it was a bet on a guard who could fit around stars while still handling real on-ball responsibility in smaller doses.
 
-That bet has paid off. 
+That bet has paid off.
 
 Dosunmu took an already efficient offensive profile and added another layer Minnesota’s offense needed: rim pressure, shooting, and enough on-ball creation to take some of the burden off Julius Randle and Anthony Edwards.
 
@@ -285,8 +378,6 @@ Now, with the Wolves up 3-2 despite losing both Edwards and Donte DiVincenzo, th
 # Deadline Context
 
 ```{r pre-post-table, results='asis'}
-# Post-deadline baseline
-
 pre_post_tbl <- ayo_team_splits %>%
   mutate(
     `FG%` = fmt_pct(FG_PCT),
@@ -294,37 +385,70 @@ pre_post_tbl <- ayo_team_splits %>%
     `FT%` = fmt_pct(FT_PCT)
   ) %>%
   transmute(
-    Split, Team, GP, MPG = MIN, PTS, REB, AST, STL, TOV, `FG%`, `3P%`, `FT%`, FTA
+    Split,
+    Team,
+    GP,
+    MPG = MIN,
+    PTS,
+    REB,
+    AST,
+    STL,
+    TOV,
+    `FG%`,
+    `3P%`,
+    `FT%`,
+    FTA
   )
 
-style_kable(pre_post_tbl, "Ayo Dosunmu pre-trade vs post-trade production", align = "llccccccccccc") %>%
+style_kable(
+  pre_post_tbl,
+  "Ayo Dosunmu pre-trade vs post-trade production",
+  align = "llccccccccccc"
+) %>%
   column_spec(1, bold = TRUE) %>%
   column_spec(2, bold = TRUE)
 ```
 
 The post-deadline box score shows why the fit worked. Dosunmu has been able to amplify his best traits with more free throw pressure, better shooting, and the same level of control.
 
-That has carried into the playoffs. The role has expanded in spots, with more on-ball responsibility, but he remains incredibly efficient. 
+That has carried into the playoffs. The role has expanded in spots, with more on-ball responsibility, but he remains incredibly efficient.
 
 # Playoff Role Shift
 
 ```{r recent-form-table, results='asis'}
-# Regular season vs postseason snapshot
-
 recent_form_tbl <- ayo_recent_form %>%
   mutate(
     `TS%` = fmt_pct(TS_PCT),
     `2P%` = fmt_pct(FG2_PCT),
     `3P%` = fmt_pct(FG3_PCT),
     `FT%` = fmt_pct(FT_PCT),
-    `FTr` = fmt_pct(FTR),
+    FTr = fmt_pct(FTR),
     `+/-` = fmt_plus(PLUS_MINUS)
   ) %>%
   transmute(
-    Split, GP, PTS, AST, REB, `TS%`, `2P%`, `3P%`, `FT%`, FTA, TOV, MPG, `+/-`, FG2A, FG3A, FTr
+    Split,
+    GP,
+    PTS,
+    AST,
+    REB,
+    `TS%`,
+    `2P%`,
+    `3P%`,
+    `FT%`,
+    FTA,
+    TOV,
+    MPG,
+    `+/-`,
+    FG2A,
+    FG3A,
+    FTr
   )
 
-style_kable(recent_form_tbl, "Season baseline vs current playoff series", align = "lccccccccccccccc") %>%
+style_kable(
+  recent_form_tbl,
+  "Season baseline vs current playoff series",
+  align = "lccccccccccccccc"
+) %>%
   column_spec(1, bold = TRUE) %>%
   column_spec(6, bold = TRUE)
 ```
@@ -346,17 +470,19 @@ ggplot(role_plot, aes(x = Metric, y = Value, fill = Split)) +
     vjust = -0.35,
     size = 3.0
   ) +
-  scale_fill_manual(values = c(
-    "Regular Season" = WOLVES_GRAY,
-    "Postseason" = WOLVES_NAVY
-  )) +
+  scale_fill_manual(
+    values = c(
+      "Regular Season" = wolves_gray,
+      "Postseason" = wolves_navy
+    )
+  ) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.12))) +
   labs(
-    title = "Ayo's role has expanded without more mistakes",
+    title = "Ayo's Role Has Expanded Without More Mistakes",
     subtitle = "Regular season baseline vs first five playoff games",
     x = NULL,
     y = "Per game",
-    caption = CAPTION_LINE
+    caption = caption_line
   ) +
   theme_ayo()
 ```
@@ -371,7 +497,14 @@ efficiency_plot <- ayo_recent_form %>%
   pivot_longer(-Split, names_to = "Metric", values_to = "Value") %>%
   mutate(
     Split = factor(Split, levels = c("Regular Season", "Postseason")),
-    Metric = recode(Metric, TS_PCT = "TS%", FG2_PCT = "2P%", FG3_PCT = "3P%", FT_PCT = "FT%", FTR = "FTr"),
+    Metric = recode(
+      Metric,
+      TS_PCT = "TS%",
+      FG2_PCT = "2P%",
+      FG3_PCT = "3P%",
+      FT_PCT = "FT%",
+      FTR = "FTr"
+    ),
     Metric = factor(Metric, levels = c("TS%", "2P%", "3P%", "FT%", "FTr"))
   )
 
@@ -383,17 +516,23 @@ ggplot(efficiency_plot, aes(x = Metric, y = Value, fill = Split)) +
     vjust = -0.35,
     size = 2.9
   ) +
-  scale_fill_manual(values = c(
-    "Regular Season" = WOLVES_GRAY,
-    "Postseason" = WOLVES_NAVY
-  )) +
-  scale_y_continuous(labels = percent_format(), limits = c(0, 1), expand = expansion(mult = c(0, 0.08))) +
+  scale_fill_manual(
+    values = c(
+      "Regular Season" = wolves_gray,
+      "Postseason" = wolves_navy
+    )
+  ) +
+  scale_y_continuous(
+    labels = percent_format(),
+    limits = c(0, 1),
+    expand = expansion(mult = c(0, 0.08))
+  ) +
   labs(
-    title = "The scoring jump has held efficiency",
+    title = "The Scoring Jump Has Held Efficiency",
     subtitle = "More usage, no clear drop in shot quality",
     x = NULL,
     y = NULL,
-    caption = CAPTION_LINE
+    caption = caption_line
   ) +
   theme_ayo()
 ```
@@ -405,8 +544,6 @@ The more important shift is how often he is getting downhill. Dosunmu has used h
 # Shot Profile
 
 ```{r ayo-shot-profile, results='asis'}
-# Zone-based shot profile
-
 league_avg <- tribble(
   ~Zone, ~LG_PCT,
   "Restricted Area", 0.669,
@@ -434,10 +571,7 @@ ayo_shot_profile <- shot_summary %>%
   ) %>%
   left_join(league_avg, by = "Zone") %>%
   mutate(
-    Zone = factor(
-      Zone,
-      levels = c("Restricted Area", "Paint (Non-RA)", "Midrange", "3PT")
-    ),
+    Zone = factor(Zone, levels = c("Restricted Area", "Paint (Non-RA)", "Midrange", "3PT")),
     Volume = paste0(FGA, " att"),
     `FG% (League Avg)` = paste0(fmt_pct(FG_PCT), " (", fmt_pct(LG_PCT), ")"),
     `rFG%` = paste0(fmt_plus(100 * (FG_PCT - LG_PCT)), "%")
@@ -455,15 +589,13 @@ style_kable(
   row_spec(4, bold = TRUE)
 ```
 
-The shot diet fits what Minnesota needed around Edwards, Gobert, and Randle. Dosunmu can run, attack space, and stretch the floor without drifting into a midrange-heavy diet
+The shot diet fits what Minnesota needed around Edwards, Gobert, and Randle. Dosunmu can run, attack space, and stretch the floor without drifting into a midrange-heavy diet.
 
 That is why the playoff burst does not feel completely random. Some shooting regression is likely, especially from three, but the foundation is strong with consistent rim pressure, enough touch in the paint, strong spot-up value, and added free throw pressure in the postseason. When defenders go under, he can punish them. When they chase, he has enough burst to get downhill.
 
 # Playtype Translation
 
 ```{r playtype-efficiency, fig.height=4.7, fig.width=7.4}
-# Playtype efficiency change
-
 play_compare_long_plot <- play_compare_long %>%
   filter(!playtype_clean %in% c("Isolation", "Handoffs"))
 
@@ -476,13 +608,15 @@ ggplot(play_compare_long_plot, aes(x = PPP, y = playtype_clean, fill = Split)) +
     hjust = -0.08,
     size = 2.5
   ) +
-  scale_fill_manual(values = c(
-    "Regular Season" = WOLVES_GRAY,
-    "Postseason" = WOLVES_NAVY
-  )) +
+  scale_fill_manual(
+    values = c(
+      "Regular Season" = wolves_gray,
+      "Postseason" = wolves_navy
+    )
+  ) +
   scale_x_continuous(expand = expansion(mult = c(0, 0.16))) +
   labs(
-    title = "Efficiency has improved across playtypes",
+    title = "Efficiency Has Improved Across Playtypes",
     subtitle = "Points per possession by playtype, regular season vs postseason",
     x = "Points per possession",
     y = NULL,
@@ -499,8 +633,6 @@ He’s at **`r fmt_num(pnp_ppp, 2)` PPP** as a postseason pick-and-roll ballhand
 That matters more with Edwards out. The Wolves don’t need Dosunmu to become a high-end creator. They need him to handle second-side actions, attack soft coverage, and keep the offense from sputtering out when the initial play breaks down. So far, he’s been able to do that without forcing possessions or turning the game into isolation-heavy offense.
 
 ```{r playtype-volume, fig.height=4.7, fig.width=7.4}
-# Playtype usage change
-
 play_volume_long_plot <- play_volume_long %>%
   filter(!playtype_clean %in% c("Isolation", "Handoffs"))
 
@@ -512,13 +644,15 @@ ggplot(play_volume_long_plot, aes(x = Time, y = playtype_clean, fill = Split)) +
     hjust = -0.08,
     size = 2.9
   ) +
-  scale_fill_manual(values = c(
-    "Regular Season" = WOLVES_GRAY,
-    "Postseason" = WOLVES_NAVY
-  )) +
+  scale_fill_manual(
+    values = c(
+      "Regular Season" = wolves_gray,
+      "Postseason" = wolves_navy
+    )
+  ) +
   scale_x_continuous(labels = percent_format(), expand = expansion(mult = c(0, 0.18))) +
   labs(
-    title = "The usage shift confirms the eye test",
+    title = "The Usage Shift Confirms the Eye Test",
     subtitle = "Ayo is carrying more ballhandler offense, not just finishing plays",
     x = "Share of Possessions",
     y = NULL,
@@ -571,7 +705,7 @@ style_kable(
   escape = TRUE
 ) %>%
   column_spec(1, bold = TRUE) %>%
-  row_spec(ayo_row, bold = TRUE, color = "white", background = WOLVES_NAVY)
+  row_spec(ayo_row, bold = TRUE, color = "white", background = wolves_navy)
 ```
 
 ```{r three-table, results='asis'}
@@ -584,34 +718,10 @@ style_kable(
   escape = TRUE
 ) %>%
   column_spec(1, bold = TRUE) %>%
-  row_spec(ayo_row, bold = TRUE, color = "white", background = WOLVES_NAVY)
+  row_spec(ayo_row, bold = TRUE, color = "white", background = wolves_navy)
 ```
 
 # The Game 4 Swing
-
-```{r game-four-context-data, include=FALSE}
-bench_40_tbl <- tribble(
-  ~Rank, ~Player, ~Points, ~`TS%`,
-  1, "Fred Brown", 45, "59.1%",
-  2, "Ayo Dosunmu", 43, "96.5%",
-  3, "Steph Curry", 40, "60.0%",
-  4, "Nick Van Exel", 40, "68.8%"
-)
-
-efficient_40_tbl <- tribble(
-  ~Rank, ~Player, ~Points, ~`TS%`, ~Playoffs,
-  1, "Terry Porter", 41, "101.7%", "1992",
-  2, "Damian Lillard", 55, "96.8%", "2021",
-  3, "Ayo Dosunmu", 43, "96.5%", "2026",
-  4, "Dirk Nowitzki", 48, "93.9%", "2011",
-  5, "Devin Booker", 47, "90.8%", "2023",
-  6, "Anthony Davis", 43, "90.6%", "2020",
-  7, "Devin Booker", 47, "90.5%", "2021",
-  8, "Shai Gilgeous-Alexander", 42, "90.2%", "2026",
-  9, "Jason Richardson", 42, "89.7%", "2010",
-  10, "Jamal Murray", 50, "89.4%", "2020"
-)
-```
 
 ```{r game-four-bench-40-table, results='asis'}
 ayo_row <- which(bench_40_tbl$Player == "Ayo Dosunmu")
@@ -623,7 +733,7 @@ style_kable(
   escape = TRUE
 ) %>%
   column_spec(1, bold = TRUE) %>%
-  row_spec(ayo_row, bold = TRUE, color = "white", background = WOLVES_NAVY)
+  row_spec(ayo_row, bold = TRUE, color = "white", background = wolves_navy)
 ```
 
 Game 4 was the clearest proof of concept. Edwards and DiVincenzo went down. The Wolves were staring down a team that is more talented, more offensively explosive, powered by one of the best offensive duos ever, and they cut off the faucet defensively while Ayo took over. His heroic 43 point game stamped his name as one of the best bench guards in basketball, and his performance landed in rare bench-company territory.
@@ -638,10 +748,10 @@ style_kable(
   escape = TRUE
 ) %>%
   column_spec(1, bold = TRUE) %>%
-  row_spec(ayo_row, bold = TRUE, color = "white", background = WOLVES_NAVY)
+  row_spec(ayo_row, bold = TRUE, color = "white", background = wolves_navy)
 ```
 
-Beyond the bench angle, his 40-point explosion also ranks among the most efficient playoff scoring games on record. 
+Beyond the bench angle, his 40-point explosion also ranks among the most efficient playoff scoring games on record.
 
 # Closing
 
