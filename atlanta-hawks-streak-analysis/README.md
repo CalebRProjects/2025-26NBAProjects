@@ -54,5 +54,3 @@ This report depends on live NBA Stats API pulls through `hoopR`, with optional l
 - `analysis.Rmd` — cleaned source analysis
 - `analysis.pdf` — rendered report
 - `README.md` — project overview
-- `hawks_run/cache/` — optional local cache for NBA API pulls
-- `data/` — local or excluded data files, if applicable
