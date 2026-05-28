@@ -1,0 +1,900 @@
+---
+title: "The Knicks' Best Finals Path in Years"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+geometry: margin=0.82in
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+  - \usepackage{booktabs}
+  - \usepackage{caption}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  dpi = 300,
+  out.width = "100%"
+)
+```
+
+```{r libraries}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(stringr)
+library(forcats)
+library(ggrepel)
+library(showtext)
+library(sysfonts)
+library(tibble)
+```
+
+```{r constants-and-parameters}
+# Theme colors
+bg_color      <- "#f6f4ef"
+ink_color     <- "#141414"
+muted_color   <- "#5f5f5f"
+grid_color    <- "#dedad3"
+neutral_color <- "#B8B1A6"
+good_color    <- "#0B6E4F"
+bad_color     <- "#A33A2A"
+
+# Knicks palette
+nyk_blue   <- "#006BB6"
+nyk_navy   <- "#13294B"
+nyk_orange <- "#F58426"
+light_blue <- "#D8EAF8"
+
+# Captions
+caption_team      <- "Data: NBA.com | Viz: @Rambzee_"
+caption_databallr <- "Data: Databallr | Viz: @Rambzee_"
+caption_synergy   <- "Data: Synergy / SportsRadar | Viz: @Rambzee_"
+
+sysfonts::font_add_google("Inter", "inter")
+showtext::showtext_auto()
+```
+
+```{r helper-functions}
+theme_caleb <- function(base_size = 10) {
+  theme_minimal(base_family = "inter", base_size = base_size) +
+    theme(
+      plot.background  = element_rect(fill = bg_color, color = NA),
+      panel.background = element_rect(fill = bg_color, color = NA),
+      panel.grid.major = element_line(color = grid_color, linewidth = 0.32),
+      panel.grid.minor = element_blank(),
+      plot.title       = element_text(size = 16, face = "bold", hjust = 0.5, color = ink_color),
+      plot.subtitle    = element_text(size = 10, hjust = 0.5, color = "#333333", margin = margin(b = 8)),
+      axis.title       = element_text(size = 10.5, face = "bold", color = ink_color),
+      axis.text        = element_text(size = 9, color = "#333333"),
+      plot.caption     = element_text(size = 7.4, color = "#6e6e6e", hjust = 0, margin = margin(t = 8)),
+      legend.position  = "top",
+      legend.title     = element_blank(),
+      plot.margin      = margin(10, 12, 14, 12)
+    )
+}
+
+style_table <- function(tbl, font_size = 8.1, scale_down = TRUE) {
+  latex_options <- "hold_position"
+
+  if (scale_down) {
+    latex_options <- c(latex_options, "scale_down")
+  }
+
+  tbl %>%
+    kable_styling(
+      full_width = FALSE,
+      font_size = font_size,
+      latex_options = latex_options
+    )
+}
+
+fmt_pm <- function(x, digits = 1, suffix = "") {
+  ifelse(
+    is.na(x),
+    "--",
+    paste0(ifelse(x > 0, "+", ""), round(x, digits), suffix)
+  )
+}
+
+fmt_pct <- function(x, digits = 1) {
+  paste0(round(x, digits), "%")
+}
+
+player_section_table <- function(player_name, caption_text) {
+  player_splits %>%
+    filter(Player == player_name) %>%
+    select(Player, Window, PTS, AST, REB, BLK, TS_pct, twoP_pct, threeP_pct, FTA, FTR, TOV, plus_minus) %>%
+    mutate(
+      PTS = round(PTS, 1),
+      AST = round(AST, 1),
+      REB = round(REB, 1),
+      BLK = round(BLK, 1),
+      FTA = round(FTA, 1),
+      TOV = round(TOV, 1),
+      `TS%` = fmt_pct(TS_pct),
+      `2P%` = fmt_pct(twoP_pct),
+      `3P%` = fmt_pct(threeP_pct),
+      `FTr` = fmt_pct(FTR),
+      `+/-` = fmt_pm(plus_minus)
+    ) %>%
+    select(Window, PTS, AST, REB, BLK, `TS%`, `2P%`, `3P%`, FTA, `FTr`, TOV, `+/-`) %>%
+    kbl(
+      booktabs = TRUE,
+      caption = caption_text,
+      align = "lrrrrrrrrrrr"
+    ) %>%
+    style_table(font_size = 7.8) %>%
+    kableExtra::column_spec(1, bold = TRUE, width = "1.15in")
+}
+```
+
+```{r data-loading}
+# Team-level playoff profile.
+team_playoff <- tibble::tribble(
+  ~Rank, ~Team, ~GP, ~W, ~L, ~MIN, ~OffRtg, ~DefRtg, ~NetRtg, ~AST_pct, ~AST_TO, ~AST_Ratio, ~OREB_pct, ~DREB_pct, ~REB_pct, ~TOV_pct, ~eFG_pct, ~TS_pct, ~PACE, ~PIE, ~POSS,
+  1, "New York Knicks", 9, 7, 2, 432.0, 122.3, 103.5, 18.8, 59.6, 1.88, 18.7, 32.6, 73.6, 54.4, 14.1, 58.6, 62.2, 96.28, 61.1, 867,
+  2, "Detroit Pistons", 9, 6, 3, 432.0, 109.7, 103.0, 6.7, 59.2, 1.38, 16.3, 33.0, 68.5, 51.4, 16.4, 50.8, 55.4, 94.89, 55.0, 852,
+  2, "Oklahoma City Thunder", 6, 6, 0, 288.0, 125.5, 107.5, 18.0, 60.5, 2.16, 19.1, 34.2, 68.4, 51.8, 12.7, 57.9, 62.1, 96.08, 60.4, 577,
+  2, "San Antonio Spurs", 8, 6, 2, 384.0, 115.7, 101.4, 14.4, 62.0, 1.74, 18.4, 28.8, 68.2, 50.4, 14.7, 55.4, 59.1, 99.00, 59.6, 788,
+  5, "Minnesota Timberwolves", 9, 5, 4, 432.0, 108.4, 110.3, -1.9, 59.6, 1.70, 17.1, 31.7, 75.9, 52.9, 14.2, 50.7, 54.0, 100.28, 47.4, 903,
+  6, "Cleveland Cavaliers", 9, 4, 5, 437.0, 111.7, 113.2, -1.4, 55.6, 1.27, 15.8, 34.9, 66.5, 50.8, 17.3, 53.7, 57.5, 96.22, 49.0, 878,
+  6, "Los Angeles Lakers", 8, 4, 4, 389.0, 106.5, 109.4, -2.9, 65.2, 1.30, 17.9, 31.3, 66.0, 49.7, 19.2, 53.3, 57.1, 93.10, 49.2, 755,
+  6, "Philadelphia 76ers", 10, 4, 6, 480.0, 108.4, 116.4, -8.0, 57.4, 1.71, 16.5, 25.3, 68.9, 47.1, 13.1, 51.1, 55.2, 94.25, 45.2, 941
+)
+
+# Player split data.
+player_splits <- tibble::tribble(
+  ~Player, ~Window, ~GP, ~PTS, ~AST, ~REB, ~TS_pct, ~twoP_pct, ~threeP_pct,
+  ~FT_pct, ~FTA, ~TOV, ~STL, ~BLK, ~MPG, ~plus_minus, ~FGA2, ~FGA3, ~FTR,
+
+  "OG Anunoby", "First 68 Games", 68, 16.9, 2.2, 5.3, 62.3, 58.7, 38.8,
+  82.3, 3.3, 1.8, 1.5, 0.7, 33.3, 6.0, 5.9, 6.1, 27.5,
+
+  "OG Anunoby", "Last 8 Games", 8, 21.4, 1.3, 7.5, 75.5, 67.2, 53.8,
+  81.1, 4.6, 0.5, 1.9, 1.1, 35.3, 14.8, 7.3, 4.9, 38.1,
+
+  "Karl-Anthony Towns", "First 76 Games", 76, 20.0, 3.0, 11.8, 61.9, 55.7, 36.9,
+  85.9, 5.5, 2.5, 0.9, 0.5, 30.9, 5.0, 9.6, 4.1, 40.0,
+
+  "Karl-Anthony Towns", "Last 9 Games", 9, 17.4, 6.2, 10.7, 72.8, 62.7, 46.1,
+  90.4, 5.8, 2.9, 1.2, 1.4, 29.3, 12.4, 6.6, 2.9, 61.2,
+
+  "Jalen Brunson", "First 75 Games", 75, 26.0, 6.8, 3.3, 57.8, 52.0, 36.8,
+  83.8, 5.7, 2.4, 0.8, 0.1, 35.1, 4.7, 12.9, 7.1, 28.3,
+
+  "Jalen Brunson", "Last 9 Games", 9, 28.0, 6.1, 2.4, 59.7, 53.5, 37.5,
+  86.4, 6.6, 2.4, 1.0, 0.0, 35.4, 14.6, 14.3, 6.2, 31.9,
+
+  "Josh Hart", "First 67 Games", 67, 12.0, 4.8, 7.4, 61.4, 57.9, 41.2,
+  72.0, 1.9, 1.9, 1.1, 0.3, 30.2, 3.1, 5.3, 3.7, 20.9,
+
+  "Josh Hart", "Last 9 Games", 9, 9.6, 4.6, 9.0, 48.1, 57.4, 20.6,
+  57.9, 2.1, 2.1, 1.7, 0.1, 34.4, 12.8, 5.2, 3.8, 23.5
+)
+
+# Databallr / ESPN Analytics Net Points table from user-provided extract.
+# Minimum game threshold is applied later in the table and visual sections.
+net_points <- tibble::tribble(
+  ~Player, ~G, ~Offense, ~Defense, ~Overall,
+  "Karl-Anthony Towns", 9, 28, 21, 48,
+  "OG Anunoby", 8, 29, 13, 42,
+  "Jalen Brunson", 9, 34, 9, 43,
+  "Mikal Bridges", 9, 11, 5, 15,
+  "Jose Alvarado", 8, 4, 6, 10,
+  "Mitchell Robinson", 8, -1, 5, 4,
+  "Jordan Clarkson", 9, 1, 5, 7,
+  "Miles McBride", 9, -12, 9, -3,
+  "Josh Hart", 9, -18, 16, -2,
+  "Landry Shamet", 9, -6, 3, -3
+)
+
+brunson_playtypes <- tibble::tribble(
+  ~Season, ~Playtype, ~PctTime,
+  "2023", "PnR", 41.6,
+  "2023", "Isolation", 19.2,
+  "2023", "Spot Up", 10.8,
+  "2023", "Transition", 9.8,
+  "2023", "Handoffs", 6.3,
+  "2024", "PnR", 40.4,
+  "2024", "Isolation", 23.2,
+  "2024", "Transition", 10.2,
+  "2024", "Handoffs", 9.9,
+  "2024", "Spot Up", 4.3,
+  "2025", "PnR", 41.6,
+  "2025", "Isolation", 17.1,
+  "2025", "Transition", 12.7,
+  "2025", "Handoffs", 5.5,
+  "2025", "Spot Up", 4.9,
+  "2026", "PnR", 36.5,
+  "2026", "Isolation", 15.8,
+  "2026", "Transition", 12.3,
+  "2026", "Spot Up", 10.3,
+  "2026", "Handoffs", 6.9
+)
+
+kat_playtypes <- tibble::tribble(
+  ~Season, ~Playtype, ~PctTime, ~Poss,
+  "2025", "Post Up", 19.1, 69,
+  "2025", "Spot Up", 17.7, 64,
+  "2025", "Isolation", 15.0, 54,
+  "2025", "Transition", 13.6, 49,
+  "2025", "Putbacks", 8.9, 32,
+  "2025", "Cut", 6.6, 24,
+  "2025", "Roll Man", 6.1, 22,
+  "2026", "Roll Man", 15.4, 19,
+  "2026", "Spot Up", 13.8, 17,
+  "2026", "Transition", 13.8, 17,
+  "2026", "Putbacks", 13.8, 17,
+  "2026", "Isolation", 10.6, 13,
+  "2026", "Post Up", 8.9, 11
+)
+
+kat_wowy <- tibble::tribble(
+  ~Lineup, ~MIN, ~OFF, ~DEF, ~NET, ~threeP, ~opp_threeP,
+  "Towns ON, Robinson OFF", 249, 123.9, 103.5, 20.4, 38.3, 33.3,
+  "Robinson ON, Towns OFF", 98, 126.8, 102.1, 24.8, 37.7, 23.7,
+  "Towns OFF, Robinson OFF", 69, 119.6, 111.3, 8.2, 36.7, 37.2,
+  "Towns ON, Robinson ON", 16, 127.3, 103.0, 24.2, 42.9, 40.0
+)
+
+kat_wowy_on_off <- tibble::tribble(
+  ~Lineup, ~MIN, ~OffRtg, ~DefRtg, ~NetRtg, ~threeP, ~opp_threeP,
+  "Towns ON", 265, 124.1, 103.4, 20.7, 38.5, 33.7,
+  "Towns OFF", 167, 123.8, 106.0, 17.8, 37.3, 28.6,
+  "ON - OFF", NA_real_, 3.0, -4.5, 7.5, 4.6, 4.7
+)
+
+mikal_game_log <- tibble::tribble(
+  ~Game, ~Series, ~Opponent, ~PTS,
+  1, "Round 1", "ATL", 11,
+  2, "Round 1", "ATL", 10,
+  3, "Round 1", "ATL", 0,
+  4, "Round 1", "ATL", 8,
+  5, "Round 1", "ATL", 7,
+  6, "Round 1", "ATL", 24,
+  7, "Round 2", "PHI", 17,
+  8, "Round 2", "PHI", 18,
+  9, "Round 2", "PHI", 23
+)
+
+# Game 9 result and margin are kept as originally entered to preserve the original cumulative-margin output.
+# If using final box scores, re-check the 108-102 result against the listed +14 margin.
+game_results <- tibble::tribble(
+  ~Game, ~Series, ~Opponent, ~Result, ~Margin,
+  1, "Round 1", "ATL", "113-102", 11,
+  2, "Round 1", "ATL", "106-107", -1,
+  3, "Round 1", "ATL", "108-109", -1,
+  4, "Round 1", "ATL", "114-98", 16,
+  5, "Round 1", "ATL", "126-97", 29,
+  6, "Round 1", "ATL", "140-89", 51,
+  7, "Round 2", "PHI", "137-98", 39,
+  8, "Round 2", "PHI", "108-102", 6,
+  9, "Round 2", "PHI", "108-94", 14
+)
+```
+
+```{r analysis-summaries}
+player_change <- player_splits %>%
+  group_by(Player) %>%
+  summarise(
+    recent_window = Window[which.max(str_detect(Window, "Last"))],
+    PTS_delta = PTS[which.max(str_detect(Window, "Last"))] - PTS[which.min(str_detect(Window, "Last"))],
+    AST_delta = AST[which.max(str_detect(Window, "Last"))] - AST[which.min(str_detect(Window, "Last"))],
+    REB_delta = REB[which.max(str_detect(Window, "Last"))] - REB[which.min(str_detect(Window, "Last"))],
+    TS_delta = TS_pct[which.max(str_detect(Window, "Last"))] - TS_pct[which.min(str_detect(Window, "Last"))],
+    twoP_delta = twoP_pct[which.max(str_detect(Window, "Last"))] - twoP_pct[which.min(str_detect(Window, "Last"))],
+    threeP_delta = threeP_pct[which.max(str_detect(Window, "Last"))] - threeP_pct[which.min(str_detect(Window, "Last"))],
+    FTA_delta = FTA[which.max(str_detect(Window, "Last"))] - FTA[which.min(str_detect(Window, "Last"))],
+    TOV_delta = TOV[which.max(str_detect(Window, "Last"))] - TOV[which.min(str_detect(Window, "Last"))],
+    plus_minus_delta = plus_minus[which.max(str_detect(Window, "Last"))] - plus_minus[which.min(str_detect(Window, "Last"))],
+    .groups = "drop"
+  )
+
+top_three_recent <- player_splits %>%
+  filter(
+    Player %in% c("OG Anunoby", "Karl-Anthony Towns", "Jalen Brunson"),
+    str_detect(Window, "Last")
+  ) %>%
+  summarise(
+    PPG = sum(PTS),
+    RPG = sum(REB),
+    APG = sum(AST),
+    `Avg TS%` = mean(TS_pct),
+    `Total +/-` = sum(plus_minus),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    PPG = round(PPG, 1),
+    RPG = round(RPG, 1),
+    APG = round(APG, 1),
+    `Avg TS%` = fmt_pct(`Avg TS%`),
+    `Total +/-` = fmt_pm(`Total +/-`, 1)
+  )
+
+league_avg_off <- mean(team_playoff$OffRtg)
+league_avg_def <- mean(team_playoff$DefRtg)
+```
+
+# Executive Summary
+
+Coming into the season, expectations were higher than they had been in years for the New York Knicks. With a deep collection of offensive talent, Mike Brown taking over, and the East wide open, the question became simple: if not now, when?
+
+Now it feels like the right question. Boston is already out. Indiana is no longer the same obstacle. Cleveland or Detroit still lie ahead, but New York is one win away from consecutive conference finals and would have a real case as the favorite against either team.
+
+The bar has shifted. Winning the East is no longer a distant idea. The bigger question is whether this roster can hold up against whoever comes out of the West.
+
+That question matters because of how they have gotten here. This has not been the old playoff formula where Brunson had to drag every late-clock possession home. He is still the organizer and tone-setter, but he has not had to do it alone. Through nine playoff games, New York has looked balanced, physical, and deep enough to make the Finals conversation real.
+
+# Where the Knicks Stand
+
+```{r team-table}
+team_playoff %>%
+  arrange(desc(NetRtg)) %>%
+  transmute(
+    Team,
+    `W-L` = paste0(W, "-", L),
+    OffRtg,
+    DefRtg,
+    NetRtg,
+    `TS%` = fmt_pct(TS_pct),
+    `TOV%` = fmt_pct(TOV_pct),
+    `OREB%` = fmt_pct(OREB_pct),
+    Pace = round(PACE, 1)
+  ) %>%
+  kbl(booktabs = TRUE, caption = "Remaining playoff teams by overall profile") %>%
+  style_table(font_size = 8)
+```
+
+```{r net-rating-bars, fig.height=4.7, fig.cap="Net Rating among remaining playoff teams"}
+team_playoff %>%
+  mutate(
+    team_short = case_when(
+      Team == "New York Knicks" ~ "Knicks",
+      Team == "Oklahoma City Thunder" ~ "Thunder",
+      Team == "San Antonio Spurs" ~ "Spurs",
+      Team == "Detroit Pistons" ~ "Pistons",
+      Team == "Minnesota Timberwolves" ~ "Timberwolves",
+      Team == "Cleveland Cavaliers" ~ "Cavaliers",
+      Team == "Los Angeles Lakers" ~ "Lakers",
+      Team == "Philadelphia 76ers" ~ "76ers",
+      TRUE ~ Team
+    ),
+    team_short = fct_reorder(team_short, NetRtg),
+    is_knicks = Team == "New York Knicks"
+  ) %>%
+  ggplot(aes(NetRtg, team_short, fill = is_knicks)) +
+  geom_col(width = 0.68) +
+  geom_vline(xintercept = 0, linewidth = 0.4, color = "gray45") +
+  geom_text(
+    aes(label = fmt_pm(NetRtg), hjust = ifelse(NetRtg >= 0, -0.15, 1.1)),
+    size = 3.1,
+    family = "inter"
+  ) +
+  scale_fill_manual(values = c(`FALSE` = neutral_color, `TRUE` = nyk_blue)) +
+  scale_x_continuous(limits = c(-10, 23), breaks = seq(-10, 20, 5)) +
+  labs(
+    title = "New York is in Good Company",
+    subtitle = "The Knicks, Thunder, and Spurs have separated from the remaining field",
+    x = "Net Rating",
+    y = NULL,
+    caption = caption_team
+  ) +
+  theme_caleb() +
+  theme(legend.position = "none")
+```
+
+```{r balance-scatter, fig.height=5.4, fig.cap="Offensive and defensive balance among remaining playoff teams"}
+team_colors <- c(
+  "NYK" = "#F58426",
+  "DET" = "#C8102E",
+  "OKC" = "#007AC1",
+  "MIN" = "#236192",
+  "SAS" = "#8A8D8F",
+  "CLE" = "#6F263D",
+  "LAL" = "#552583",
+  "PHI" = "#006BB6"
+)
+
+plot_df <- team_playoff %>%
+  mutate(team_abbr = c("NYK", "DET", "OKC", "SAS", "MIN", "CLE", "LAL", "PHI"))
+
+ggplot(plot_df, aes(OffRtg, DefRtg)) +
+  annotate(
+    "rect",
+    xmin = league_avg_off,
+    xmax = Inf,
+    ymin = -Inf,
+    ymax = league_avg_def,
+    fill = light_blue,
+    alpha = 0.32
+  ) +
+  geom_vline(
+    xintercept = league_avg_off,
+    linewidth = 0.5,
+    color = muted_color,
+    linetype = "dashed"
+  ) +
+  geom_hline(
+    yintercept = league_avg_def,
+    linewidth = 0.5,
+    color = muted_color,
+    linetype = "dashed"
+  ) +
+  geom_point(
+    aes(size = NetRtg, fill = team_abbr),
+    shape = 21,
+    color = ink_color,
+    stroke = 0.45,
+    alpha = 0.95
+  ) +
+  geom_text(
+    aes(label = team_abbr),
+    family = "inter",
+    fontface = "bold",
+    size = 3.2,
+    color = "white"
+  ) +
+  scale_fill_manual(values = team_colors) +
+  scale_size_continuous(range = c(8, 12), guide = "none") +
+  scale_x_continuous(limits = c(102, 128), breaks = seq(105, 125, 5)) +
+  scale_y_reverse(limits = c(119, 99), breaks = seq(100, 118, 3)) +
+  labs(
+    title = "The Knicks Have Separated Through Two-Way Balance",
+    subtitle = "Dashed lines show averages among remaining playoff teams",
+    x = "Offensive Rating",
+    y = "Defensive Rating",
+    caption = caption_team
+  ) +
+  theme_caleb() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size = 15.5, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 9.4, hjust = 0.5),
+    axis.text = element_text(size = 8.9)
+  )
+```
+
+The Knicks have not just been good by East standards. Among the remaining teams, they combine the best Net Rating with an elite offense and a defense strong enough to keep games from becoming pure shotmaking contests.
+
+# Why the Knicks Look More Connected
+
+```{r top-three-burden-table}
+top_three_recent %>%
+  kbl(
+    booktabs = TRUE,
+    caption = "Combined playoff production from Brunson, Towns, and Anunoby",
+    align = "rrrrr"
+  ) %>%
+  style_table(font_size = 8.4)
+```
+
+The team-level leap starts with the Knicks’ top three. Through eight playoff games, Brunson, Towns, and Anunoby have combined for `r top_three_recent$PPG` points, `r top_three_recent$RPG` rebounds, and `r top_three_recent$APG` assists per game. Brunson is still the first name on the scouting report, but the burden is spread more cleanly than in past playoff runs.
+
+## Karl-Anthony Towns: More Than a Scoring Big
+
+```{r kat-split-table}
+player_section_table(
+  player_name = "Karl-Anthony Towns",
+  caption_text = "Karl-Anthony Towns regular-season and playoff split comparison"
+)
+```
+
+KAT’s playoff run has been built on the poise and control he has given the Knicks. His assists have doubled from 3.0 to 6.2 per game, his free-throw attempts are up, his FTr has jumped from 40.0% to 61.2%, his blocks have climbed from 0.5 to 1.4 per game, and his efficiency has exploded to 72.8% true shooting.
+
+```{r kat-playtype-shift, fig.height=4.8, fig.cap="KAT playoff playtype distribution change. 2025 sample: 361 possessions. 2026 sample: 134 possessions through Game 2 vs Philadelphia; Game 3 excluded to capture the Knicks' offensive context with OG in."}
+kat_playtypes %>%
+  filter(Playtype %in% c("Roll Man", "Post Up", "Spot Up", "Isolation", "Transition", "Putbacks")) %>%
+  mutate(
+    Playtype = factor(
+      Playtype,
+      levels = c("Post Up", "Isolation", "Spot Up", "Transition", "Putbacks", "Roll Man")
+    ),
+    Season = factor(Season, levels = c("2025", "2026"))
+  ) %>%
+  ggplot(aes(PctTime, Playtype, fill = Season)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.62) +
+  geom_text(
+    aes(label = paste0(PctTime, "%")),
+    position = position_dodge(width = 0.7),
+    hjust = -0.12,
+    size = 2.7,
+    family = "inter"
+  ) +
+  scale_fill_manual(values = c("2025" = neutral_color, "2026" = nyk_blue)) +
+  scale_x_continuous(
+    limits = c(0, 22),
+    breaks = seq(0, 20, 5),
+    labels = label_percent(scale = 1)
+  ) +
+  labs(
+    title = "KAT's Playoff Role is Less Static Than Last Year",
+    subtitle = "Share of playoff possessions by playtype",
+    x = "% of playoff possessions",
+    y = NULL,
+    caption = caption_synergy
+  ) +
+  theme_caleb()
+```
+
+That playtype shift explains a lot. Compared with last year’s playoff run, KAT is spending less time in static post-ups and isolations and more time creating pressure as a roller, transition threat, and cleanup scorer.
+
+He is catching the ball on the move, using his size near the rim, drawing help, and making the next pass when the defense reacts. That version is more useful, even if the scoring average is slightly lower, because his scoring, passing, foul pressure, and size are all working together.
+
+## KAT's Defense Deserves Its Own Note
+
+```{r kat-wowy-table}
+kat_wowy %>%
+  transmute(
+    Lineup,
+    MIN,
+    OFF,
+    DEF,
+    NET = fmt_pm(NET),
+    `NYK 3P%` = fmt_pct(threeP),
+    `OPP 3P%` = fmt_pct(opp_threeP)
+  ) %>%
+  kbl(booktabs = TRUE, caption = "Knicks playoff WOWY lineup splits with KAT and Mitchell Robinson") %>%
+  style_table(font_size = 8)
+```
+
+```{r kat-on-off-table}
+kat_wowy_on_off %>%
+  mutate(
+    MIN = ifelse(is.na(MIN), "—", as.character(MIN)),
+    OffRtg = fmt_pm(OffRtg, 1),
+    DefRtg = fmt_pm(DefRtg, 1),
+    NetRtg = fmt_pm(NetRtg, 1),
+    `3P%` = fmt_pct(threeP),
+    `Opp 3P%` = fmt_pct(opp_threeP)
+  ) %>%
+  select(Lineup, MIN, OffRtg, DefRtg, NetRtg, `3P%`, `Opp 3P%`) %>%
+  kbl(
+    booktabs = TRUE,
+    caption = "Knicks playoff performance with Towns on and off the floor",
+    align = "lrrrrrr"
+  ) %>%
+  style_table(font_size = 8) %>%
+  kableExtra::column_spec(1, bold = TRUE, width = "1.2in")
+```
+
+KAT’s defense deserves its own note. The rim protection has stood out, but New York has defended well in his minutes without needing to pair him with Mitchell Robinson. That does not mean he has suddenly become a defensive anchor, but his minutes have not been something the Knicks need to hide. He has been good defensively, which is especially meaningful for a player whose playoff defense has often been questioned.
+
+## OG Is the Perfect Role Player
+
+```{r og-split-table}
+player_section_table(
+  player_name = "OG Anunoby",
+  caption_text = "OG Anunoby regular-season and playoff split comparison"
+)
+```
+
+```{r og-change-table}
+player_change %>%
+  filter(Player == "OG Anunoby") %>%
+  transmute(
+    Player,
+    `PTS change` = fmt_pm(PTS_delta, 1),
+    `AST change` = fmt_pm(AST_delta, 1),
+    `REB change` = fmt_pm(REB_delta, 1),
+    `TS% change` = fmt_pm(TS_delta, 1, " pp"),
+    `FTA change` = fmt_pm(FTA_delta, 1),
+    `TOV change` = fmt_pm(TOV_delta, 1),
+    `+/- change` = fmt_pm(plus_minus_delta, 1)
+  ) %>%
+  kbl(
+    booktabs = TRUE,
+    caption = "OG Anunoby regular-season to playoff change",
+    align = "lrrrrrrr"
+  ) %>%
+  style_table(font_size = 7.4) %>%
+  kableExtra::column_spec(1, bold = TRUE, width = "1.35in")
+```
+
+OG’s jump is the biggest individual playoff swing on the roster. He has gone from 16.9 to 21.4 points per game, jumped to 75.5% true shooting, and cut his turnovers from 1.8 to 0.5 per game.
+
+That is not normal role-player variance, especially with the defensive workload he still carries. When Brunson or Towns create advantages, OG punishes the gap, the late rotation, or the clean catch-and-shoot chance. On the other end, he has taken turns on Jalen Johnson, CJ McCollum, Tyrese Maxey, VJ Edgecombe, and Paul George.
+
+His absence is a major blow. The Knicks have enough shot creation to survive without him, but their title ceiling depends on his two-way impact. If they are going to reach the Finals, they likely need the version of the team they showed when OG was available.
+
+## Brunson Does Not Have to Carry Every Possession
+
+```{r brunson-split-table}
+player_section_table(
+  player_name = "Jalen Brunson",
+  caption_text = "Jalen Brunson regular-season and playoff split comparison"
+)
+```
+
+```{r brunson-playtype-shift, fig.height=4.6, fig.cap="Jalen Brunson playoff playtype distribution. 2026 sample is through Game 2 vs Philadelphia; Game 3 excluded to capture the Knicks' offensive context with OG in."}
+brunson_playtypes %>%
+  filter(Playtype %in% c("PnR", "Isolation", "Spot Up", "Handoffs")) %>%
+  mutate(
+    Playtype = factor(Playtype, levels = c("PnR", "Isolation", "Spot Up", "Handoffs")),
+    Season = factor(Season, levels = c("2023", "2024", "2025", "2026"))
+  ) %>%
+  ggplot(aes(Season, PctTime, group = Playtype, color = Playtype)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.5) +
+  scale_y_continuous(
+    labels = label_percent(scale = 1),
+    limits = c(0, 45),
+    breaks = seq(0, 40, 10)
+  ) +
+  scale_color_manual(
+    values = c(
+      "PnR" = nyk_blue,
+      "Isolation" = nyk_navy,
+      "Spot Up" = nyk_orange,
+      "Handoffs" = good_color
+    )
+  ) +
+  labs(
+    title = "Brunson's Playoff Workload Looks Different",
+    subtitle = "Less on-ball burden, more off-ball involvement",
+    x = NULL,
+    y = "% of playoff possessions",
+    caption = caption_synergy
+  ) +
+  theme_caleb()
+```
+
+Brunson is still the engine of the offense. The difference is that New York is no longer asking him to create every advantage himself.
+
+With OG available, Brunson’s playoff workload has looked noticeably more balanced than in previous runs. His pick-and-roll share remains high, but it has fallen from the 40–42% range of prior postseasons to 36.5%, while his isolation burden has also declined. At the same time, his spot-up usage has climbed back above 10%.
+
+KAT’s playmaking and OG’s finishing have allowed the Knicks to move Brunson around more offensively instead of forcing him to survive impossible possessions over and over again. That balance is a major part of what raises New York’s ceiling when fully healthy.
+
+# Where the Questions Still Sit
+
+## Mikal Bridges
+
+```{r mikal-reset-table}
+mikal_reset <- tibble::tribble(
+  ~Window, ~Games, ~PPG, ~TS_pct, ~twoP_pct, ~threeP_pct, ~FTA, ~TOV, ~plus_minus,
+  "Games 1-5", 5, 7.2, 53.3, 43.8, 26.7, 0.8, 1.2, -2.2,
+  "Games 6-9", 4, 20.5, 78.7, 75.0, 53.8, 1.8, 0, 20.3
+)
+
+mikal_reset %>%
+  mutate(
+    `TS%` = fmt_pct(TS_pct),
+    `2P%` = fmt_pct(twoP_pct),
+    `3P%` = fmt_pct(threeP_pct),
+    `+/-` = fmt_pm(plus_minus)
+  ) %>%
+  select(Window, Games, PPG, `TS%`, `2P%`, `3P%`, FTA, TOV, `+/-`) %>%
+  kbl(booktabs = TRUE, caption = "Mikal Bridges' playoff reset") %>%
+  style_table(font_size = 8)
+```
+
+```{r mikal-progression, fig.height=4.1, fig.cap="Mikal Bridges game-by-game playoff scoring progression"}
+ymax <- max(mikal_game_log$PTS, na.rm = TRUE)
+n_games <- max(mikal_game_log$Game, na.rm = TRUE)
+mikal_ppg <- mean(mikal_game_log$PTS, na.rm = TRUE)
+
+ggplot(mikal_game_log, aes(Game, PTS)) +
+  annotate(
+    "rect",
+    xmin = 0.5,
+    xmax = 5.5,
+    ymin = -Inf,
+    ymax = Inf,
+    fill = "#d8d4cc",
+    alpha = 0.28
+  ) +
+  geom_line(linewidth = 1.15, color = nyk_blue) +
+  geom_point(size = 3.1, color = nyk_blue) +
+  geom_hline(
+    yintercept = mikal_ppg,
+    linetype = "dashed",
+    linewidth = 0.5,
+    color = muted_color
+  ) +
+  geom_text(
+    aes(label = PTS),
+    vjust = -0.85,
+    size = 3.1,
+    family = "inter",
+    fontface = "bold"
+  ) +
+  annotate(
+    "text",
+    x = n_games - 0.4,
+    y = mikal_ppg + 1.1,
+    label = paste0("Playoff avg: ", round(mikal_ppg, 1), " PPG"),
+    family = "inter",
+    size = 2.6,
+    color = muted_color,
+    hjust = 1
+  ) +
+  scale_x_continuous(breaks = 1:n_games) +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.22))) +
+  labs(
+    title = "Mikal Bridges Had to Play His Way Into Form",
+    subtitle = "Game 6 was the turning point",
+    x = "Playoff game",
+    y = "Points",
+    caption = caption_team
+  ) +
+  theme_caleb()
+```
+
+Bridges is the biggest variable left in the rotation. The last four games have been excellent, but the opening five still matter. Against Atlanta, the passivity, settling, and uneven pressure all showed up.
+
+The recent jump is encouraging. He looks more comfortable, more involved, and more willing to punish space. The concern is that a lot of the surge is still jumper-reliant. When the shot is falling, he looks like the missing piece. When it is not, the Knicks still need him to impact the game without drifting.
+
+That becomes even more important if OG misses extended time. New York does not need Bridges to be a third star every night, but it may need more of the Games 6–9 version to survive this series and keep its title path alive until OG returns.
+
+## Josh Hart
+
+```{r hart-split-table}
+player_splits %>%
+  filter(Player == "Josh Hart") %>%
+  select(Window, PTS, AST, REB, STL, TS_pct, twoP_pct, threeP_pct, FTA, TOV, plus_minus) %>%
+  mutate(
+    PTS = round(PTS, 1),
+    AST = round(AST, 1),
+    REB = round(REB, 1),
+    STL = round(STL, 1),
+    FTA = round(FTA, 1),
+    TOV = round(TOV, 1),
+    `TS%` = fmt_pct(TS_pct),
+    `2P%` = fmt_pct(twoP_pct),
+    `3P%` = fmt_pct(threeP_pct),
+    `+/-` = fmt_pm(plus_minus)
+  ) %>%
+  select(Window, PTS, AST, REB, STL, `TS%`, `2P%`, `3P%`, FTA, TOV, `+/-`) %>%
+  kbl(
+    booktabs = TRUE,
+    caption = "Josh Hart regular-season and playoff split comparison",
+    align = "lrrrrrrrrrr"
+  ) %>%
+  style_table(font_size = 8) %>%
+  kableExtra::column_spec(1, bold = TRUE, width = "1.15in")
+```
+
+```{r hart-net-points-table}
+net_points %>%
+  filter(Player == "Josh Hart") %>%
+  transmute(
+    Player,
+    G,
+    `Offensive Net Points` = fmt_pm(Offense, 0),
+    `Defensive Net Points` = fmt_pm(Defense, 0),
+    `Overall Net Points` = fmt_pm(Overall, 0)
+  ) %>%
+  kbl(
+    booktabs = TRUE,
+    caption = "Josh Hart playoff Net Points profile",
+    align = "lrrrr"
+  ) %>%
+  style_table(font_size = 8) %>%
+  kableExtra::column_spec(1, bold = TRUE, width = "1.25in")
+```
+
+Hart has mostly remained the same player he was during the regular season, for better and worse. The rebounding, defensive activity, and general chaos still create value even when the scoring disappears, which is why his defensive Net Points profile remains strong.
+
+The issue is that the offensive decline has become difficult to ignore. His efficiency and three-point shooting have cratered in the playoffs, and unlike Bridges, there has not been a real counter-surge yet. New York can survive some offensive limitations because of everything else Hart provides, but the current version places more pressure on the rest of the lineup to carry the spacing and scoring load.
+
+# Net Points: Who Has Driven the Most Impact?
+
+**Net Points Definition:** Net Points is a play-by-play based metric that assigns credit and blame for every possession while a player is on the floor, capturing scoring, turnovers, defense, and context beyond the box score. It reflects how much a player actually moved the score, not just what they produced individually.
+
+```{r net-points-table}
+net_points %>%
+  filter(G >= 7) %>%
+  arrange(desc(Overall)) %>%
+  mutate(
+    Offense = fmt_pm(Offense, 0),
+    Defense = fmt_pm(Defense, 0),
+    Overall = fmt_pm(Overall, 0)
+  ) %>%
+  kbl(booktabs = TRUE, caption = "Knicks playoff Net Points, minimum seven games") %>%
+  style_table(font_size = 8)
+```
+
+```{r net-points-bars, fig.height=4.9, fig.cap="Knicks playoff Net Points by player"}
+net_points %>%
+  filter(G >= 7) %>%
+  arrange(Overall) %>%
+  mutate(
+    Player = factor(Player, levels = Player),
+    label = fmt_pm(Overall, 0)
+  ) %>%
+  ggplot(aes(x = Player, y = Overall, fill = Overall)) +
+  geom_col(width = 0.68, alpha = 0.94) +
+  geom_hline(yintercept = 0, linewidth = 0.45, color = "#555555", alpha = 0.5) +
+  geom_text(
+    aes(label = label, hjust = if_else(Overall >= 0, -0.18, 1.15)),
+    size = 3.2,
+    family = "inter",
+    color = ink_color
+  ) +
+  coord_flip() +
+  scale_fill_gradient2(
+    low = bad_color,
+    mid = neutral_color,
+    high = nyk_blue,
+    midpoint = 0
+  ) +
+  scale_y_continuous(
+    limits = c(-13, 53),
+    breaks = seq(-10, 50, 10),
+    expand = expansion(mult = c(0.12, 0.14))
+  ) +
+  labs(
+    title = "New York’s Big 3 Has Driven the Run",
+    subtitle = "Knicks playoff Net Points | Minimum 8 GP",
+    x = NULL,
+    y = "Overall Net Points",
+    caption = "Data: ESPN Analytics | Viz: @Rambzee_"
+  ) +
+  theme_caleb() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size = 14.5, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 9.2, hjust = 0.5),
+    axis.text.y = element_text(size = 9.5, face = "bold")
+  )
+```
+
+```{r mov-over-time, fig.height=4.1, fig.cap="Knicks playoff cumulative margin over time"}
+if (all(!is.na(game_results$Margin))) {
+  game_results %>%
+    mutate(cum_margin = cumsum(Margin)) %>%
+    ggplot(aes(Game, cum_margin)) +
+    geom_hline(yintercept = 0, linewidth = 0.45, color = "gray45") +
+    geom_line(linewidth = 1.15, color = nyk_navy) +
+    geom_point(
+      aes(fill = Margin >= 0),
+      shape = 21,
+      size = 3.2,
+      color = ink_color,
+      stroke = 0.35
+    ) +
+    geom_text(
+      aes(label = fmt_pm(cum_margin, 0)),
+      vjust = -0.85,
+      size = 3,
+      family = "inter",
+      fontface = "bold"
+    ) +
+    scale_fill_manual(values = c(`FALSE` = bad_color, `TRUE` = nyk_blue)) +
+    scale_x_continuous(breaks = 1:9) +
+    scale_y_continuous(expand = expansion(mult = c(0.08, 0.16))) +
+    labs(
+      title = "The Knicks Have Steadily Built Separation",
+      subtitle = "Cumulative playoff margin through each game",
+      x = "Playoff game",
+      y = "Cumulative margin",
+      caption = caption_team
+    ) +
+    theme_caleb() +
+    theme(legend.position = "none")
+}
+```
+
+The broader picture still leans encouraging. New York’s best players have moved the score the most, and the cumulative margin shows how sharply the Knicks separated after the first three games.
+
+Still, a championship run depends on the unresolved pieces. OG’s health matters. Bridges needs to keep trending toward the Games 6–9 version, especially if OG misses more time. Hart has to give them enough offense to keep his defensive value on the floor.
+
+But the foundation is there. The Knicks have defended, created multiple areas of margin, and won their minutes like a team with a legitimate path forward.
+
+# Conclusion
+
+The Knicks do not need every number to hold exactly where it is. OG will not shoot 75.5% true shooting forever. Mikal’s Games 6–9 surge still needs a larger sample. KAT’s efficiency will be tested as defenses adjust. Brunson will see tougher perimeter coverages the deeper this run goes.
+
+Even with those concerns, New York’s playoff formula looks more complete than it has in years. They can win through Brunson, through Towns, through defense, or through the margins.
+
+That opportunity also brings pressure. This is not just a nice “Knicks are back” story anymore. It is their clearest chance to win the East.
