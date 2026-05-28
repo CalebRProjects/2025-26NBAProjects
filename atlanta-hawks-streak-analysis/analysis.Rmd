@@ -1,0 +1,871 @@
+---
+title: "An 11-Game Run, and a Reality Check"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: false
+params:
+  season: "2025-26"
+  season_type: "Regular Season"
+  team_abbr: "ATL"
+  team_id: "1610612737"
+  last_n: 11
+  hot_n: 11
+  roll_n: 11
+  use_cache: true
+  cache_dir: "hawks_run/cache"
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+  - \usepackage[table]{xcolor}
+  - \usepackage{fontspec}
+  - \setmainfont{Inter}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  dev = "cairo_pdf",
+  dpi = 220,
+  out.width = "100%"
+)
+```
+
+```{r libraries}
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(stringr)
+library(readr)
+library(janitor)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(showtext)
+library(sysfonts)
+library(glue)
+library(lubridate)
+library(stringi)
+library(hoopR)
+```
+
+```{r constants-and-parameters}
+# Report parameters
+SEASON <- params$season
+SEASON_TYPE <- params$season_type
+TEAM_ABB <- params$team_abbr
+TEAM_ID <- as.character(params$team_id)
+LAST_N <- params$last_n
+HOT_N <- params$hot_n
+ROLL_N <- params$roll_n
+
+# Cache settings
+use_cache <- isTRUE(params$use_cache)
+cache_dir <- params$cache_dir
+dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+
+# Theme constants
+BG <- "#f6f4ef"
+TEXT_DARK <- "#141414"
+GRID <- "#dedad3"
+
+# Hawks palette
+HAWKS_RED <- "#C8102E"
+HAWKS_YELLOW <- "#FDB927"
+HAWKS_GRAY <- "#BEC0C2"
+
+font_add_google("Inter", "inter")
+showtext_auto()
+```
+
+```{r helper-functions}
+theme_caleb_hawks <- function() {
+  theme_minimal(base_family = "inter") +
+    theme(
+      plot.background = element_rect(fill = BG, color = NA),
+      panel.background = element_rect(fill = BG, color = NA),
+      panel.grid.major = element_line(color = GRID, linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+      plot.title = element_text(size = 18, face = "bold", hjust = 0.5, color = TEXT_DARK),
+      plot.subtitle = element_text(size = 10, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 6)),
+      axis.title = element_text(size = 12, face = "bold", color = TEXT_DARK),
+      axis.text = element_text(size = 10, color = "#333333"),
+      legend.position = "top",
+      legend.title = element_blank(),
+      plot.caption = element_text(size = 8, color = "#6e6e6e", hjust = 0, margin = margin(t = 6)),
+      plot.margin = margin(10, 12, 14, 12)
+    )
+}
+
+style_hawks_table <- function(tbl, font_size = 9, scale_down = FALSE) {
+  latex_options <- c("striped", "hold_position")
+
+  if (scale_down) {
+    latex_options <- c(latex_options, "scale_down")
+  }
+
+  tbl %>%
+    kableExtra::kable_styling(
+      latex_options = latex_options,
+      font_size = font_size
+    )
+}
+
+cached <- function(key, fn) {
+  path <- file.path(cache_dir, paste0(key, ".rds"))
+
+  if (use_cache && file.exists(path)) {
+    return(readRDS(path))
+  }
+
+  out <- fn()
+
+  if (use_cache) {
+    saveRDS(out, path)
+  }
+
+  out
+}
+
+safe_clean_names <- function(df) {
+  names(df) <- janitor::make_clean_names(names(df))
+  df
+}
+
+pluck_df <- function(x, prefer = NULL) {
+  if (is.data.frame(x)) {
+    return(x)
+  }
+
+  if (!is.null(prefer) && is.list(x) && prefer %in% names(x) && is.data.frame(x[[prefer]])) {
+    return(x[[prefer]])
+  }
+
+  if (is.list(x)) {
+    idx <- which(vapply(x, is.data.frame, logical(1)))
+    if (length(idx) > 0) {
+      return(x[[idx[1]]])
+    }
+  }
+
+  stop("No data frame found in hoopR response.")
+}
+
+parse_nba_date <- function(x) {
+  x <- as.character(x)
+
+  coalesce(
+    suppressWarnings(ymd(x)),
+    suppressWarnings(mdy(x)),
+    suppressWarnings(dmy(x))
+  )
+}
+
+to_num <- function(x) {
+  suppressWarnings(as.numeric(x))
+}
+
+roll_mean <- function(x, n = 10) {
+  vapply(
+    seq_along(x),
+    function(i) mean(x[pmax(1, i - n + 1):i], na.rm = TRUE),
+    numeric(1)
+  )
+}
+
+calc_poss <- function(fga, fta, oreb, tov) {
+  fga + 0.44 * fta - oreb + tov
+}
+
+fmt_pm <- function(x, digits = 1) {
+  ifelse(is.na(x), NA_character_, sprintf(paste0("%+.", digits, "f"), x))
+}
+
+name_key <- function(x) {
+  x %>%
+    stringi::stri_trans_general("Latin-ASCII") %>%
+    str_squish() %>%
+    str_to_lower()
+}
+```
+
+# Executive Summary
+
+Atlanta has spent most of this season bouncing between two familiar tiers: genuinely interesting and overtly frustrating. That’s what made their recent 11–0 stretch stand out. The Hawks put together their most convincing run of the year, and it looked different from the flashes they’d shown earlier.
+
+It lasted long enough to matter, and it didn’t feel like the same team. Alexander-Walker was scoring at a high level without forcing things, Johnson was driving the offense in multiple ways, and Daniels kept impacting plays on the defensive end. More than anything, it looked like the group clicking at its highest level.
+
+Their recent stretch is one of the best runs the franchise has had in years, not just in results but in how it’s looked.
+
+That said, context still matters. The full-season sample still points to volatility, and some of this level is being supported by shotmaking that is unlikely to fully hold. A tougher stretch is coming, and it should give a clearer answer as to how real this version of the Hawks is.
+
+Still, the Hawks’ young core has given plenty to be excited about this season and beyond.
+
+# Historic Context
+
+```{r hawks-history}
+hawks_streak_history <- tibble(
+  Rank = c("1st", "2nd", "3rd", "T-4th", "T-4th"),
+  Wins = c(19, 14, 12, 11, 11),
+  Season = c("2014-15", "1993-94", "1968-69", "2025-26*", "1997-98"),
+  Span = c(
+    "Dec 27 – Feb 2",
+    "Nov 16 – Dec 16",
+    "Dec 8 – Jan 4",
+    "Feb 22 – Present",
+    "Oct 31 – Nov 20"
+  )
+)
+
+kbl(
+  hawks_streak_history,
+  format = "latex",
+  booktabs = TRUE,
+  align = "c",
+  caption = "Longest winning streaks in Hawks franchise history"
+) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position"),
+    font_size = 9
+  ) %>%
+  row_spec(which(hawks_streak_history$Season == "2025-26*"), bold = TRUE) %>%
+  footnote(general = "* = active streak", general_title = "")
+```
+
+It has been over a decade since a Hawks team put together a stretch like this.
+
+# League Context
+
+```{r streak-tables}
+season_streaks <- tibble(
+  Rank = c("1st", "2nd", "T-3rd", "T-3rd", "4th"),
+  Team = c("OKC", "DET", "SAS", "ATL", "OKC*"),
+  Streak = c(16, 13, 11, 11, 10),
+  Active = c("", "", "", "", "*")
+)
+
+kbl(
+  season_streaks,
+  format = "latex",
+  booktabs = TRUE,
+  align = "c",
+  caption = "Longest winning streaks this season"
+) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position"),
+    font_size = 9
+  ) %>%
+  row_spec(which(season_streaks$Team == "ATL"), bold = TRUE) %>%
+  footnote(general = "* = active streak", general_title = "")
+```
+
+Across the full season, the Hawks have put together one of the longer runs anyone has had.
+
+# Seeding Context
+
+```{r standings}
+standings_shift <- tibble(
+  Team = c("DET", "BOS", "CLE", "NYK", "TOR", "PHI", "MIA", "ORL", "ATL", "CHO"),
+  Before = c("42-13", "36-19", "36-21", "36-21", "33-23", "30-26", "31-27", "29-26", "27-31", "26-31"),
+  Now = c("51-19", "47-23", "43-27", "46-25", "39-30", "38-32", "38-32", "38-31", "38-32", "36-34")
+)
+
+kbl(
+  standings_shift,
+  format = "latex",
+  booktabs = TRUE,
+  align = "c",
+  caption = "Eastern Conference shift during Atlanta’s run"
+) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position"),
+    font_size = 9
+  ) %>%
+  row_spec(which(standings_shift$Team == "ATL"), bold = TRUE)
+```
+
+Atlanta was 27–31 and nearly out of the East play-in picture. Now they’re 38–32 and right in the middle of it, part of a tightly packed race for spots outside the play-in. Their run has pushed them up to the 7th seed, just 0.5 games back of 6th and 1.5 back of 5th.
+
+# Team Baseline
+
+```{r team-baseline}
+# Cached NBA.com/hoopR pull. Clear params$cache_dir to force a fresh pull.
+get_team_logs <- function() {
+  res <- hoopR::nba_leaguegamelog(
+    season = SEASON,
+    season_type = SEASON_TYPE,
+    player_or_team = "T"
+  )
+
+  df <- pluck_df(res, prefer = "LeagueGameLog")
+  df <- safe_clean_names(df)
+
+  df %>%
+    mutate(
+      team_id = as.character(team_id),
+      game_id = as.character(game_id),
+      game_date = parse_nba_date(game_date),
+      wl = as.character(wl),
+      pts = parse_number(as.character(pts)),
+      fgm = parse_number(as.character(fgm)),
+      fga = parse_number(as.character(fga)),
+      fg3m = parse_number(as.character(fg3m)),
+      fg3a = parse_number(as.character(fg3a)),
+      ftm = parse_number(as.character(ftm)),
+      fta = parse_number(as.character(fta)),
+      oreb = parse_number(as.character(oreb)),
+      dreb = parse_number(as.character(dreb)),
+      reb = parse_number(as.character(reb)),
+      ast = parse_number(as.character(ast)),
+      tov = parse_number(as.character(tov))
+    ) %>%
+    filter(!is.na(game_date), !is.na(game_id), !is.na(team_id))
+}
+
+lg <- cached(
+  paste0("league_team_logs_", SEASON, "_", SEASON_TYPE),
+  get_team_logs
+)
+
+lg_opp <- lg %>%
+  select(
+    game_id,
+    team_id_opp = team_id,
+    opp_pts = pts,
+    opp_fgm = fgm,
+    opp_fga = fga,
+    opp_fg3m = fg3m,
+    opp_fg3a = fg3a,
+    opp_fta = fta,
+    opp_oreb = oreb,
+    opp_dreb = dreb,
+    opp_tov = tov
+  )
+
+team_logs <- lg %>%
+  filter(team_id == TEAM_ID) %>%
+  left_join(lg_opp, by = "game_id") %>%
+  filter(team_id_opp != TEAM_ID) %>%
+  mutate(
+    mov = pts - opp_pts,
+    result = wl,
+    mov_roll = roll_mean(mov, n = ROLL_N)
+  ) %>%
+  arrange(game_date)
+
+stopifnot(nrow(team_logs) > 0)
+
+last_n_logs <- team_logs %>% slice_tail(n = LAST_N)
+hot_n_logs <- team_logs %>% slice_tail(n = HOT_N)
+
+pre_streak_logs <- team_logs %>%
+  slice(1:(nrow(team_logs) - HOT_N))
+
+team_summary <- bind_rows(
+  pre_streak_logs %>% mutate(window = "First 58"),
+  hot_n_logs %>% mutate(window = "Last 11"),
+  team_logs %>% mutate(window = "Season")
+) %>%
+  group_by(window) %>%
+  summarise(
+    GP = n(),
+    W = sum(result == "W", na.rm = TRUE),
+    L = sum(result == "L", na.rm = TRUE),
+    PTS = mean(pts, na.rm = TRUE),
+    OPP_PTS = mean(opp_pts, na.rm = TRUE),
+    MOV = mean(mov, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+kbl(
+  team_summary,
+  format = "latex",
+  booktabs = TRUE,
+  digits = 1,
+  caption = "Season vs recent form (team game logs)"
+) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position"),
+    font_size = 10
+  ) %>%
+  column_spec(1, bold = TRUE)
+```
+
+Eleven straight wins does not happen by accident. Atlanta went from being outscored by 1.6 points per game through its first 58 to winning by nearly 18 per game during the streak, all while holding teams to just 106 a night, well below the roughly 115-point league average.
+
+```{r team-trend-plot, fig.height=4.8}
+hot_n_start <- min(hot_n_logs$game_date, na.rm = TRUE)
+
+ggplot(team_logs, aes(x = game_date)) +
+  annotate(
+    "rect",
+    xmin = hot_n_start,
+    xmax = max(team_logs$game_date, na.rm = TRUE),
+    ymin = -Inf,
+    ymax = Inf,
+    alpha = 0.10,
+    fill = HAWKS_RED
+  ) +
+  geom_col(aes(y = mov), width = 0.9, alpha = 0.35, fill = HAWKS_GRAY) +
+  geom_line(aes(y = mov_roll), color = HAWKS_RED, linewidth = 1.05, na.rm = TRUE) +
+  geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.55) +
+  labs(
+    title = "Atlanta's Season & Win Streak",
+    subtitle = paste0(
+      "Bars = single-game margin. Line = rolling ", ROLL_N,
+      "-game average. Red = current ", HOT_N, "-game streak."
+    ),
+    x = NULL,
+    y = "Point Differential",
+    caption = "Source: NBA.com | Viz: @Rambzee_"
+  ) +
+  theme_caleb_hawks()
+```
+
+This is where the season starts to make more sense. Atlanta has had its share of ups and downs, with stretches where things slipped. Lately, though, when they play well, it is not just the offense carrying them. The defense has been good enough to hold things together, which is why these wins have started to stack.
+
+# League Context (Last `r LAST_N` Games)
+
+```{r league-context}
+lastn_games <- lg %>%
+  left_join(lg_opp, by = "game_id") %>%
+  filter(team_id != team_id_opp) %>%
+  group_by(team_id) %>%
+  arrange(game_date, .by_group = TRUE) %>%
+  mutate(
+    g = row_number(),
+    gmax = max(g, na.rm = TRUE)
+  ) %>%
+  filter(g > gmax - LAST_N) %>%
+  ungroup()
+
+team_lastn <- lastn_games %>%
+  group_by(team_id) %>%
+  summarise(
+    team_name = first(team_name),
+    team_abbr = first(team_abbreviation),
+    GP = n(),
+    W = sum(wl == "W", na.rm = TRUE),
+    L = sum(wl == "L", na.rm = TRUE),
+    poss_for = sum(calc_poss(fga, fta, oreb, tov), na.rm = TRUE),
+    poss_def = sum(calc_poss(opp_fga, opp_fta, opp_oreb, opp_tov), na.rm = TRUE),
+    pts_for = sum(pts, na.rm = TRUE),
+    pts_against = sum(opp_pts, na.rm = TRUE),
+    fgm = sum(fgm, na.rm = TRUE),
+    fga = sum(fga, na.rm = TRUE),
+    fg3m = sum(fg3m, na.rm = TRUE),
+    fg3a = sum(fg3a, na.rm = TRUE),
+    fta = sum(fta, na.rm = TRUE),
+    tov = sum(tov, na.rm = TRUE),
+    oreb = sum(oreb, na.rm = TRUE),
+    opp_fgm = sum(opp_fgm, na.rm = TRUE),
+    opp_fga = sum(opp_fga, na.rm = TRUE),
+    opp_fg3m = sum(opp_fg3m, na.rm = TRUE),
+    opp_fta = sum(opp_fta, na.rm = TRUE),
+    opp_tov = sum(opp_tov, na.rm = TRUE),
+    opp_oreb = sum(opp_oreb, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    ORtg = if_else(poss_for > 0, 100 * pts_for / poss_for, NA_real_),
+    DRtg = if_else(poss_def > 0, 100 * pts_against / poss_def, NA_real_),
+    NetRtg = ORtg - DRtg,
+    eFG = if_else(fga > 0, (fgm + 0.5 * fg3m) / fga, NA_real_),
+    TOVpct = if_else(poss_for > 0, tov / poss_for, NA_real_),
+    FTr = if_else(fga > 0, fta / fga, NA_real_),
+    opp_eFG = if_else(opp_fga > 0, (opp_fgm + 0.5 * opp_fg3m) / opp_fga, NA_real_),
+    opp_TOVpct = if_else(poss_def > 0, opp_tov / poss_def, NA_real_),
+    netrtg_rank = min_rank(desc(NetRtg)),
+    ortg_rank = min_rank(desc(ORtg)),
+    drtg_rank = min_rank(DRtg)
+  )
+
+lg_avg_ortg <- weighted.mean(team_lastn$ORtg, w = team_lastn$poss_for, na.rm = TRUE)
+lg_avg_drtg <- weighted.mean(team_lastn$DRtg, w = team_lastn$poss_def, na.rm = TRUE)
+lg_avg_net <- lg_avg_ortg - lg_avg_drtg
+
+team_lastn <- team_lastn %>%
+  mutate(
+    rel_ortg = ORtg - lg_avg_ortg,
+    rel_drtg = DRtg - lg_avg_drtg,
+    rel_netrtg = NetRtg - lg_avg_net
+  )
+
+hawks_ctx <- team_lastn %>%
+  filter(team_id == TEAM_ID) %>%
+  slice(1) %>%
+  mutate(
+    rel_ortg = fmt_pm(rel_ortg),
+    rel_drtg = fmt_pm(rel_drtg),
+    rel_netrtg = fmt_pm(rel_netrtg)
+  )
+
+kbl(
+  hawks_ctx %>%
+    select(team_name, GP, W, L, NetRtg, rel_netrtg, netrtg_rank, ORtg, rel_ortg, ortg_rank, DRtg, rel_drtg, drtg_rank),
+  format = "latex",
+  booktabs = TRUE,
+  digits = 1,
+  caption = paste0("League context over the last ", LAST_N, " games. Relative values are vs league average in the same window.")
+) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"),
+    font_size = 9
+  )
+```
+
+```{r league-top10}
+top_n <- 10
+
+top_off <- team_lastn %>%
+  arrange(desc(ORtg)) %>%
+  slice_head(n = top_n) %>%
+  transmute(
+    Rk = row_number(),
+    Team = team_abbr,
+    `W-L` = paste0(W, "-", L),
+    ORtg = round(ORtg, 1),
+    `Rel ORtg` = fmt_pm(rel_ortg)
+  )
+
+top_def <- team_lastn %>%
+  arrange(DRtg) %>%
+  slice_head(n = top_n) %>%
+  transmute(
+    Rk = row_number(),
+    Team = team_abbr,
+    `W-L` = paste0(W, "-", L),
+    DRtg = round(DRtg, 1),
+    `Rel DRtg` = fmt_pm(rel_drtg)
+  )
+
+top_net <- team_lastn %>%
+  arrange(desc(NetRtg)) %>%
+  slice_head(n = top_n) %>%
+  transmute(
+    Rk = row_number(),
+    Team = team_abbr,
+    `W-L` = paste0(W, "-", L),
+    NetRtg = round(NetRtg, 1),
+    `Rel Net` = fmt_pm(rel_netrtg)
+  )
+
+kbl(
+  top_off,
+  format = "latex",
+  booktabs = TRUE,
+  caption = paste0("Top ", top_n, " offenses over the last ", LAST_N, " games")
+) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position"),
+    font_size = 8
+  )
+```
+
+```{r league-top10-defense}
+kbl(
+  top_def,
+  format = "latex",
+  booktabs = TRUE,
+  caption = paste0("Top ", top_n, " defenses over the last ", LAST_N, " games")
+) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position"),
+    font_size = 8
+  )
+```
+
+```{r league-top10-net}
+kbl(
+  top_net,
+  format = "latex",
+  booktabs = TRUE,
+  caption = paste0("Top ", top_n, " net ratings over the last ", LAST_N, " games")
+) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position"),
+    font_size = 8
+  )
+```
+
+The offense has been elite, the defense has matched it, and the result is the best net rating in the league over their 11-game stretch. 
+
+# Process vs Results
+
+```{r process-results}
+summ_process <- function(df) {
+  poss_for <- sum(calc_poss(df$fga, df$fta, df$oreb, df$tov), na.rm = TRUE)
+  poss_def <- sum(calc_poss(df$opp_fga, df$opp_fta, df$opp_oreb, df$opp_tov), na.rm = TRUE)
+
+  tibble(
+    GP = nrow(df),
+    PPG = mean(df$pts, na.rm = TRUE),
+    OPP_PPG = mean(df$opp_pts, na.rm = TRUE),
+    MOV = mean(df$mov, na.rm = TRUE),
+    eFG = (sum(df$fgm, na.rm = TRUE) + 0.5 * sum(df$fg3m, na.rm = TRUE)) / sum(df$fga, na.rm = TRUE),
+    TOVpct = sum(df$tov, na.rm = TRUE) / poss_for,
+    FTr = sum(df$fta, na.rm = TRUE) / sum(df$fga, na.rm = TRUE),
+    opp_eFG = (sum(df$opp_fgm, na.rm = TRUE) + 0.5 * sum(df$opp_fg3m, na.rm = TRUE)) / sum(df$opp_fga, na.rm = TRUE),
+    opp_TOVpct = sum(df$opp_tov, na.rm = TRUE) / poss_def,
+    ORtg = 100 * sum(df$pts, na.rm = TRUE) / poss_for,
+    DRtg = 100 * sum(df$opp_pts, na.rm = TRUE) / poss_def,
+    NetRtg = ORtg - DRtg
+  )
+}
+
+proc_tbl <- bind_rows(
+  summ_process(team_logs) %>% mutate(Window = "Season"),
+  summ_process(hot_n_logs) %>% mutate(Window = paste0("Last ", HOT_N))
+) %>%
+  select(Window, everything())
+
+proc_tbl_fmt <- proc_tbl %>%
+  mutate(
+    `eFG%` = percent(eFG, accuracy = 0.1),
+    `TOV%` = percent(TOVpct, accuracy = 0.1),
+    FTr = round(FTr, 3),
+    `Opp eFG%` = percent(opp_eFG, accuracy = 0.1),
+    `Opp TOV%` = percent(opp_TOVpct, accuracy = 0.1),
+    ORtg = round(ORtg, 1),
+    DRtg = round(DRtg, 1),
+    Net = round(NetRtg, 1),
+    PPG = round(PPG, 1),
+    `Opp PPG` = round(OPP_PPG, 1),
+    MOV = round(MOV, 1)
+  ) %>%
+  select(Window, GP, PPG, `Opp PPG`, MOV, `eFG%`, `TOV%`, FTr, `Opp eFG%`, `Opp TOV%`, ORtg, DRtg, Net)
+
+kbl(
+  proc_tbl_fmt,
+  format = "latex",
+  booktabs = TRUE,
+  align = "lrrrrrrrrrrrr",
+  caption = "Process vs results: which parts of Atlanta's run look sticky and which parts may cool"
+) %>%
+  add_header_above(c(" " = 1, "Overall" = 4, "Offense" = 3, "Defense" = 2, "Efficiency" = 3)) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"),
+    font_size = 8
+  )
+```
+
+The jump did not come from just one area. Atlanta has been shooting better, taking care of the ball, getting to the line more, and forcing more turnovers. The offense has improved, jumping about seven points in offensive rating, but the bigger shift is on the other end. Their defensive rating has dropped from 111 to 103, with lower opponent eFG and more forced turnovers. That is where the margin is coming from.
+
+# Player Overview (Last `r HOT_N` Games)
+
+```{r core-player-pulls}
+# Player-level pulls use the same cache helper as team logs.
+get_league_base <- function() {
+  res <- hoopR::nba_leaguedashplayerstats(
+    season = SEASON,
+    season_type = SEASON_TYPE,
+    measure_type = "Base",
+    per_mode = "PerGame"
+  )
+  df <- pluck_df(res, prefer = "LeagueDashPlayerStats")
+  safe_clean_names(df)
+}
+
+lg_base <- cached(
+  paste0("league_dash_base_", SEASON, "_", SEASON_TYPE),
+  get_league_base
+)
+
+core_players <- c(
+  "Nickeil Alexander-Walker",
+  "Jalen Johnson",
+  "Dyson Daniels",
+  "Onyeka Okongwu"
+)
+
+core_ids <- lg_base %>%
+  mutate(
+    player_id = as.character(player_id),
+    team_id = as.character(team_id),
+    player_key = name_key(player_name)
+  ) %>%
+  filter(team_id == TEAM_ID, player_key %in% name_key(core_players)) %>%
+  select(player_id, player_name) %>%
+  distinct()
+
+stopifnot(nrow(core_ids) > 0)
+
+get_player_gamelog <- function(pid) {
+  res <- hoopR::nba_playergamelog(
+    season = SEASON,
+    season_type = SEASON_TYPE,
+    player_id = pid
+  )
+  df <- pluck_df(res)
+  df <- safe_clean_names(df)
+
+  df %>%
+    mutate(
+      game_date = coalesce(
+        suppressWarnings(ymd(game_date)),
+        suppressWarnings(mdy(game_date)),
+        suppressWarnings(dmy(game_date))
+      ),
+      min = to_num(min),
+      pts = to_num(pts),
+      reb = to_num(reb),
+      ast = to_num(ast),
+      stl = to_num(stl),
+      blk = to_num(blk),
+      fgm = to_num(fgm),
+      fga = to_num(fga),
+      fg3m = to_num(fg3m),
+      fg3a = to_num(fg3a),
+      ftm = to_num(ftm),
+      fta = to_num(fta),
+      tov = to_num(tov)
+    ) %>%
+    filter(!is.na(game_date)) %>%
+    arrange(game_date)
+}
+
+core_logs <- core_ids %>%
+  mutate(
+    log = map(
+      player_id,
+      ~ cached(
+        paste0("player_gamelog_", .x, "_", SEASON, "_", SEASON_TYPE),
+        function() get_player_gamelog(.x)
+      )
+    )
+  )
+
+summarise_window <- function(df, n_games) {
+  d <- df %>%
+    slice_tail(n = n_games)
+
+  tibble(
+    GP = nrow(d),
+    MPG = mean(d$min, na.rm = TRUE),
+    PTS = mean(d$pts, na.rm = TRUE),
+    REB = mean(d$reb, na.rm = TRUE),
+    AST = mean(d$ast, na.rm = TRUE),
+    STL = mean(d$stl, na.rm = TRUE),
+    BLK = mean(d$blk, na.rm = TRUE),
+    `FG%` = ifelse(sum(d$fga, na.rm = TRUE) > 0, sum(d$fgm, na.rm = TRUE) / sum(d$fga, na.rm = TRUE), NA_real_),
+    `3P%` = ifelse(sum(d$fg3a, na.rm = TRUE) > 0, sum(d$fg3m, na.rm = TRUE) / sum(d$fg3a, na.rm = TRUE), NA_real_),
+    `FT%` = ifelse(sum(d$fta, na.rm = TRUE) > 0, sum(d$ftm, na.rm = TRUE) / sum(d$fta, na.rm = TRUE), NA_real_),
+    `TS%` = ifelse(
+      sum(d$fga + 0.44 * d$fta, na.rm = TRUE) > 0,
+      sum(d$pts, na.rm = TRUE) / (2 * sum(d$fga + 0.44 * d$fta, na.rm = TRUE)),
+      NA_real_
+    )
+  )
+}
+
+core_hot <- core_logs %>%
+  transmute(
+    Player = player_name,
+    stats = map(log, summarise_window, n_games = HOT_N)
+  ) %>%
+  unnest(stats) %>%
+  mutate(
+    `FG%` = percent(`FG%`, accuracy = 0.1),
+    `3P%` = percent(`3P%`, accuracy = 0.1),
+    `FT%` = percent(`FT%`, accuracy = 0.1),
+    `TS%` = percent(`TS%`, accuracy = 0.1)
+  )
+
+kbl(
+  core_hot,
+  format = "latex",
+  booktabs = TRUE,
+  digits = 1,
+  caption = paste0("Core production over the current ", HOT_N, "-game streak")
+) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"),
+    font_size = 8
+  ) %>%
+  column_spec(1, bold = TRUE)
+```
+
+## Nickeil Alexander-Walker
+
+Alexander-Walker has played the best basketball of his career over this stretch. The scoring jumps out, but the efficiency is what makes it real. He’s around 52% from the field and 48% from three while giving them over 22 a night. Pull-ups, catch-and-shoot, late-clock shots, it’s all been there, and none of it feels forced. He’s also held up defensively, competing and staying solid on that end even if it’s not peak-level impact.
+
+## Jalen Johnson
+
+Johnson has been the engine, even if the efficiency hasn’t fully followed. He’s around 20, 10, and 8, and a lot of what Atlanta is doing runs through him. He grabs and goes, pushes pace, and creates without stalling things out. The shot hasn’t always been there, but the impact is.
+
+## Dyson Daniels
+
+Daniels is the swing piece. The shooting is rough, there’s no way around it, but everything else is high level. He gets downhill, makes the right read, cuts at the right time, and finds ways to finish anyway. More than anything, he creates extra possessions. The steals, the deflections, the disruption, he’s everywhere, and it’s a big reason this has worked.
+
+## Onyeka Okongwu
+
+Okongwu has been a big part of this, and the shooting changes everything. He’s turned into a real stretch option, knocking down threes and forcing defenses to account for him. That opens the floor for everything else. He’s still giving them around 14 and 8 and holding up defensively. Not an elite rim protector, but solid, even with a heavy workload.
+
+# The Core Makes More Sense
+
+The most encouraging part of this run is how cleanly the roles fit. Alexander-Walker provides efficient perimeter scoring, Johnson drives the offense, and Daniels fills in everything else. It’s balanced, and it’s functional in a way this team hasn’t consistently been.
+
+# Remaining Concerns
+
+There are still reasons to stay measured. The full season has been uneven, and some of the offense is being boosted by shooting that will not fully hold. The loss in Houston was an early reminder of that. The upcoming stretch should test this version much more seriously, with better teams, tighter games, and less margin for error.
+
+```{r sos}
+sos_tbl <- tibble(
+  Rank = c(1, 2, 3, 4, 5, 6, 7, 8),
+  Team = c("MEM", "IND", "NOP", "UTA", "DAL", "OKC", "ATL", "BOS"),
+  SOS = c(0.555, 0.551, 0.548, 0.538, 0.538, 0.536, 0.536, 0.535),
+  `Games Left` = c(14, 12, 11, 12, 12, 12, 13, 13),
+  `Toughest Opponents` = c(
+    "SAS, BOS, NYK, CLE(2), DEN",
+    "SAS, DET, LAL, CLE, MIN, ORL",
+    "DET, BOS, NYK, CLE, MIN, HOU",
+    "OKC, LAL, CLE, HOU, DEN, TOR",
+    "SAS, LAL, MIN, DEN, PHX, ORL",
+    "DET, BOS, NYK, LAL, DEN, PHX",
+    "DET, BOS(2), NYK(2), CLE, HOU, ORL",
+    "OKC, NYK, MIN, TOR, ORL, ATL(2)"
+  ),
+  `Easiest Opponents` = c(
+    "UTA, CHI, MIL",
+    "BKN, CHI, WAS",
+    "SAC, UTA, POR",
+    "WAS, NOP, MEM",
+    "CHI, MIL, GSW, POR, LAC(2)",
+    "WAS, UTA, CHI, LAC",
+    "BKN, SAC, MEM, GSW",
+    "MEM, CHA, MIL"
+  )
+)
+
+kbl(
+  sos_tbl,
+  format = "latex",
+  booktabs = TRUE,
+  digits = 3,
+  caption = "Remaining strength of schedule context (Prior to March 20th)"
+) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"),
+    font_size = 8
+  ) %>%
+  row_spec(which(sos_tbl$Team == "ATL"), bold = TRUE) %>%
+  column_spec(5, width = "2.6in") %>%
+  column_spec(6, width = "1.8in")
+```
+
+# Final Thoughts
+
+It’s still March, so this isn’t the time to declare anything solved. Some regression is coming, and the full-season sample still matters. But that shouldn’t take away from what just happened. Atlanta won 11 straight, went 14–6 over its last 20, and did it in a way that looked different from earlier in the year.
+
+This team has gelled at the right time. The roles are clearer, the production is balanced, and the defense has played at an elite level, supporting the offense instead of relying on it.
+
+The loss in Houston was an early check. Now it gets tested for real. Atlanta has one of the tougher remaining schedules in the league, with multiple games against teams at the top of the East. This next stretch should tell us whether this is just a run or something they can carry forward.
+
+If it holds, the conversation shifts to what this core actually is, and where it can realistically go from here.
