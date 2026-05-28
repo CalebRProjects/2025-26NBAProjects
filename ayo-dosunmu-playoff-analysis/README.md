@@ -52,6 +52,3 @@ This project uses local Excel files for playtype, shot-zone, and leaderboard inp
 - `analysis.Rmd` — cleaned source analysis
 - `analysis.pdf` — rendered report
 - `README.md` — project overview
-- `data/` — local data files
-- `Ayo Dosunmu Shot Zones (2025-26).xlsx` — local source input
-- `Playoff Leaders (3FG%).xlsx` — local source input
