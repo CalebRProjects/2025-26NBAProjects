@@ -1,59 +1,56 @@
-# Overview
+# Anthony Davis in Washington: A Buy-Low Bet on Top-75 Talent
 
-This project evaluates Anthony Davis as a buy-low acquisition for Washington and examines how his skill set fits within a young, developing roster.
+## Overview
 
-Despite declining availability, Davis remains a high-impact two-way player when healthy. The analysis focuses on how his strengths (rim pressure, defensive disruption, and interior presence) translate in a role that emphasizes finishing and anchoring rather than self-creation.
+This project evaluates Anthony Davis as a buy-low acquisition for Washington, focusing on his recent offensive role, shot profile, defensive event creation, rim protection, and roster fit. The analysis frames Davis as a high-upside veteran addition whose value depends less on self-creation and more on rim pressure, defensive coverage, screening, and frontcourt stability next to Alex Sarr. It also weighs the upside of adding top-end talent against the obvious availability and age-related risks.
 
-Rather than evaluating him in isolation, this project frames Davis through lineup fit, role optimization, and how he raises the floor of a volatile young team.
+## Main Question
 
-# Purpose
+Can Anthony Davis still provide enough two-way value to accelerate Washington’s competitive timeline if his role is simplified around play finishing, defense, and frontcourt stability?
 
-The goal of this project is:
+## Data Sources
 
-* Evaluate whether Davis still provides top-tier impact when healthy
+- NBA.com
+- Synergy / SportsRadar
+- Basketball Reference
+- hoopR / NBA Stats API
+- Manually entered Washington roster context
 
-* Identify the offensive roles where he is most effective
+## Tools Used
 
-* Analyze defensive value through rim protection and event creation
+- R
+- tidyverse
+- ggplot2
+- R Markdown
+- readxl
+- janitor
+- kableExtra
+- hoopR
+- showtext / sysfonts
+- glue
 
-* Assess fit alongside Washington’s young core
+## Key Outputs
 
-* Determine whether this is a worthwhile “buy-low” move
+- Knitted PDF report
+- Cleaned R Markdown analysis file
+- Anthony Davis season profile table
+- Playtype possession-weighted summary table
+- Playtype usage mix chart
+- Playtype PPP trend chart
+- Shot-zone FG% vs. league chart
+- Stocks per game rank table
+- Last-five-seasons stocks leaderboard
+- Rim protection table
+- Washington young core fit table
 
-# Method & Data
+## Notes and Limitations
 
-* Multi-year performance trends (2021–2026) via NBA API
+This analysis depends on two local Excel files for playtype and shot-zone data, so the report will only render if those files are available at the paths listed in the YAML parameters. Several inputs are manually entered, including season-level Davis stats, Washington roster context, league reference values, and the long-term stocks leaderboard. The defensive API sections depend on `hoopR`, so those tables may fail or return fallback notes if the NBA Stats API is unavailable, rate-limited, or returns a changed schema. The Washington fit section is contextual and projection-based, so it should be read as a roster-fit argument rather than a definitive forecast.
 
-* Playtype efficiency and usage (Synergy-style breakdowns)
+## File Guide
 
-* Shot zone efficiency vs league averages
-
-* Defensive metrics (stocks, rim protection vs expected FG%)
-
-* Lineup and roster context for Washington’s core
-
-# Why This Matters
-
-## For Player Evaluation
-
-Davis is still elite in the areas that matter most (finishing, rim protection, and defensive disruption), but is no longer a primary offensive engine.
-
-## For Offensive Role
-
-His value comes as a play-finisher. He thrives as a roll man, cutter, and interior presence, not as a perimeter creator (see playtype efficiency on page 2).
-
-## For Defensive Impact
-
-He remains one of the league’s most consistent defensive playmakers, ranking near the top in stocks and continuing to suppress opponent efficiency at the rim (pages 4–5).
-
-## For Team Fit
-
-Pairing him with Alex Sarr creates a flexible defensive frontcourt; Davis anchors while Sarr roams. This setup helps cover for perimeter weaknesses and accelerates team development.
-
-## For Team Building Strategy
-
-This is a low-risk, high-upside move. If healthy, Davis raises the team’s floor immediately; if not, the long-term downside is limited given the roster timeline.
-
-# Authors
-
-Caleb Ramsey -- Statistics & Sports Media and Analytics (Virginia Tech)
+- `analysis.Rmd` — cleaned source analysis
+- `AD-trade-analysis.pdf` — rendered report
+- `README.md` — project overview
+- `AD Scoring Zones (Last 5 Seasons).xlsx` — local shot-zone input
+- `data/` — local data files
