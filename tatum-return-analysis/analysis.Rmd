@@ -1,0 +1,864 @@
+---
+title: "Jayson Tatum Has Been an Anomaly"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: false
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  dpi = 200
+)
+```
+
+```{r libraries}
+library(tidyverse)
+library(scales)
+library(knitr)
+library(glue)
+library(showtext)
+library(sysfonts)
+library(hoopR)
+library(janitor)
+library(lubridate)
+library(ggrepel)
+library(gt)
+library(purrr)
+library(kableExtra)
+library(zoo)
+```
+
+```{r constants-and-parameters}
+# Theme constants
+bg_color    <- "#f6f4ef"
+text_dark   <- "#141414"
+grid_color  <- "#dedad3"
+
+# Team colors
+celtics_green <- "#007A33"
+celtics_gold  <- "#BA9653"
+celtics_dark  <- "#1f2a44"
+sixers_blue   <- "#006BB6"
+sixers_red    <- "#ED174C"
+
+# NBA identifiers
+team_id  <- "1610612738"
+tatum_id <- "1628369"
+
+# Report parameters
+season_used <- "2025-26"
+return_date <- as.Date("2026-03-06")
+
+# Captions
+caption_line      <- "Data: NBA.com | Viz: @Rambzee_"
+caption_databallr <- "Data: Databallr | Viz: @Rambzee_"
+caption_manual    <- "Data: Basketball Reference / Databallr / NBA.com | Viz: @Rambzee_"
+
+font_add_google("Inter", "inter")
+showtext_auto()
+```
+
+```{r helper-functions}
+safe_clean_names <- function(df) {
+  janitor::clean_names(df)
+}
+
+to_num <- function(x) {
+  suppressWarnings(as.numeric(x))
+}
+
+fmt_num <- function(x, digits = 1) {
+  formatC(x, format = "f", digits = digits)
+}
+
+fmt_pct <- function(x, digits = 1) {
+  paste0(formatC(x, format = "f", digits = digits), "\\%")
+}
+
+fmt_signed <- function(x, digits = 1) {
+  paste0(if_else(x > 0, "+", ""), formatC(x, format = "f", digits = digits))
+}
+
+parse_nba_date <- function(x) {
+  suppressWarnings(
+    lubridate::parse_date_time(
+      x,
+      orders = c("Ymd", "ymd", "mdY", "b d, Y", "B d, Y")
+    )
+  ) %>%
+    as.Date()
+}
+
+calc_ts <- function(pts, fga, fta) {
+  pts / (2 * (fga + 0.44 * fta))
+}
+
+safe_divide <- function(num, den) {
+  if_else(den == 0 | is.na(den), NA_real_, num / den)
+}
+
+make_pct_name <- function(x) {
+  stringr::str_replace_all(x, "%", "\\\\%")
+}
+
+style_kable_tatum <- function(kbl_obj, font_size = 10.5) {
+  kbl_obj %>%
+    kableExtra::kable_styling(
+      latex_options = c("HOLD_position"),
+      full_width = FALSE,
+      position = "center",
+      font_size = font_size
+    ) %>%
+    kableExtra::row_spec(0, bold = TRUE) %>%
+    kableExtra::column_spec(1, bold = TRUE)
+}
+
+theme_caleb <- theme_minimal(base_family = "inter") +
+  theme(
+    plot.background  = element_rect(fill = bg_color, color = NA),
+    panel.background = element_rect(fill = bg_color, color = NA),
+    panel.grid.major = element_line(color = grid_color, linewidth = 0.35),
+    panel.grid.minor = element_blank(),
+    plot.title       = element_text(size = 18, face = "bold", hjust = 0.5, color = text_dark),
+    plot.subtitle    = element_text(size = 9.5, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 6)),
+    axis.title       = element_text(size = 12, face = "bold", color = text_dark),
+    axis.text        = element_text(size = 10, color = "#333333"),
+    legend.position  = "bottom",
+    legend.title     = element_blank(),
+    legend.text      = element_text(size = 9, color = "#333333"),
+    plot.caption     = element_text(size = 8, color = "#6e6e6e", hjust = 1, margin = margin(t = 8)),
+    plot.margin      = margin(10, 12, 16, 12)
+  )
+
+build_regular_season_kable <- function(raw_df, left_label = "2024-25", right_label = "2025-26") {
+  display <- raw_df %>%
+    mutate(
+      Metric = make_pct_name(Metric),
+      left_display = if_else(is_pct, fmt_pct(left), fmt_num(left)),
+      right_display = if_else(is_pct, fmt_pct(right), fmt_num(right)),
+      change_num = right - left,
+      Change = case_when(
+        Metric == "GP" ~ "--",
+        is_pct ~ paste0(fmt_signed(change_num), "%"),
+        TRUE ~ fmt_signed(change_num)
+      )
+    ) %>%
+    transmute(
+      Metric,
+      !!left_label := left_display,
+      !!right_label := right_display,
+      Change
+    )
+
+  change_colors <- case_when(
+    raw_df$is_pct & raw_df$right - raw_df$left <= -2 ~ "#b91c1c",
+    raw_df$right - raw_df$left >= 2.5 ~ "green",
+    raw_df$right - raw_df$left > 0 ~ "olive",
+    raw_df$right - raw_df$left <= -2 ~ "red",
+    TRUE ~ "black"
+  )
+
+  display$Change <- purrr::map2_chr(
+    display$Change,
+    change_colors,
+    ~ kableExtra::cell_spec(.x, color = .y, bold = TRUE)
+  )
+
+  display %>%
+    kableExtra::kbl(
+      format = "latex",
+      booktabs = TRUE,
+      escape = FALSE,
+      align = c("l", "c", "c", "c"),
+      caption = "Tatum's regular-season profile before and after the Achilles return"
+    ) %>%
+    style_kable_tatum(font_size = 10.5)
+}
+```
+
+```{r api-functions}
+get_player_gamelog <- function(player_id, season = season_used, season_type = "Regular Season") {
+  hoopR::nba_playergamelog(
+    season = season,
+    season_type = season_type,
+    player_id = player_id
+  ) %>%
+    purrr::pluck("PlayerGameLog") %>%
+    safe_clean_names() %>%
+    mutate(
+      game_id = as.character(game_id),
+      game_date = parse_nba_date(as.character(game_date)),
+      player_id = as.character(player_id),
+      min = to_num(min),
+      pts = to_num(pts),
+      oreb = to_num(oreb),
+      dreb = to_num(dreb),
+      reb = to_num(reb),
+      ast = to_num(ast),
+      stl = to_num(stl),
+      blk = to_num(blk),
+      tov = to_num(tov),
+      pf = to_num(pf),
+      fga = to_num(fga),
+      fgm = to_num(fgm),
+      fg3m = to_num(fg3m),
+      fg3a = to_num(fg3a),
+      fta = to_num(fta),
+      ftm = to_num(ftm),
+      plus_minus = to_num(plus_minus),
+      ts = calc_ts(pts, fga, fta)
+    ) %>%
+    arrange(game_date)
+}
+
+get_league_base <- function(season = season_used, season_type = "Regular Season") {
+  hoopR::nba_leaguedashplayerstats(
+    season = season,
+    season_type = season_type,
+    measure_type = "Base"
+  )$LeagueDashPlayerStats %>%
+    clean_names() %>%
+    mutate(
+      player_name = as.character(player_name),
+      team_abbreviation = as.character(team_abbreviation),
+      player_id = readr::parse_number(as.character(player_id)),
+      gp = readr::parse_number(as.character(gp)),
+      min = readr::parse_number(as.character(min)),
+      pts = readr::parse_number(as.character(pts)),
+      reb = readr::parse_number(as.character(reb)),
+      ast = readr::parse_number(as.character(ast)),
+      plus_minus = readr::parse_number(as.character(plus_minus))
+    )
+}
+
+get_league_usage <- function(season = season_used, season_type = "Regular Season") {
+  hoopR::nba_leaguedashplayerstats(
+    season = season,
+    season_type = season_type,
+    measure_type = "Usage"
+  )$LeagueDashPlayerStats %>%
+    clean_names() %>%
+    transmute(
+      player_id = readr::parse_number(as.character(player_id)),
+      usg_pct = readr::parse_number(as.character(usg_pct))
+    ) %>%
+    mutate(
+      usg_pct = if_else(usg_pct <= 1, usg_pct * 100, usg_pct)
+    )
+}
+
+get_league_advanced <- function(season = season_used, season_type = "Regular Season") {
+  hoopR::nba_leaguedashplayerstats(
+    season = season,
+    season_type = season_type,
+    measure_type = "Advanced"
+  )$LeagueDashPlayerStats %>%
+    clean_names() %>%
+    transmute(
+      player_id = readr::parse_number(as.character(player_id)),
+      ts_pct = readr::parse_number(as.character(ts_pct)),
+      ast_pct = readr::parse_number(as.character(ast_pct)),
+      dreb_pct = readr::parse_number(as.character(dreb_pct)),
+      net_rating = readr::parse_number(as.character(net_rating))
+    ) %>%
+    mutate(
+      ts_pct = if_else(ts_pct <= 1, ts_pct * 100, ts_pct),
+      ast_pct = if_else(ast_pct <= 1, ast_pct * 100, ast_pct),
+      dreb_pct = if_else(dreb_pct <= 1, dreb_pct * 100, dreb_pct)
+    )
+}
+```
+
+```{r hand-input-data}
+# Manually entered research notes and source extracts.
+regular_season_split <- tibble(
+  Metric = c("GP", "PTS", "REB", "AST", "STL", "TOV", "FG%", "3P%", "2P%", "eFG%", "TS%"),
+  left = c(72, 26.8, 8.7, 6.0, 1.1, 2.9, 45.2, 34.3, 55.9, 53.7, 58.2),
+  right = c(16, 21.8, 10.0, 5.3, 1.4, 2.4, 41.1, 32.9, 49.3, 49.3, 54.1),
+  is_pct = c(FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, TRUE, TRUE, TRUE, TRUE)
+)
+
+playoff_profile <- tibble(
+  Metric = c("MPG", "PTS", "REB", "AST", "STL", "TOV", "FG%", "3P%", "2P%", "eFG%", "TS%"),
+  Value = c(36.3, 23.3, 10.7, 6.8, 1.2, 2.8, 47.5, 36.5, 59.2, 56.9, 60.8),
+  is_pct = c(FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, TRUE, TRUE, TRUE, TRUE),
+  Note = if_else(
+    Metric %in% c("AST", "FG%", "2P%", "eFG%", "TS%"),
+    "Career playoff high",
+    ""
+  )
+)
+
+playmaking_profile <- tibble(
+  Indicator = c("On-ball share", "Last season on-ball share", "Potential assists", "Rim assists"),
+  Value = c("29.0%", "30.1%", "15.4", "3.0"),
+  Context = c("Essentially unchanged role size", "Pre-injury baseline", "91st percentile", "89th percentile")
+)
+
+rebound_leaders <- tibble(
+  Rank = c(1, 2, 3, 4, 5, 6, 7, 7, 7),
+  Player = c(
+    "Nikola Jokic", "Victor Wembanyama", "Karl-Anthony Towns",
+    "Donovan Clingan", "Rudy Gobert", "Bam Adebayo", "Evan Mobley",
+    "Jalen Duren", "Jayson Tatum"
+  ),
+  Team = c("DEN", "SAS", "NYK", "POR", "MIN", "MIA", "CLE", "DET", "BOS"),
+  RPG = c(13.6, 12.3, 11.9, 11.8, 11.4, 10.7, 10.0, 10.0, 10.0)
+)
+
+drb_leaders <- tibble(
+  Player = c("Wembanyama", "Sabonis", "KAT", "Nurkic", "Tatum", "Jokic"),
+  Team = c("SAS", "UTA", "SAC", "NYK", "BOS", "DEN"),
+  DRB_Pct = c(28.5, 28.3, 28.3, 27.9, 27.4, 27.0),
+  Team_Color = c("#C4CED4", "#5A2D81", "#006BB6", "#002B5C", celtics_green, "#0E2240")
+) %>%
+  arrange(DRB_Pct) %>%
+  mutate(Player = factor(Player, levels = Player))
+
+impact_split <- tibble(
+  Group = c("Tatum ON", "Tatum OFF", "ON - OFF"),
+  Minutes = c(522, 3424, NA),
+  Off_Rating = c(123.2, 120.7, 2.5),
+  Def_Rating = c(111.8, 113.4, -1.6),
+  Net_Rating = c(11.4, 7.3, 4.1),
+  ThreeP_Off = c(35.3, 36.5, NA),
+  ThreeP_Def = c(35.5, 35.3, NA)
+)
+
+playoff_rank_snapshot <- tibble(
+  Category = c(
+    "Points", "Points", "Points", "Points", "Points",
+    "Rebounds", "Rebounds", "Rebounds", "Rebounds", "Rebounds",
+    "Assists", "Assists", "Assists", "Assists", "Assists", "Assists"
+  ),
+  Rank = c(
+    10, 11, 12, 12, 14,
+    1, 2, 3, 4, 5,
+    1, 2, 3, 4, 5, 6
+  ),
+  Player = c(
+    "Scottie Barnes", "Jamal Murray", "Donovan Mitchell", "Jayson Tatum", "LeBron James",
+    "Nikola Jokic", "Karl-Anthony Towns", "Deandre Ayton", "Rudy Gobert", "Jayson Tatum",
+    "Nikola Jokic", "Scottie Barnes", "LeBron James", "Shai Gilgeous-Alexander", "Jrue Holiday", "Jayson Tatum"
+  ),
+  Value = c(
+    24.2, 23.7, 23.3, 23.3, 23.2,
+    13.2, 11.3, 10.8, 10.7, 10.7,
+    9.5, 9.0, 8.3, 8.0, 7.2, 6.8
+  )
+)
+
+celtics_net_points <- tibble(
+  Player = c(
+    "Jayson Tatum", "Neemias Queta", "Luka Garza", "Baylor Scheierman",
+    "Jordan Walsh", "Ron Harper Jr.", "Jaylen Brown", "Max Shulga",
+    "Dalano Banton", "Hugo González", "Payton Pritchard", "Amari Williams",
+    "Sam Hauser", "Nikola Vucevic", "Derrick White"
+  ),
+  Team = "BOS",
+  Pos = c(
+    "F-G", "C", "C", "G", "G", "F", "G-F", "G", "F", "G",
+    "G", "F-C", "F", "C", "G"
+  ),
+  Offense = c(16, 2, 8, 4, -3, 2, -4, 1, 1, -1, 5, 0, -2, -8, -16),
+  Defense = c(4, 11, -4, 0, 6, 1, 5, 0, 1, 1, -4, 1, 1, -1, 1),
+  Overall = c(20, 13, 5, 4, 3, 3, 2, 1, 1, 1, 1, 0, -1, -8, -15)
+)
+
+game7_summary <- tibble(
+  GP = 7,
+  MIN = 41.5,
+  PTS = 26.7,
+  REB = 9.3,
+  AST = 5.1,
+  `TS%` = "60.8%",
+  Record = "5-2"
+)
+
+game7_best <- tibble(
+  Date = "May 14, 2023",
+  Opponent = "vs PHI",
+  PTS = 51,
+  REB = 13,
+  AST = 5,
+  `TS%` = "74.6%",
+  Note = "NBA Game 7 playoff record"
+)
+```
+
+# Executive Summary
+
+Less than a year removed from an Achilles rupture, Jayson Tatum has already returned as one of the most versatile and impactful players in basketball while carrying a similar load to what he handled before the injury.
+
+It is rare to watch a former top-five player rebuild parts of his game in real time. The scoring and movement are not fully back yet. The burst, balance, and flow are still coming along, but he has already shown enough to suggest he can reach a similar level, possibly with a slightly more polished all-around game.
+
+Now the Celtics are tied 3–3 with Philadelphia, and the demands are only growing. Until now, Tatum has been evaluated with his timeline in mind. Achilles ruptures rarely allow for a return this quick. Game 7 raises the stakes and forces a different standard.
+
+# Box Score Difference
+
+```{r regular-season-split-table}
+build_regular_season_kable(
+  regular_season_split,
+  left_label = "2024-25",
+  right_label = "2025-26"
+)
+```
+
+At face value, Tatum’s efficiency clearly dropped after his return. He was never an efficiency outlier as a scorer, but he consistently balanced league-average efficiency with elite volume, which creates massive value on its own. This season, he has struggled to reach that same scoring flow.
+
+Early on, he had to rebuild confidence attacking the rim, playing through contact, and finding his jumper within the same process. Even with those drops, the impact held because the rest of his game traveled. His rebounding stayed elite, his defense remained active, and he gave Boston the playmaking lift it needed while keeping turnovers low for the size of his role.
+
+# The Ramp Up
+
+```{r tatum-game-logs}
+# These NBA Stats API calls can fail if hoopR is unavailable, rate-limited, or blocked.
+tatum_regular <- tryCatch(
+  get_player_gamelog(tatum_id, season = season_used, season_type = "Regular Season"),
+  error = function(e) tibble()
+)
+
+tatum_playoffs <- tryCatch(
+  get_player_gamelog(tatum_id, season = season_used, season_type = "Playoffs"),
+  error = function(e) tibble()
+)
+
+tatum_since_return <- tatum_regular %>%
+  filter(game_date >= return_date) %>%
+  arrange(game_date) %>%
+  mutate(
+    game_number = row_number(),
+    pts_roll = purrr::map_dbl(game_number, ~ mean(pts[pmax(1, .x - 4):.x], na.rm = TRUE)),
+    reb_roll = purrr::map_dbl(game_number, ~ mean(reb[pmax(1, .x - 4):.x], na.rm = TRUE)),
+    ast_roll = purrr::map_dbl(game_number, ~ mean(ast[pmax(1, .x - 4):.x], na.rm = TRUE))
+  )
+```
+
+```{r game-log-trend, fig.width=7.5, fig.height=5.0}
+if (nrow(tatum_since_return) > 0) {
+  game_actual <- tatum_since_return %>%
+    select(game_date, pts, reb, ast) %>%
+    pivot_longer(
+      cols = c(pts, reb, ast),
+      names_to = "Metric",
+      values_to = "Value"
+    ) %>%
+    mutate(Metric = recode(Metric, pts = "PTS", reb = "REB", ast = "AST"))
+
+  game_roll <- tatum_since_return %>%
+    select(game_date, game_number, pts_roll, reb_roll, ast_roll) %>%
+    pivot_longer(
+      cols = c(pts_roll, reb_roll, ast_roll),
+      names_to = "Metric",
+      values_to = "Rolling"
+    ) %>%
+    mutate(
+      Metric = recode(Metric, pts_roll = "PTS", reb_roll = "REB", ast_roll = "AST")
+    ) %>%
+    filter(!is.na(Rolling))
+
+  ggplot() +
+    geom_vline(
+      xintercept = return_date,
+      linetype = "dashed",
+      linewidth = 0.45,
+      alpha = 0.35
+    ) +
+    annotate(
+      "text",
+      x = return_date + 0.4,
+      y = 32.5,
+      label = "Return",
+      family = "inter",
+      size = 3,
+      hjust = 0,
+      color = "#555555"
+    ) +
+    geom_point(
+      data = game_actual,
+      aes(x = game_date, y = Value, color = Metric),
+      alpha = 0.18,
+      size = 1.9
+    ) +
+    geom_line(
+      data = game_roll,
+      aes(x = game_date, y = Rolling, color = Metric, group = Metric),
+      linewidth = 1.15,
+      lineend = "round"
+    ) +
+    scale_color_manual(
+      values = c(
+        "PTS" = celtics_green,
+        "REB" = celtics_gold,
+        "AST" = celtics_dark
+      )
+    ) +
+    scale_x_date(
+      date_breaks = "1 week",
+      date_labels = "%b %d",
+      limits = c(return_date, max(game_actual$game_date, na.rm = TRUE))
+    ) +
+    scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, 10)) +
+    labs(
+      title = "The Scoring is Catching up to the Rest",
+      subtitle = "Single-game results with five-game trend lines since Tatum's March 6 return",
+      x = NULL,
+      y = "Per-game production",
+      caption = caption_line
+    ) +
+    theme_caleb
+} else {
+  ggplot() +
+    annotate(
+      "text",
+      x = 0,
+      y = 0,
+      label = "Tatum game log unavailable from hoopR.",
+      family = "inter",
+      size = 4
+    ) +
+    xlim(-1, 1) +
+    ylim(-1, 1) +
+    labs(
+      title = "Game log unavailable",
+      x = NULL,
+      y = NULL,
+      caption = caption_line
+    ) +
+    theme_caleb
+}
+```
+
+# The Impact Is Already Star Level
+
+```{r impact-table}
+impact_display <- impact_split %>%
+  transmute(
+    Group,
+    MIN = if_else(is.na(Minutes), "--", as.character(Minutes)),
+    OFF = fmt_num(Off_Rating),
+    DEF = fmt_num(Def_Rating),
+    NET = paste0(if_else(Net_Rating > 0, "+", ""), fmt_num(Net_Rating))
+  )
+
+impact_display %>%
+  kableExtra::kbl(
+    format = "latex",
+    booktabs = TRUE,
+    align = c("l", "c", "c", "c", "c"),
+    caption = "Boston's regular-season lineup performance with and without Jayson Tatum"
+  ) %>%
+  style_kable_tatum(font_size = 11) %>%
+  kableExtra::column_spec(5, bold = TRUE, color = celtics_green)
+```
+
+Boston was good without Tatum this season, but his minutes still popped. In a small regular-season sample, Boston was +11.4 per 100 with him on the floor and +4.1 better than it was in the non-Tatum minutes overall. His return immediately brought two-way stability, ballhandling, and processing back to the lineup. Among Celtics players, his net rating trailed only Neemias Queta (+13.1) and Hugo González (+12.3).
+
+# The Rebounding Is Still Elite
+
+```{r post-return-rebounding-table}
+rebound_display <- rebound_leaders %>%
+  mutate(
+    is_tatum = Player == "Jayson Tatum",
+    Player = if_else(
+      is_tatum,
+      cell_spec(Player, bold = TRUE, color = celtics_green),
+      Player
+    ),
+    RPG = if_else(
+      is_tatum,
+      cell_spec(fmt_num(RPG), bold = TRUE, color = celtics_green),
+      fmt_num(RPG)
+    )
+  ) %>%
+  select(-is_tatum)
+
+rebound_display %>%
+  kableExtra::kbl(
+    format = "latex",
+    booktabs = TRUE,
+    escape = FALSE,
+    align = c("c", "l", "c", "c"),
+    caption = "Most rebounds per game from Tatum's March 6 return through the end of the regular season | Min. 15 GP"
+  ) %>%
+  style_kable_tatum(font_size = 10.5)
+```
+
+Tatum’s rebounding can be underappreciated, but it has long been one of the steadiest parts of his game. Since returning, he has lived in the same range as centers on the glass.
+
+That gives Boston more lineup flexibility and more margin when the offense is not clicking. Even when the scoring rhythm is shaky, he can still finish possessions and keep the Celtics out of rotation-heavy scramble situations.
+
+The volume backs it up. Tatum ranked seventh in rebounds per game after his return, and his 26.5% defensive rebounding rate ranked sixth in the league. This is not a new development either: he has ranked in the 90th percentile or higher in defensive rebounds for his position every season of his career.
+
+```{r drb-percent-leaders, fig.width=7.2, fig.height=4.7}
+ggplot(drb_leaders, aes(x = Player, y = DRB_Pct, fill = Team_Color)) +
+  geom_col(width = 0.68, alpha = 0.94) +
+  geom_text(
+    aes(label = paste0(fmt_num(DRB_Pct), "%")),
+    hjust = -0.15,
+    size = 3.2,
+    family = "inter",
+    color = text_dark
+  ) +
+  coord_flip() +
+  scale_fill_identity() +
+  scale_y_continuous(limits = c(0, 31), expand = expansion(mult = c(0, 0.06))) +
+  labs(
+    title = "Defensive Rebounding Percentage Leaders",
+    subtitle = "2025-26 regular season | Min. 15 GP",
+    x = NULL,
+    y = "DRB%",
+    caption = caption_line
+  ) +
+  theme_caleb +
+  theme(legend.position = "none")
+```
+
+# The Playmaking Has Held the Offense Together
+
+```{r playmaking-table}
+playmaking_profile %>%
+  kableExtra::kbl(
+    format = "latex",
+    booktabs = TRUE,
+    align = c("l", "c", "l"),
+    caption = "Tatum's playmaking indicators during the return season"
+  ) %>%
+  style_kable_tatum(font_size = 10.5)
+```
+
+The playmaking may be the clearest sign that Boston’s reliance on Tatum never really wavered.
+
+His on-ball share barely moved from last season, which shows how unshielded his return has been. The Celtics let him initiate, read the defense, and solve possessions when the first action stalled, not just to get him reps, but because they needed him to.
+
+The passing indicators show his growth as a game-reader. His potential assists and rim assists point to creation that is actually shifting the defense, not just swinging the ball and collecting easy “one-mores.” He has been getting downhill, drawing help, reading the second layer, and making passes a full beat ahead of the defense. The scoring rhythm is still coming back, but the control is already there.
+
+# League Context: Usage and Efficiency
+
+```{r league-usage-ts, fig.width=7.5, fig.height=5.1}
+league_usage <- tryCatch({
+  league_base <- get_league_base()
+  league_usage_stats <- get_league_usage()
+  league_advanced <- get_league_advanced()
+
+  league_base %>%
+    left_join(league_usage_stats, by = "player_id") %>%
+    left_join(league_advanced, by = "player_id") %>%
+    filter(!is.na(usg_pct), !is.na(ts_pct), !is.na(min), min >= 500)
+}, error = function(e) tibble())
+
+if (nrow(league_usage) > 0) {
+  avg_usg <- mean(league_usage$usg_pct, na.rm = TRUE)
+  avg_ts  <- mean(league_usage$ts_pct, na.rm = TRUE)
+
+  # Tatum comparison is hand-entered to preserve the original pre/post-injury comparison.
+  tatum_compare <- tibble(
+    season = c("Tatum 2024-25", "Tatum 2025-26"),
+    usg_pct = c(30.1, 29.0),
+    ts_pct = c(58.2, 54.1)
+  )
+
+  ggplot(league_usage, aes(x = usg_pct, y = ts_pct)) +
+    geom_vline(xintercept = avg_usg, linetype = "dashed", linewidth = 0.5, alpha = 0.2) +
+    geom_hline(yintercept = avg_ts, linetype = "dashed", linewidth = 0.5, alpha = 0.2) +
+    geom_point(alpha = 0.16, size = 1.4, color = "#4d4d4d") +
+    geom_segment(
+      data = tibble(
+        x = 30.1,
+        xend = 29.0,
+        y = 58.2,
+        yend = 54.5
+      ),
+      aes(x = x, xend = xend, y = y, yend = yend),
+      inherit.aes = FALSE,
+      color = celtics_green,
+      linewidth = 0.8,
+      alpha = 0.75,
+      arrow = arrow(length = unit(0.10, "inches"), type = "closed")
+    ) +
+    geom_point(
+      data = tatum_compare,
+      aes(x = usg_pct, y = ts_pct),
+      inherit.aes = FALSE,
+      color = celtics_green,
+      size = 3.4
+    ) +
+    geom_text(
+      data = tatum_compare,
+      aes(x = usg_pct, y = ts_pct, label = season),
+      inherit.aes = FALSE,
+      nudge_y = c(1.3, -1.1),
+      size = 2.7,
+      family = "inter",
+      color = text_dark
+    ) +
+    scale_x_continuous(labels = scales::label_number(accuracy = 1, suffix = "%")) +
+    scale_y_continuous(labels = scales::label_number(accuracy = 1, suffix = "%")) +
+    labs(
+      title = "Similar Role, Less Scoring Efficiency",
+      subtitle = "2025-26 regular season (min. 500 minutes) | Tatum: 2024-25 vs. 2025-26",
+      x = "Usage rate",
+      y = "True shooting %",
+      caption = caption_line
+    ) +
+    theme_caleb
+} else {
+  ggplot() +
+    annotate(
+      "text",
+      x = 0,
+      y = 0,
+      label = "League data unavailable from hoopR.",
+      family = "inter",
+      size = 4
+    ) +
+    xlim(-1, 1) +
+    ylim(-1, 1) +
+    labs(
+      title = "League data unavailable",
+      x = NULL,
+      y = NULL,
+      caption = caption_line
+    ) +
+    theme_caleb
+}
+```
+
+That same responsibility shows up in the usage profile. Tatum is operating in a very similar role, with his usage barely moving from about 30% pre-injury to roughly 29% this season. The difference is the efficiency, which dipped below his usual standard in the regular season. In the playoffs, that has started to look more like his norm.
+
+# The Next Phase of the Ramp-Up
+
+```{r playoff-profile-table}
+playoff_profile %>%
+  mutate(
+    Metric = make_pct_name(Metric),
+    Value = if_else(is_pct, fmt_pct(Value), fmt_num(Value))
+  ) %>%
+  select(Metric, Value, Note) %>%
+  kableExtra::kbl(
+    format = "latex",
+    booktabs = TRUE,
+    escape = FALSE,
+    align = c("l", "c", "l"),
+    caption = "Tatum's 2026 playoff production through six playoff games"
+  ) %>%
+  style_kable_tatum(font_size = 10.5) %>%
+  kableExtra::column_spec(3, italic = TRUE, color = celtics_green)
+```
+
+Through six games, Tatum has averaged 23.3 points, 10.7 rebounds, and 6.8 assists against just 2.8 turnovers on 60.8% true shooting, a playoff career high. The efficiency jump is not limited to TS%. He is also at playoff career highs in several efficiency metrics, while carrying major playmaking responsibility despite uneven shooting from the teammates around him.
+
+# Playoff Ranking
+
+```{r tatum-ranking}
+playoff_rank_snapshot %>%
+  mutate(
+    is_tatum = Player == "Jayson Tatum",
+    Player = if_else(
+      is_tatum,
+      cell_spec(Player, bold = TRUE, color = celtics_green),
+      Player
+    ),
+    Value = if_else(
+      is_tatum,
+      cell_spec(fmt_num(Value), bold = TRUE, color = celtics_green),
+      fmt_num(Value)
+    )
+  ) %>%
+  select(-is_tatum) %>%
+  kableExtra::kbl(
+    format = "latex",
+    booktabs = TRUE,
+    escape = FALSE,
+    align = c("l", "c", "l", "c"),
+    caption = "Where Tatum ranks among 2026 playoff leaders"
+  ) %>%
+  style_kable_tatum(font_size = 9.5) %>%
+  kableExtra::collapse_rows(columns = 1, valign = "top")
+```
+
+That all-around production shows up clearly on the playoff leaderboards. He ranks 12th in points, fifth in rebounds, and sixth in assists, joining Jokic as the only other player top 12 in all three.
+
+# Playoff Team Context
+
+**Net Points Definition:** Net Points is a play-by-play based metric that assigns credit and blame for every possession while a player is on the floor, capturing scoring, turnovers, defense, and context beyond the box score. It reflects how much a player actually moved the score, not just what they produced individually.
+
+```{r celtics-playoff-net-points, fig.width=7.5, fig.height=5.2}
+celtics_net_points %>%
+  filter(!Player %in% c("Hugo González", "Amari Williams", "Max Shulga", "Dalano Banton")) %>%
+  arrange(Overall) %>%
+  mutate(
+    Player = factor(Player, levels = Player),
+    label = fmt_signed(Overall, 0)
+  ) %>%
+  ggplot(aes(x = Player, y = Overall, fill = Overall)) +
+  geom_col(width = 0.68, alpha = 0.94) +
+  geom_hline(yintercept = 0, linewidth = 0.45, color = "#555555", alpha = 0.5) +
+  geom_text(
+    aes(label = label, hjust = if_else(Overall >= 0, -0.18, 1.15)),
+    size = 3.2,
+    family = "inter",
+    color = text_dark
+  ) +
+  coord_flip() +
+  scale_fill_gradient2(
+    low = "#b91c1c",
+    mid = "#d6d3c8",
+    high = celtics_green,
+    midpoint = 0
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0.12, 0.14))) +
+  labs(
+    title = "Boston's Playoff Success Has Relied on Tatum",
+    subtitle = "Celtics playoff net points | 2026 NBA Playoffs",
+    x = NULL,
+    y = "Net points",
+    caption = "Data: ESPN Analytics | Viz: @Rambzee_"
+  ) +
+  theme_caleb +
+  theme(legend.position = "none")
+```
+
+Boston’s path forward has run through Tatum.
+
+These are essentially his 17th through 22nd games back from an Achilles rupture. He is playing 36.3 minutes per game, 20th in the playoffs, less than a year removed from an injury that has derailed so many careers. Yet it has not been enough. Despite taking a 3–1 lead, Boston has been pushed to Game 7 as Philadelphia has tightened the series, raised the pressure on both ends, and forced the Celtics to ask even more of him.
+
+The support around him has been inconsistent, and some rotation decisions have amplified it. Key pieces like Derrick White and Nikola Vučević have struggled, while other options have barely been explored. Players like Luka Garza and Ron Harper Jr. have produced in small bursts, but in limited minutes. Whether that production would translate is a different question, but the lack of experimentation has stood out as the series tightened.
+
+# What Game 7 Means for Tatum and the Celtics
+
+```{r game-7-tables}
+game7_summary %>%
+  kableExtra::kbl(
+    format = "latex",
+    booktabs = TRUE,
+    align = c("c", "c", "c", "c", "c", "c", "c"),
+    caption = "Jayson Tatum's career Game 7 averages"
+  ) %>%
+  style_kable_tatum(font_size = 10.5)
+
+game7_best %>%
+  kableExtra::kbl(
+    format = "latex",
+    booktabs = TRUE,
+    align = c("l", "l", "c", "c", "c", "c", "l"),
+    caption = "Tatum's best Game 7 performance"
+  ) %>%
+  style_kable_tatum(font_size = 10.5) %>%
+  kableExtra::column_spec(3, bold = TRUE, color = celtics_green) %>%
+  kableExtra::column_spec(7, italic = TRUE, color = celtics_green)
+```
+
+Tatum has been here before. Across seven career Game 7s, he has averaged 26.7 points, 9.3 rebounds, and 5.1 assists on 60.8% true shooting, with a 5–2 record. His 51-point game against Philadelphia in 2023 remains the NBA playoff Game 7 scoring record.
+
+The context is different this time. He is less than a year removed from an Achilles rupture. Tatum has already done more than anyone could have reasonably expected this soon. Now Boston needs him to be its best player once more in a Game 7 while he is still rebuilding the final pieces of his game.
