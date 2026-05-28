@@ -50,7 +50,7 @@ This analysis depends on two local Excel files for playtype and shot-zone data, 
 ## File Guide
 
 - `analysis.Rmd` — cleaned source analysis
-- `AD-wizards-fit-analysis.pdf` — rendered report
+- `analysis.pdf` — rendered report
 - `README.md` — project overview
 - `AD Scoring Zones (Last 5 Seasons).xlsx` — local shot-zone input
 - `data/` — local data files
