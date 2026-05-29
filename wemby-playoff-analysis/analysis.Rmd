@@ -1,0 +1,677 @@
+---
+title: "What Are We Watching With Victor Wembanyama?"
+author: "Caleb Ramsey"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: false
+    fig_crop: false
+geometry: margin=0.78in
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+  - \usepackage{booktabs}
+  - \usepackage{array}
+  - \usepackage{caption}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  dpi = 300,
+  out.width = "95%"
+)
+
+library(tidyverse)
+library(scales)
+library(kableExtra)
+library(showtext)
+library(sysfonts)
+library(forcats)
+
+try(font_add_google("Inter", "inter"), silent = TRUE)
+showtext_auto()
+options(scipen = 999)
+
+# ------------------------------------------------------------
+# Theme + palette
+# ------------------------------------------------------------
+
+BG <- "#f6f4ef"
+TEXT_DARK <- "#141414"
+TEXT_LIGHT <- "#5f5f5f"
+GRID <- "#dedad3"
+
+SPURS_BLACK <- "#141414"
+SPURS_SILVER <- "#C4CED4"
+
+CAPTION_LINE <- "Data: Stathead Basketball | Viz: @Rambzee_"
+
+theme_wemby <- function(base_size = 11) {
+  theme_minimal(base_family = "inter", base_size = base_size) +
+    theme(
+      plot.background = element_rect(fill = BG, color = NA),
+      panel.background = element_rect(fill = BG, color = NA),
+      panel.grid.major = element_line(color = GRID, linewidth = 0.3),
+      panel.grid.minor = element_blank(),
+      text = element_text(color = TEXT_DARK),
+      plot.title = element_text(size = 18.5, face = "bold", hjust = 0.5, margin = margin(b = 4)),
+      plot.subtitle = element_text(size = 10.2, color = TEXT_LIGHT, hjust = 0.5, margin = margin(b = 8)),
+      axis.title = element_text(size = 10.3, face = "bold"),
+      axis.text = element_text(size = 9.2, color = "#333333"),
+      axis.ticks = element_blank(),
+      legend.position = "top",
+      legend.title = element_blank(),
+      legend.text = element_text(size = 9.0),
+      plot.caption = element_text(size = 7.7, color = "#6e6e6e", hjust = 1, margin = margin(t = 7)),
+      plot.margin = margin(10, 12, 12, 12)
+    )
+}
+
+# ------------------------------------------------------------
+# Formatting helpers
+# ------------------------------------------------------------
+
+style_kable <- function(
+  df,
+  caption = NULL,
+  align = NULL,
+  font_size = 8.8,
+  full_width = FALSE,
+  escape = TRUE
+) {
+  if (is.null(align)) align <- strrep("c", ncol(df))
+
+  kbl(
+    df,
+    booktabs = TRUE,
+    format = "latex",
+    caption = caption,
+    align = align,
+    linesep = "",
+    escape = escape
+  ) %>%
+    kable_styling(
+      latex_options = c("hold_position", "striped"),
+      full_width = full_width,
+      font_size = font_size,
+      stripe_color = "#fbfaf7"
+    )
+}
+
+fmt_num <- function(x, digits = 1) sprintf(paste0("%.", digits, "f"), x)
+fmt_statline <- function(ppg, rpg, apg) paste0(fmt_num(ppg), " / ", fmt_num(rpg), " / ", fmt_num(apg))
+fmt_stockline <- function(spg, bpg) {
+  if_else(is.na(spg) | is.na(bpg), "—", fmt_num(spg + bpg, 1))
+}
+
+highlight_wemby_row <- function(tbl, df, name_col = "Player") {
+  wemby_row <- which(df[[name_col]] == "Victor Wembanyama")
+  if (length(wemby_row) == 1) {
+    tbl %>% row_spec(wemby_row, bold = TRUE, color = "white", background = SPURS_BLACK)
+  } else {
+    tbl
+  }
+}
+```
+
+```{r data-inputs, include=FALSE}
+# ------------------------------------------------------------
+# Hand-entered leaderboards from Stathead screenshots
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# Wembanyama playoff game log
+# ------------------------------------------------------------
+# Update this one table as the run continues.
+# Full-workload averages use games where Wembanyama played at least 20 minutes.
+# Two early-exit games remain in the full game log, but are excluded from the main run averages.
+
+wemby_game_log <- tribble(
+  ~Date, ~Round_Opp, ~Result, ~MIN, ~PTS, ~REB, ~AST, ~STL, ~BLK, ~TOV, ~GmSc, ~Note,
+  "2026-04-19", "POR Game 1", "W", "32:50", 35, 5, 1, 0, 2, 4, 23.9, "Playoff debut",
+  "2026-04-21", "POR Game 2", "L", "11:41", 5, 4, 1, 0, 1, 2, 3.9, "Early exit: injury",
+  "2026-04-26", "POR Game 4", "W", "34:19", 27, 12, 3, 4, 7, 4, 28.5, "First defensive takeover",
+  "2026-04-28", "POR Game 5", "W", "33:36", 17, 14, 3, 0, 6, 1, 22.4, "Closeout control",
+  "2026-05-04", "MIN Game 1", "L", "39:52", 11, 15, 5, 0, 12, 3, 13.7, "Most blocks ever in a playoff game",
+  "2026-05-06", "MIN Game 2", "W", "25:54", 19, 15, 2, 1, 2, 2, 18.8, "Bounce-back win",
+  "2026-05-08", "MIN Game 3", "W", "36:58", 39, 15, 1, 1, 5, 1, 37.9, "First true superstar playoff game",
+  "2026-05-10", "MIN Game 4", "L", "12:29", 4, 4, 1, 0, 0, 2, 0.4, "Early exit: ejection",
+  "2026-05-12", "MIN Game 5", "W", "32:38", 27, 17, 5, 0, 3, 4, 25.7, "Series control",
+  "2026-05-15", "MIN Game 6", "W", "27:22", 19, 6, 2, 0, 3, 4, 13.4, "Series closeout",
+  "2026-05-18", "OKC Game 1", "W", "48:42", 41, 24, 3, 1, 3, 3, 40.1, "Conference Finals eruption",
+  "2026-05-20", "OKC Game 2", "L", "37:17", 21, 17, 6, 1, 4, 4, 22.9, "Road loss",
+  "2026-05-22", "OKC Game 3", "L", "39:09", 26, 4, 3, 1, 2, 2, 20.4, "Home loss",
+  "2026-05-24", "OKC Game 4", "W", "31:02", 33, 8, 5, 2, 3, 4, 28.0, "Response game to tie series 2-2",
+  "2026-05-26", "OKC Game 5", "L", "37:38", 20, 6, 1, 2, 3, 2, 15.3, "Game 5 road loss",
+  "2026-05-28", "OKC Game 6", "TBD", "35:00", NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, "Pending verified box score"
+) %>%
+  mutate(
+    Date = as.Date(Date),
+    min_split = str_split(MIN, ":"),
+    MIN_num = map_dbl(min_split, ~ as.numeric(.x[1]) + as.numeric(.x[2]) / 60),
+    full_workload = MIN_num >= 20,
+    STOCKS = STL + BLK
+  ) %>%
+  select(-min_split)
+
+wemby_full_workload <- wemby_game_log %>%
+  filter(full_workload, !is.na(PTS))
+
+wemby_summary <- wemby_full_workload %>%
+  summarise(
+    GP = n(),
+    PPG = mean(PTS, na.rm = TRUE),
+    RPG = mean(REB, na.rm = TRUE),
+    APG = mean(AST, na.rm = TRUE),
+    SPG = mean(STL, na.rm = TRUE),
+    BPG = mean(BLK, na.rm = TRUE),
+    STOCKS = mean(STOCKS, na.rm = TRUE),
+    GmSc = mean(GmSc, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+wemby_gp <- wemby_summary$GP
+wemby_ppg <- wemby_summary$PPG
+wemby_rpg <- wemby_summary$RPG
+wemby_apg <- wemby_summary$APG
+wemby_spg <- wemby_summary$SPG
+wemby_bpg <- wemby_summary$BPG
+wemby_stocks <- wemby_summary$STOCKS
+wemby_games_label <- paste0(wemby_gp, " full-workload games")
+
+wemby_okc_games <- wemby_game_log %>%
+  filter(Round_Opp %in% c("OKC Game 1", "OKC Game 4")) %>%
+  transmute(
+    Date = format(Date, "%m/%d/%Y"),
+    Series_Game = str_remove(Round_Opp, "OKC "),
+    Result,
+    Score = case_when(
+      Round_Opp == "OKC Game 1" ~ "SAS 122, OKC 115 (2OT)",
+      Round_Opp == "OKC Game 4" ~ "SAS 103, OKC 82",
+      TRUE ~ ""
+    ),
+    PTS,
+    REB,
+    AST,
+    STL,
+    BLK,
+    Note
+  )
+
+signature_games_tbl <- wemby_game_log %>%
+  filter(Round_Opp %in% c("POR Game 1", "POR Game 4", "MIN Game 1", "MIN Game 3", "OKC Game 1", "OKC Game 4")) %>%
+  transmute(
+    Opponent = Round_Opp,
+    Line = case_when(
+      Round_Opp == "MIN Game 1" ~ paste0(PTS, " / ", REB, " / ", AST, " / ", BLK, " BLK"),
+      Round_Opp == "POR Game 4" ~ paste0(PTS, " / ", REB, " / ", BLK, " BLK"),
+      TRUE ~ paste0(PTS, " / ", REB, " / ", AST)
+    ),
+    `Why It Mattered` = Note
+  )
+
+
+first_playoff_runs <- tibble::tibble(
+  Player = c(
+    "Michael Jordan",
+    "LeBron James",
+    "Kareem Abdul-Jabbar",
+    "Magic Johnson",
+    "Tim Duncan",
+    "Shaquille O'Neal",
+    "Hakeem Olajuwon",
+    "Luka Doncic",
+    "Victor Wembanyama"
+  ),
+  Season = c(
+    "1984-85",
+    "2005-06",
+    "1969-70",
+    "1979-80",
+    "1997-98",
+    "1993-94",
+    "1984-85",
+    "2019-20",
+    "2025-26"
+  ),
+  Age = c(21, 21, 22, 20, 21, 21, 22, 21, 22),
+  Team = c("CHI", "CLE", "MIL", "LAL", "SAS", "ORL", "HOU", "DAL", "SAS"),
+  Team_Record = c(
+    "38-44",
+    "50-32",
+    "56-26",
+    "60-22",
+    "56-26",
+    "50-32",
+    "48-34",
+    "43-32",
+    "62-20"
+  ),
+  Seed = c(
+    "7th East",
+    "4th East",
+    "2nd East",
+    "1st West",
+    "5th West",
+    "4th East",
+    "6th West",
+    "7th West",
+    "2nd West"
+  ),
+  Result = c(
+    "Lost R1",
+    "Lost ECSF",
+    "Lost EDF",
+    "Won Finals",
+    "Lost WCSF",
+    "Lost R1",
+    "Lost R1",
+    "Lost R1",
+    "OKC leads 3-2 in WCF"
+  ),
+  Context = c(
+  "Below-.500 roster around a rookie star",
+  "50-win team carried by a young LeBron",
+  "Second-year expansion team turned contender",
+  "60-win contender with Kareem already in place",
+  "Established Spurs core rebounding from injury collapse",
+  "Young 50-win Magic team still ahead of schedule",
+  "Young Rockets team before the title-era build",
+  "Bubble 7-seed built around Luka's creation",
+  "62-win Spurs team with a young core still arriving"
+  ),
+  GP = c(4, 13, 10, 16, 9, 3, 5, 6, wemby_gp),
+  PPG = c(29.3, 30.8, 35.2, 18.3, 20.7, 20.7, 21.2, 31.0, wemby_ppg),
+  RPG = c(5.8, 8.1, 16.8, 10.5, 9.0, 13.3, 13.0, 9.8, wemby_rpg),
+  APG = c(8.5, 5.8, 4.1, 9.4, 1.9, 2.3, 1.4, 8.7, wemby_apg),
+  SPG = c(2.8, 1.4, NA, 3.1, 0.6, 0.7, 1.4, 1.2, wemby_spg),
+  BPG = c(1.0, 0.7, NA, 0.4, 2.6, 3.0, 2.6, 0.5, wemby_bpg)
+) %>%
+  mutate(
+    STOCKS = SPG + BPG,
+    `PTS / REB / AST` = fmt_statline(PPG, RPG, APG),
+    `STL + BLK` = fmt_stockline(SPG, BPG)
+  )
+
+cf_debut_pts <- tribble(
+  ~Rank, ~Player, ~PTS, ~Date, ~Season, ~Team, ~Opponent,
+  1, "Trae Young", 48, "6/23/2021", "2020-21", "ATL", "MIL",
+  2, "Victor Wembanyama", 41, "5/18/2026", "2025-26", "SAS", "OKC",
+  3, "Amar'e Stoudemire", 41, "5/22/2005", "2004-05", "PHX", "SAS",
+  4, "Devin Booker", 40, "6/20/2021", "2020-21", "PHX", "LAC",
+  5, "Kevin Durant", 40, "5/17/2011", "2010-11", "OKC", "DAL",
+  6, "Carmelo Anthony", 39, "5/19/2009", "2008-09", "DEN", "LAL",
+  7, "Dirk Nowitzki", 38, "5/19/2003", "2002-03", "DAL", "SAS",
+  8, "Anthony Davis", 37, "9/18/2020", "2019-20", "LAL", "DEN",
+  9, "Stephen Curry", 34, "5/19/2015", "2014-15", "GSW", "HOU",
+  10, "Deron Williams", 34, "5/20/2007", "2006-07", "UTA", "SAS",
+  11, "Boris Diaw", 34, "5/24/2006", "2005-06", "PHX", "DAL",
+  12, "Allen Iverson", 34, "5/22/2001", "2000-01", "PHI", "MIL",
+  13, "George Gervin", 34, "5/4/1979", "1978-79", "SAS", "WAS"
+)
+
+playoff_40_20 <- tribble(
+  ~Rank, ~Player, ~Date, ~PTS, ~REB, ~Team, ~Opponent,
+  1, "Victor Wembanyama", "5/18/2026", 41, 24, "SAS", "OKC",
+  2, "Nikola Jokic", "5/5/2025", 42, 22, "DEN", "OKC",
+  3, "Giannis Antetokounmpo", "5/13/2022", 44, 20, "MIL", "BOS",
+  4, "Shaquille O'Neal", "6/6/2001", 44, 20, "LAL", "PHI",
+  5, "Shaquille O'Neal", "5/8/2001", 43, 20, "LAL", "SAC",
+  6, "Shaquille O'Neal", "5/6/2001", 44, 21, "LAL", "SAC",
+  7, "Shaquille O'Neal", "6/9/2000", 40, 24, "LAL", "IND",
+  8, "David Robinson", "4/28/1996", 40, 21, "SAS", "PHX",
+  9, "Charles Barkley", "6/5/1993", 44, 24, "PHX", "SEA",
+  10, "Hakeem Olajuwon", "4/30/1988", 41, 26, "HOU", "DAL",
+  11, "Hakeem Olajuwon", "5/14/1987", 49, 25, "HOU", "SEA",
+  12, "Moses Malone", "4/26/1981", 42, 23, "HOU", "KCK",
+  13, "Kareem Abdul-Jabbar", "5/1/1977", 43, 20, "LAL", "GSW",
+  14, "Bob McAdoo", "4/18/1975", 50, 21, "BUF", "WAS",
+  15, "Kareem Abdul-Jabbar", "4/18/1974", 44, 21, "MIL", "CHI",
+  16, "Wilt Chamberlain", "5/6/1970", 45, 27, "LAL", "NYK",
+  17, "Kareem Abdul-Jabbar", "4/3/1970", 46, 25, "MIL", "PHI"
+)
+
+youngest_40_playoff <- tribble(
+  ~Rank, ~Player, ~Age, ~PTS, ~Date, ~Team, ~Opponent, ~MIN, ~REB, ~AST, ~STL, ~BLK,
+  1, "Magic Johnson", "20-276", 42, "5/16/1980", "LAL", "PHI", 47, 15, 7, 3, 1,
+  2, "LeBron James", "21-119", 41, "4/28/2006", "CLE", "WAS", 48, 5, 3, 2, 0,
+  3, "LeBron James", "21-124", 45, "5/3/2006", "CLE", "WAS", 46, 7, 6, 2, 0,
+  4, "Luka Doncic", "21-171", 42, "8/17/2020", "DAL", "LAC", 38, 7, 9, 3, 0,
+  5, "Luka Doncic", "21-177", 43, "8/23/2020", "DAL", "LAC", 46, 17, 13, 2, 1,
+  6, "Anthony Edwards", "21-257", 41, "4/19/2023", "MIN", "DEN", 42, 2, 4, 2, 3,
+  7, "Ja Morant", "21-289", 47, "5/26/2021", "MEM", "UTA", 43, 4, 7, 0, 0,
+  8, "Tracy McGrady", "21-339", 42, "4/28/2001", "ORL", "MIL", 50, 8, 10, 3, 2,
+  9, "Luka Doncic", "22-089", 44, "5/28/2021", "DAL", "LAC", 39, 9, 9, 1, 0,
+  10, "Luka Doncic", "22-094", 42, "6/2/2021", "DAL", "LAC", 43, 8, 14, 1, 0,
+  11, "Luka Doncic", "22-098", 46, "6/6/2021", "DAL", "LAC", 45, 7, 14, 0, 0,
+  12, "Victor Wembanyama", "22-134", 41, "5/18/2026", "SAS", "OKC", 49, 24, 3, 1, 3
+)
+```
+
+# Introduction
+
+Victor Wembanyama’s playoff run is forcing a hard-to-address question earlier than expected.
+
+The stat lines are already historic: 35 in his playoff debut, 39 against the defense that had just slowed the 3x MVP, 41/24 in a Conference Finals debut, and now multiple signature games against the defending champions.
+
+But the numbers only tell part of the story. The bigger question is why this run is different from the usual young-superstar breakout.
+
+This report is an attempt to contextualize what we’re actually watching.
+
+
+# The Run So Far
+
+```{r run-snapshot, results='asis'}
+run_snapshot_tbl <- tibble(
+  Games = wemby_games_label,
+  PPG = fmt_num(wemby_ppg, 1),
+  RPG = fmt_num(wemby_rpg, 1),
+  APG = fmt_num(wemby_apg, 1),
+  BPG = fmt_num(wemby_bpg, 1),
+  `STL + BLK` = fmt_num(wemby_stocks, 1),
+  `Game Score` = fmt_num(wemby_summary$GmSc, 1)
+)
+
+style_kable(
+  run_snapshot_tbl,
+  "Wembanyama first playoff run snapshot; full-workload games only",
+  align = "ccccccc",
+  font_size = 8.6
+) %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(2:7, bold = TRUE)
+```
+
+The two early-exit games remain part of the full playoff record, but the primary run averages use games where Wembanyama played at least 20 minutes.
+
+
+
+# First Playoff Runs Matter 
+
+Before getting to the single-game leaderboards, the better starting point is the run itself. The all-time greats usually announce themselves early, but not under identical conditions. Some entered rebuilding situations, others joined rosters already positioned to win. That does not erase the production, but it changes how quickly the playoff stage arrived and how ready they were for the bright lights.
+
+```{r first-run-production-table, results='asis'}
+first_run_production_tbl <- first_playoff_runs %>%
+  transmute(
+    Player,
+    Age,
+    Season,
+    GP,
+    `PTS / REB / AST`,
+    `STL + BLK`
+  )
+
+first_prod_kable <- style_kable(
+  first_run_production_tbl,
+  "First playoff run production by comparable all-time greats",
+  align = "lccccc",
+  font_size = 8.0
+) %>%
+  column_spec(1, bold = TRUE, width = "3.0cm") %>%
+  column_spec(5, bold = TRUE) %>%
+  column_spec(6, bold = TRUE)
+
+highlight_wemby_row(first_prod_kable, first_run_production_tbl)
+```
+
+```{r first-run-context-table, results='asis'}
+first_run_context_tbl <- first_playoff_runs %>%
+  transmute(
+    Player,
+    Team,
+    Record = Team_Record,
+    Seed,
+    Context,
+    Result
+  )
+
+first_context_kable <- style_kable(
+  first_run_context_tbl,
+  "Team context for first playoff runs (Source: BasketballReference)",
+  align = "lcccc",
+  font_size = 8.0
+) %>%
+  column_spec(1, bold = TRUE, width = "3.0cm") %>%
+  column_spec(5, width = "4.0cm")
+
+highlight_wemby_row(first_context_kable, first_run_context_tbl)
+```
+
+The Spurs are not simply benefiting from Wembanyama’s production. Their entire gameplan depends on him, and their playoff ceiling is tied directly to his presence on the floor. Across the `r wemby_gp` games where he has played a full workload, this already belongs among the best first playoff runs we have seen.
+
+If it ends in a championship, the conversation changes completely. At that point, the question may not be whether it belongs near the top of the list, but whether any player this young has ever carried a more demanding two-way postseason burden in the modern era.
+
+# Impact On Winning
+
+```{r defensive-on-off-table, results = 'asis'}
+wemby_defense_onoff_tbl <- tribble(
+  ~Metric, ~`Wemby On`, ~`Wemby Off`, ~Diff,
+  "Defensive Rating", "105.7", "114.9", "-9.2",
+  "Opponent eFG%", "49.3%", "54.1%", "-4.8 pp",
+  "Opponent 2PT%", "47.4%", "55.2%", "-7.8 pp",
+  "Rim Frequency Allowed", "23.4%", "28.2%", "-4.8 pp",
+  "Opponent Rim FG%", "61.0%", "65.5%", "-4.5 pp",
+  "Opponent Short Mid FG%", "38.1%", "46.5%", "-8.4 pp",
+  "Opponent Long Mid FG%", "36.2%", "46.9%", "-10.7 pp"
+)
+
+style_kable(
+  wemby_defense_onoff_tbl,
+  "How Wembanyama changes San Antonio's playoff defensive environment (Source: PBPStats.com)",
+  align = "lccc",
+  font_size = 8.4
+) %>%
+  column_spec(1, bold = TRUE, width = "5.1cm") %>%
+  column_spec(2, bold = TRUE) %>%
+  column_spec(4, bold = TRUE)
+```
+
+The defensive impact is his superpower, and it goes far beyond blocks.
+
+With Wembanyama on the floor, opponents' entire gameplan shifts. Rim attempts fall dramatically, finishing efficiency drops, and overall shot quality deteriorates. Opponents are shooting nearly 8 percentage points worse on two-point attempts and over 10 percentage points worse on long midrange shots.
+
+# Offense: Still Developing
+
+```{r shot-diet, results = 'asis'}
+wemby_shot_profile <- tribble(
+  ~Zone, ~FGM, ~FGA, ~`FG%`, ~`eFG%`, ~`AST%`, ~`UAST%`,
+  "Restricted Area", 69, 90, "76.7%", "76.7%", "59.4%", "40.6%",
+  "Paint (Non-RA)", 14, 32, "43.8%", "43.8%", "64.3%", "35.7%",
+  "Midrange", 5, 24, "20.8%", "20.8%", "60.0%", "40.0%",
+  "3PT", 22, 61, "36.1%", "54.1%", "77.3%", "22.7%"
+)
+
+style_kable(
+  wemby_shot_profile,
+  "Wembanyama playoff shooting profile by zone (Source: NBA.com)",
+  align = "lcccccc",
+  font_size = 8.2
+) %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(4, bold = TRUE)
+```
+
+Wembanyama’s offense is still a little clunky. That might be the scariest part.
+
+At the rim, he is already overwhelming: 76.7% in the restricted area on 6.5 attempts per game. And it is not just spoon-fed finishing. Over 40% of his makes at the rim have been unassisted, which is absurd self-creation for a 7-foot-5 player.
+
+The jumper is still inconsistent. The midrange has mostly clanked, even when he gets to his fadeaway cleanly. On the other hand, the three-point volume has been a real strength: 4.4 attempts per game at 36.1%, with enough touch and range to pull defenses beyond the paint.
+
+Some possessions are as simple as throwing it up and trusting Wembanyama is somewhere near the rim. Others come from teammates shooting with the confidence that he is waiting behind the play to clean misses up.
+
+# Signature Performances 
+
+```{r okc-series-table, results='asis'}
+# ---- Signature playoff performances ----
+style_kable(
+  signature_games_tbl,
+  "Wembanyama signature playoff performances",
+  align = "lcl",
+  font_size = 8.3
+) %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(2, bold = TRUE) %>%
+  column_spec(3, width = "6cm")
+```
+
+His emphatic 41/24 against Oklahoma City will be the game people remember, but it was not the first time Wembanyama declared himself this run.
+
+He opened the playoffs with 35. After the early injury scare, he came back and crushed whatever hope Portland had left. Against Minnesota, he set the all-time playoff blocks record with 12, then took hold of the series two games later with 39 points, 15 rebounds, and 5 blocks. By Oklahoma City, the expectations and pressure had never been higher. He answered with 41 and 24 in Game 1, including a career-defining shot, then followed it with 33 in Game 4 to pull the series even.
+
+That is the difference between flashes and the beginning of something larger. Every round has raised the pressure, and every round has produced another game that feels impossible to fully contextualize for a player this young.
+
+# Why The Run Already Matters Historically
+
+Each table is measuring something different: scoring translation, physical dominance, defensive ceiling, and age. None of them alone explain the run. Together, they show how unusual this level of postseason responsibility and production is for a player this young.
+
+## Conference Finals Debut Scoring
+
+```{r cf-debut-table, results='asis'}
+cf_tbl <- cf_debut_pts %>%
+  transmute(
+    Rank,
+    Player,
+    PTS,
+    Date,
+    Season,
+    Team,
+    Opp = Opponent
+  )
+
+cf_kable <- style_kable(
+  cf_tbl,
+  "Most points in a Conference Finals debut (Source: StatMuse)",
+  align = "clccccc",
+  font_size = 8.0
+) %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(3, bold = TRUE)
+
+highlight_wemby_row(cf_kable, cf_tbl)
+```
+
+## The 40/20 Club
+
+```{r forty-twenty-players-table, results='asis'}
+forty_twenty_players <- playoff_40_20 %>%
+  count(Player, name = "Times") %>%
+  arrange(desc(Times), Player)
+
+ft_kable <- style_kable(
+  forty_twenty_players,
+  "Players with 40-point, 20-rebound playoff games since 1970 (Source: StatMuse)",
+  align = "lc",
+  font_size = 8.2
+) %>%
+  column_spec(1, bold = TRUE)
+
+highlight_wemby_row(ft_kable, forty_twenty_players)
+```
+
+## Playoff Shot Blocking Peaks
+
+```{r playoff-blocks-table, results='asis'}
+blocks_tbl <- tribble(
+  ~Rank, ~Player, ~BLK, ~Date, ~Team,
+  1, "Victor Wembanyama", 12, "2026-05-04", "SAS",
+  2, "Andrew Bynum", 10, "2012-04-29", "LAL",
+  2, "Hakeem Olajuwon", 10, "1990-04-29", "HOU",
+  2, "Mark Eaton", 10, "1985-04-26", "UTA"
+)
+
+blocks_kable <- style_kable(
+  blocks_tbl,
+  "Most blocks in a playoff game (Source: NBA.com)",
+  align = "clccc",
+  font_size = 8.0
+) %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(3, bold = TRUE)
+
+highlight_wemby_row(blocks_kable, blocks_tbl)
+```
+
+## Youngest 40-Point Playoff Games
+
+```{r young-forty-table, results='asis'}
+young_tbl <- youngest_40_playoff %>%
+  group_by(Player) %>%
+  slice_min(Age, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  arrange(Age) %>%
+  transmute(
+    Player,
+    Age,
+    PTS,
+    Date,
+    Team,
+    Opp = Opponent,
+    REB,
+    AST,
+    BLK
+  )
+
+young_kable <- style_kable(
+  young_tbl,
+  "Youngest players to score 40+ points in a playoff game, one entry per player (Source: StatMuse)",
+  align = "lcccccccc",
+  font_size = 7.8
+) %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(2, bold = TRUE) %>%
+  column_spec(3, bold = TRUE)
+
+highlight_wemby_row(young_kable, young_tbl)
+```
+
+The 41/24 game put Wembanyama in old-school big-man company, the 12-block game put him alone atop a defensive leaderboard, and the age table puts the timing in perspective. The same run is touching scoring, rebounding, rim protection, and developmental history at once.
+
+# Context Matters
+
+```{r spurs-support-table, results='asis'}
+spurs_support_tbl <- tribble(
+  ~Player, ~Age, ~Role, ~MPG, ~PPG, ~RPG, ~APG, ~`TOV/G`, ~`TS%`,
+  "Stephon Castle", 21, "Secondary creator", 33.4, 19.2, 4.9, 6.6, 3.7, "60.2%",
+  "De'Aaron Fox", 28, "Lead guard", 32.9, 18.0, 4.2, 5.8, 2.0, "54.1%",
+  "Devin Vassell", 25, "Spacing / wing scoring", 34.3, 13.7, 5.1, 2.6, 1.1, "56.1%",
+  "Dylan Harper", 19, "Young scoring guard", 25.7, 13.3, 5.1, 2.5, 1.5, "61.4%",
+  "Julian Champagnie", 24, "Connector / spacing wing", 30.3, 10.1, 5.6, 1.5, 0.3, "60.0%"
+)
+
+style_kable(
+  spurs_support_tbl,
+  "San Antonio's main playoff support around Wembanyama",
+  align = "lclcccccc",
+  font_size = 8.0
+) %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(3, width = "3.8cm") %>%
+  column_spec(9, bold = TRUE)
+```
+
+There is an obvious caveat: Wembanyama has help.
+
+NBA history is not built by isolated players. Magic had Kareem. Duncan had David Robinson and a complete Spurs infrastructure. Kobe entered alongside Shaq. Even Jordan and LeBron needed the right roster construction before championships followed.
+
+The Spurs have real help around Wembanyama, too. Castle has played like a legitimate two-way cornerstone, Fox gives them a veteran creator, and Vassell, Harper, and Champagnie provide enough shooting, length, and athleticism to punish tilted defenses.
+
+But situation does not explain everything. Context can accelerate the platform. It cannot manufacture a 41-point, 24-rebound Conference Finals debut, then follow it with a 33-point response to even the series. It cannot make a player control the game defensively every second he is on the floor. It cannot create the feeling that the biggest player on the floor is also the player most comfortable deciding the game from 30 feet.
+
+# Closing
+
+Maybe this becomes a historic run inside a merely great career. Maybe the Spurs’ roster context makes the timeline look clearer than it actually is. Maybe injuries, regression, matchup variance, or expectation interrupt what feels inevitable right now.
+
+That uncertainty matters. Basketball history is full of trajectories that looked obvious until they weren’t.
+
+But Wembanyama is not just producing big numbers early. He is producing the kind of two-way impact that usually only exists in video games, hypotheticals, and broken score bugs.
+
+The signs usually show up before the certainty does. Right now, they are becoming hard to ignore.
+
+Calling him a GOAT trajectory player already would be premature. Dismissing the question is starting to feel just as irresponsible.
