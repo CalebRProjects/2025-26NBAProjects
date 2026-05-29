@@ -1,66 +1,135 @@
-# Overview
+# March Momentum: Mickey Mouse March
 
-This project examines the idea of “Mickey Mouse March” — the late-season scoring spikes that show up every year — and tests whether those runs actually mean anything long-term.
+## Overview
 
-Across the last five NBA seasons, many players have seen sharp scoring increases in March. The question is whether those stretches represent real development or just short-term circumstances like increased opportunity, favorable matchups, or hot shooting.
+This project analyzes late-season NBA scoring spikes, or “Mickey Mouse March” runs, across recent seasons to test whether March breakouts usually carry into the following year.
 
-Instead of taking March production at face value, this analysis looks at why those jumps happen and whether they carry into the following season.
+The analysis looks at players who significantly increased their scoring in March compared to their pre-March baseline. It then evaluates whether those jumps were driven by more minutes, higher shot volume, shot-diet changes, free-throw pressure, or short-term shooting spikes.
 
-# Purpose
+The goal is to separate real development signals from late-season noise. Some March runs are meaningful, especially when tied to role changes or sustainable shot-profile shifts. Most, however, fade once the next season begins.
 
-The goal of this project is:
+## Main Question
 
-* Identify how common March scoring jumps are
+Do March scoring jumps actually predict future player growth, or are most late-season heaters temporary opportunity spikes?
 
-* Separate real growth from short-term scoring spikes
+## Methodology
 
-* Understand what drives those runs (role, shot profile, efficiency)
+This analysis uses NBA player game logs from the 2020-21 through 2025-26 regular seasons.
 
-* Test whether March production carries into the next season
+For the historical carryover analysis, the main sample uses the 2020-21 through 2024-25 seasons. The 2025-26 season is included separately for current-season monitoring and “players to watch” analysis.
 
-* Use recent trends to highlight potential current “March heater” candidates
+Each player-season is split into two windows:
 
-# Method & Data
+* **Pre-March**: all regular-season games before March
+* **March**: all regular-season games played during March
 
-* NBA game logs (via hoopR) from 2020–21 through 2025–26
+A player qualifies as a March momentum candidate only if they meet the workload and performance filters:
 
-* Split each season into:
-  - Pre-March
-  - March
+* At least 15 pre-March games
+* At least 10 March games
+* At least 20 MPG before March
+* At least 24 MPG in March
+* At least a +3.0 PPG increase in March
+* No major efficiency collapse, defined as TS% delta of -2 percentage points or better
 
-* Filters to define “March momentum” players (minutes, games, scoring jump, efficiency floor)
+For each qualifying player-season, the analysis calculates:
 
-* Compared:
-  - PPG changes
-  - TS% changes
-  - Role indicators (minutes, shot volume, shot mix)
-  - 
-* Tracked next-season outcomes to measure carryover
+* Pre-March PPG
+* March PPG
+* PPG delta
+* Pre-March TS%
+* March TS%
+* TS% delta
+* MPG delta
+* FGA per game delta
+* Three-point attempt share delta
+* Free-throw rate delta
+* Turnover delta
+* Usage proxy delta
 
-# Why This Matters
+The usage proxy is calculated as:
 
-## For Player Evaluation
+`FGA + 0.44 * FTA + TOV`
 
-Most March heaters aren’t real breakouts. They’re usually driven by opportunity or short-term shooting stretches rather than sustainable improvement.
+This is not a full usage-rate estimate, but it gives a simple approximation of offensive possession involvement using game-log data.
 
-## For Interpreting Scoring Surges
+## Leap-Type Classification
 
-The reason behind the jump matters more than the jump itself. Role expansion and shot profile changes are far more predictive than raw scoring increases.
+Each March scoring jump is assigned a descriptive leap type based on the surrounding indicators.
 
-## For Projection
+* **Shooting spike**: TS% rises meaningfully while shot volume stays mostly stable
+* **Role expansion**: FGA and MPG both increase meaningfully
+* **Shot diet shift (3s)**: three-point attempt share increases meaningfully
+* **Shot diet shift (FTs)**: free-throw rate increases meaningfully
+* **Combo / growth**: no single factor clearly explains the jump
 
-March production is better treated as a signal to investigate, not a prediction. The data shows most players return close to their previous baseline the following season (see carryover chart on page 5).
+These labels are descriptive, not definitive. They are meant to help interpret why a March spike happened, not prove causality.
 
-## For Identifying Real Growth
+## Carryover Rules
 
-The small group of players who do sustain improvement tend to show:
+To evaluate whether March momentum lasted, each candidate is matched to the next season.
 
-* Increased role or usage
+Next-season scoring is compared against both the player’s pre-March baseline and March peak. Each player is placed into one of four outcomes:
 
-* Meaningful shot profile changes
+* **Held peak**: next-season PPG stayed within 1 point of the March scoring level
+* **New baseline**: next-season PPG was at least 2 points above the pre-March baseline
+* **Minor bump**: next-season PPG was at least 0.5 points above the pre-March baseline
+* **No carry**: next-season PPG returned close to or below the pre-March baseline
 
-* Stable or improved efficiency
+This structure treats carryover as a question of baseline change, not just whether a player repeated one hot month exactly.
 
-# Authors
+## Data Sources
 
-Caleb Ramsey -- Statistics & Sports Media and Analytics (Virginia Tech)
+* NBA.com
+* hoopR
+* NBA player game logs
+* NBA headshot CDN for player images
+
+## Tools Used
+
+* R
+* tidyverse
+* ggplot2
+* R Markdown
+* hoopR
+* ggimage
+* ggrepel
+* knitr
+* showtext / sysfonts
+* lubridate
+* scales
+* purrr
+
+## Key Outputs
+
+* Knitted PDF report
+* Cleaned R Markdown analysis file
+* Executive summary of March momentum findings
+* Top 10 March scorers table
+* Top 10 biggest March scoring jumps table
+* Top 10 biggest March TS% jumps table
+* March scoring jump versus efficiency change chart
+* Carryover outcome bar chart
+* Carryover outcome by leap type chart
+* March jump versus next-season baseline carry chart
+* Current-season recent scoring swings table
+* Full March momentum candidate appendix table
+
+## Notes and Limitations
+
+This project is descriptive rather than predictive. It identifies patterns in March scoring jumps and next-season carryover, but it does not fully model role context, injuries, opponent quality, team incentives, lineup changes, or schedule strength.
+
+The March window can be noisy. Some players benefit from tanking teams, injury-created opportunity, softer late-season rotations, or unusual shooting stretches. The analysis tries to account for this by including minutes, shot volume, efficiency, three-point rate, free-throw rate, and usage proxy changes, but those indicators cannot capture everything.
+
+The leap-type classification is rule-based. It helps organize the findings, but it should not be read as a perfect diagnosis of why every player improved.
+
+The carryover analysis uses next-season scoring average as the main outcome. That makes the results easy to understand, but it does not capture defense, efficiency, playmaking, role changes, or injuries that may affect a player’s value.
+
+The 2025-26 section is separate from the historical carryover sample because the following season is not yet available. Those players should be treated as watch-list candidates, not as confirmed carryover cases.
+
+## File Guide
+
+* `analysis.Rmd` — source analysis file
+* `analysis.pdf` — rendered report
+* `README.md` — project overview
+* `data/headshots/` — cached player headshots used in plots, if included
