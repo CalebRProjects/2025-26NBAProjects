@@ -131,5 +131,5 @@ The 2025-26 section is separate from the historical carryover sample because the
 
 * `analysis.Rmd` — source analysis file
 * `analysis.pdf` — rendered report
+* `march-jumps-plot.png` — largest March risers plot
 * `README.md` — project overview
-* `data/headshots/` — cached player headshots used in plots, if included
