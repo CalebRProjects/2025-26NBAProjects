@@ -1,5 +1,5 @@
 ---
-title: "March Momentum (Mickey Mouse March) - Last 5 Seasons"
+title: "March Momentum: Mickey Mouse March"
 author: "Caleb Ramsey"
 date: "`r format(Sys.Date(), '%B %d, %Y')`"
 output:
@@ -131,7 +131,7 @@ To qualify as a March momentum candidate, a player must meet the following filte
 - at least **`r params$ppg_delta_min`** points per game of March scoring growth
 - no major efficiency collapse (**TS% delta >= `r params$ts_delta_min`**)
 
-# Data setup
+# Data Setup
 
 ```{r data-functions, include=FALSE}
 # Pull player game logs for one season and standardize the fields used later.
@@ -290,6 +290,11 @@ classify_leap <- function(ppg_d, ts_d, fga_d, mpg_d, three_d, ft_d) {
 }
 
 # Filter down to player-seasons that qualify as March momentum candidates.
+# A candidate must:
+# - play enough before March and during March
+# - carry real minutes in both windows
+# - increase scoring by at least the configured PPG threshold
+# - avoid a major TS% collapse
 candidates <- deltas %>%
   filter(
     gp_Pre_March >= params$min_gp_pre,
@@ -420,7 +425,7 @@ ggplot(plot_df, aes(x = ppg_delta, y = ts_delta)) +
 
 Overall, the chart shows that most March scoring jumps are not driven by massive efficiency gains. While some players do see real efficiency bumps, large spikes are relatively rare, suggesting many of these scoring increases come from more minutes, more shots, or a larger role rather than a true leap in shot-making.
 
-# Carryover (Next-season)
+# Carryover Into Next Season
 
 ```{r carry-prep, cache=TRUE, include=FALSE}
 # Compute next-season full-year scoring so March spikes can be checked for carryover.
@@ -601,7 +606,7 @@ A big March does not automatically signal a breakout.
 
 The jump can still be useful, but mostly as a **signal to look deeper**. Changes in role, minutes, or shot profile often matter more than the scoring spike itself. In other words, the March numbers are better treated as a **starting point for context**, not a prediction on their own.
 
-# So who could have their own March heater this year?
+# Current-Season Players to Watch
 
 ```{r current-year-swings, cache=TRUE}
 current_season <- "2025-26"
