@@ -6,6 +6,12 @@ output:
   pdf_document:
     latex_engine: xelatex
     number_sections: false
+params:
+  season: "2025-26"
+  player_name: "Paolo Banchero"
+  shots_dir: "data/processed/shots"
+  min_zone_fga: 12
+  min_league_minutes: 400
 header-includes:
   - \usepackage{float}
   - \floatplacement{figure}{H}
@@ -20,21 +26,32 @@ knitr::opts_chunk$set(
   fig.align = "center"
 )
 
-# Packages
-library(dplyr); library(tidyr); library(tibble)
-library(ggplot2); library(scales); library(knitr)
-library(kableExtra); library(stringr); library(hoopR)
-library(lubridate); library(showtext); library(ggrepel)
+# Packages -----------------------------------------------------------------
+
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(stringr)
+library(hoopR)
+library(lubridate)
+library(showtext)
+library(sysfonts)
+library(ggrepel)
 library(readr)
 
 # Fonts
 font_add_google("Poppins", "poppins")
 showtext_auto()
 
-# Style
-BG        <- "#f6f4ef"
+# Constants ----------------------------------------------------------------
+
+BG <- "#f6f4ef"
 TEXT_DARK <- "#141414"
-GRID      <- "#dedad3"
+GRID <- "#dedad3"
 
 theme_caleb_rmd <- function()
 {
@@ -53,6 +70,18 @@ theme_caleb_rmd <- function()
       plot.margin      = margin(10, 12, 14, 12)
     )
 }
+
+# Parameters ---------------------------------------------------------------
+
+season_used <- params$season
+paolo_name <- params$player_name
+shots_dir <- params$shots_dir
+min_zone_fga <- params$min_zone_fga
+min_league_minutes <- params$min_league_minutes
+
+dir.create(shots_dir, recursive = TRUE, showWarnings = FALSE)
+
+# Helpers ------------------------------------------------------------------
 
 to_num <- function(x)
 {
@@ -134,12 +163,6 @@ Among players with comparable usage, Banchero continues to rank near the bottom 
 The result is a measurable opportunity cost. In an offense that now has the tools to produce efficient looks, possessions ending in low-efficiency self-created jump shots are lost value. The central question is no longer whether Orlando can score despite Banchero’s inefficiency (it can), but whether continuing to allocate high-leverage possessions to those shots puts a major cap on their offensive ceiling.
 
 ```{r helpers}
-season_used <- "2025-26"
-paolo_name  <- "Paolo Banchero"
-
-shots_dir <- file.path("data", "processed", "shots")
-dir.create(shots_dir, recursive = TRUE, showWarnings = FALSE)
-
 get_player_id <- function(season, player_name)
 {
   league_stats <- hoopR::nba_leaguedashplayerstats(
@@ -368,7 +391,7 @@ plot_zone_tiles(
     season_used,
     ")"
   ),
-  min_fga = 12
+  min_fga = min_zone_fga
 )
 ```
 
@@ -402,7 +425,10 @@ In contrast, Banchero is consistently effective in transition and as a play fini
 
 Banchero is most effective when he is used as a downhill threat and advantage finisher. Instead, both his usage and Orlando’s offensive structure continue to emphasize isolation and on-ball creation, placing a disproportionate share of possessions into his least efficient scoring contexts.
 
-```{r data_tables, include=FALSE}
+```{r manual-input-tables, include=FALSE}
+# Manually entered source snapshots from Synergy, Cleaning the Glass, DataBallr, and CraftedNBA.
+# Refresh these tables before final publishing if the underlying sources update.
+
 play_types <- tibble::tribble(
   ~play_type, ~poss, ~time_pct, ~time_pct_rank, ~pts, ~ppp, ~ppp_rank, ~ppp_rating,
   ~fgm, ~fga, ~fg_pct, ~efg_pct, ~to_pct,
@@ -473,7 +499,7 @@ wowy_2026 <- tibble::tribble(
 ```
 
 ```{r playtypes_table, results='asis'}
-play_tbl =
+play_tbl <-
   play_types %>%
   transmute(
     `Play Type` = play_type,
@@ -537,7 +563,7 @@ find_player_row <- function(df, query)
 
 plot_usage_vs_ts <- function(
   season_used = "2025-26",
-  min_minutes = 400,
+  min_minutes = min_league_minutes,
   player_query = "Banchero",
   team_color = "#0077C0"
 )
@@ -580,7 +606,7 @@ plot_usage_vs_ts <- function(
 
 plot_usage_vs_ts(
   season_used = season_used,
-  min_minutes = 400,
+  min_minutes = min_league_minutes,
   player_query = "Banchero",
   team_color = "#0077C0"
 )
@@ -595,7 +621,7 @@ When both players share the floor, the offense stabilizes but remains closer to 
 This does not suggest a lack of talent from Banchero, but it does indicate that his current offensive approach requires significant support to function at an acceptable level.
 
 ```{r ctg_overview_table, results='asis'}
-ctg_overview_tbl =
+ctg_overview_tbl <-
   ctg_off_overview %>%
   transmute(
     Season = season,
