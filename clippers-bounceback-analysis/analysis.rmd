@@ -19,6 +19,18 @@ header-includes:
 ---
 
 ```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.pos = "H",
+  fig.align = "center",
+  dpi = 300,
+  out.width = "100%"
+)
+```
+
+```{r libraries}
 library(dplyr)
 library(tidyr)
 library(readr)
@@ -32,31 +44,46 @@ library(hoopR)
 library(showtext)
 library(sysfonts)
 library(janitor)
+```
 
-# Fonts
+```{r constants-and-parameters}
+# Report parameters
+season_used <- params$season
+team_abbr <- params$team_abbr
+as_of_date <- parse_date_time(params$as_of_date, orders = c("ymd", "mdy")) %>%
+  as.Date()
+start_games_n <- params$start_games_n
+recent_games_n <- params$recent_games_n
+use_cache_files <- isTRUE(params$use_cache_files)
+cache_dir <- params$cache_dir
+
+# Theme constants
+bg_color   <- "#f6f4ef"
+text_dark  <- "#141414"
+grid_color <- "#dedad3"
+
+# Clippers colors
+lac_blue <- "#1D428A"
+lac_red  <- "#C8102E"
+ink_color <- "#141414"
+
+caption_line <- "Data: NBA.com | Viz: @Rambzee_"
+
 sysfonts::font_add_google("Inter", "inter")
 showtext::showtext_auto()
+```
 
-knitr::opts_chunk$set(
-  echo = FALSE,
-  message = FALSE,
-  warning = FALSE,
-  fig.pos = "H",
-  fig.align = "center",
-  dpi = 300,
-  out.width = "100%"
-)
-
+```{r helper-functions}
 theme_caleb <- function() {
   theme_minimal(base_family = "inter") +
     theme(
-      plot.background  = element_rect(fill = "#f6f4ef", color = NA),
-      panel.background = element_rect(fill = "#f6f4ef", color = NA),
-      panel.grid.major = element_line(color = "#dedad3", linewidth = 0.35),
+      plot.background  = element_rect(fill = bg_color, color = NA),
+      panel.background = element_rect(fill = bg_color, color = NA),
+      panel.grid.major = element_line(color = grid_color, linewidth = 0.35),
       panel.grid.minor = element_blank(),
-      plot.title       = element_text(size = 16, face = "bold", hjust = 0.5, color = "#141414"),
+      plot.title       = element_text(size = 16, face = "bold", hjust = 0.5, color = text_dark),
       plot.subtitle    = element_text(size = 10, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 8)),
-      axis.title       = element_text(size = 12, face = "bold", color = "#141414"),
+      axis.title       = element_text(size = 12, face = "bold", color = text_dark),
       axis.text        = element_text(size = 10, color = "#333333"),
       plot.caption     = element_text(size = 8, color = "#6e6e6e", hjust = 0, margin = margin(t = 8)),
       legend.position  = "top",
@@ -64,13 +91,26 @@ theme_caleb <- function() {
     )
 }
 
-CAPTION_LINE <- "Data: NBA.com | Viz: @Rambzee_"
+style_table <- function(table_obj, font_size = 9, scale_down = TRUE) {
+  latex_options <- c("hold_position")
 
-# Utilities
+  if (scale_down) {
+    latex_options <- c(latex_options, "scale_down")
+  }
+
+  table_obj %>%
+    kableExtra::kable_styling(
+      latex_options = latex_options,
+      font_size = font_size
+    )
+}
+
 parse_nba_date <- function(x) {
   x <- as.character(x)
+
   d1 <- suppressWarnings(lubridate::ymd(x))
   d2 <- suppressWarnings(lubridate::mdy(x))
+
   as.Date(dplyr::coalesce(d1, d2))
 }
 
@@ -86,12 +126,12 @@ dir_create <- function(path) {
 }
 
 cache_path <- function(stem) {
-  dir_create(params$cache_dir)
-  file.path(params$cache_dir, paste0(stem, "_asof_", params$as_of_date, ".csv"))
+  dir_create(cache_dir)
+  file.path(cache_dir, paste0(stem, "_asof_", params$as_of_date, ".csv"))
 }
 
 read_or_fetch <- function(path, fetch_fn) {
-  if (isTRUE(params$use_cache_files) && file.exists(path)) {
+  if (use_cache_files && file.exists(path)) {
     return(readr::read_csv(path, show_col_types = FALSE))
   }
 
@@ -100,7 +140,6 @@ read_or_fetch <- function(path, fetch_fn) {
   df
 }
 
-# Possessions + Four Factors (approximate)
 calc_possessions <- function(fga, fta, oreb, tov) {
   fga + 0.44 * fta - oreb + tov
 }
@@ -117,7 +156,74 @@ add_team_rates <- function(df) {
     )
 }
 
-fmt_pm <- function(x) ifelse(is.na(x), NA_character_, sprintf("%+.2f", x))
+fmt_pm <- function(x) {
+  ifelse(is.na(x), NA_character_, sprintf("%+.2f", x))
+}
+```
+
+```{r api-functions}
+fetch_team_gamelog <- function() {
+  league_log <- hoopR::nba_leaguegamelog(
+    season = season_used,
+    season_type = "Regular Season",
+    player_or_team = "T"
+  )
+
+  df <- league_log$LeagueGameLog
+
+  if (is.null(df) || nrow(df) == 0) {
+    stop("LeagueGameLog returned no rows.")
+  }
+
+  if (is.na(as_of_date)) {
+    stop("params$as_of_date must be YYYY-MM-DD or MM/DD/YYYY.")
+  }
+
+  df %>%
+    mutate(
+      team_abbr = TEAM_ABBREVIATION,
+      game_date = parse_nba_date(GAME_DATE)
+    ) %>%
+    filter(team_abbr == team_abbr) %>%
+    filter(!is.na(game_date)) %>%
+    filter(game_date <= as_of_date) %>%
+    arrange(game_date)
+}
+
+fetch_league_games <- function() {
+  league_log <- hoopR::nba_leaguegamelog(
+    season = season_used,
+    season_type = "Regular Season",
+    player_or_team = "T"
+  )
+
+  df <- league_log$LeagueGameLog
+
+  if (is.null(df) || nrow(df) == 0) {
+    stop("LeagueGameLog returned no rows.")
+  }
+
+  if (is.na(as_of_date)) {
+    stop("params$as_of_date must be YYYY-MM-DD or MM/DD/YYYY.")
+  }
+
+  df %>%
+    mutate(
+      team_abbr = TEAM_ABBREVIATION,
+      game_date = parse_nba_date(GAME_DATE),
+      wl = as.character(WL),
+      PTS = as.numeric(PTS),
+      FGM = as.numeric(FGM),
+      FGA = as.numeric(FGA),
+      FG3M = as.numeric(FG3M),
+      FG3A = as.numeric(FG3A),
+      FTA = as.numeric(FTA),
+      OREB = as.numeric(OREB),
+      TOV = as.numeric(TOV)
+    ) %>%
+    filter(!is.na(game_date), game_date <= as_of_date) %>%
+    arrange(team_abbr, game_date)
+}
 ```
 
 # Executive Summary
@@ -128,33 +234,9 @@ Since then, Los Angeles has gone 14–3, and the turnaround has come from execut
 
 Over the last 17 games, the Clippers own the fourth-best offense in the league, operating at a level comparable to teams like Boston, Golden State, and a scorching-hot Charlotte group. This is not the result of one hot week. The trends point to steady improvement across December and January, with gains in efficiency, ball security, and scoring output.
 
-```{r data-pulls, include=FALSE}
-# Pull Clippers team game log, locked to the report snapshot date.
-fetch_team_gamelog <- function() {
-  lg <- hoopR::nba_leaguegamelog(
-    season = params$season,
-    season_type = "Regular Season",
-    player_or_team = "T"
-  )
-
-  df <- lg$LeagueGameLog
-  if (is.null(df) || nrow(df) == 0) stop("LeagueGameLog returned no rows.")
-
-  as_of <- parse_nba_date(params$as_of_date)
-  if (is.na(as_of)) stop("params$as_of_date must be YYYY-MM-DD or MM/DD/YYYY.")
-
-  df %>%
-    mutate(
-      team_abbr = TEAM_ABBREVIATION,
-      game_date = parse_nba_date(GAME_DATE)
-    ) %>%
-    filter(team_abbr == params$team_abbr) %>%
-    filter(!is.na(game_date)) %>%
-    filter(game_date <= as_of) %>%
-    arrange(game_date)
-}
-
-team_gamelog_path <- cache_path(paste0("team_gamelog_", params$team_abbr))
+```{r data-loading}
+# Cached snapshot pull. This keeps the report tied to params$as_of_date.
+team_gamelog_path <- cache_path(paste0("team_gamelog_", team_abbr))
 
 team_games_raw <- read_or_fetch(
   team_gamelog_path,
@@ -168,7 +250,7 @@ team_games <- team_games_raw %>%
     matchup = as.character(MATCHUP)
   ) %>%
   transmute(
-    team_abbr = params$team_abbr,
+    team_abbr = team_abbr,
     game_date,
     wl,
     matchup,
@@ -189,27 +271,29 @@ team_games <- team_games_raw %>%
     PF = as.numeric(PF),
     PLUS_MINUS = as.numeric(PLUS_MINUS)
   ) %>%
-  arrange(game_date)
-
-team_games <- team_games %>%
+  arrange(game_date) %>%
   mutate(game_n = row_number())
-```
 
-```{r windows, include=FALSE}
-if (nrow(team_games) < params$start_games_n + 3) {
+if (nrow(team_games) < start_games_n + 3) {
   stop("Not enough games yet for the chosen start window.")
 }
 
-start_df <- team_games %>% filter(game_n <= params$start_games_n)
-since_df <- team_games %>% filter(game_n > params$start_games_n)
-last_n <- min(params$recent_games_n, nrow(team_games))
-last_df <- team_games %>% slice_tail(n = last_n)
+start_df <- team_games %>%
+  filter(game_n <= start_games_n)
+
+since_df <- team_games %>%
+  filter(game_n > start_games_n)
+
+last_n <- min(recent_games_n, nrow(team_games))
+
+last_df <- team_games %>%
+  slice_tail(n = last_n)
 
 start_end_date <- max(start_df$game_date, na.rm = TRUE)
 
 start_df <- add_team_rates(start_df)
 since_df <- add_team_rates(since_df)
-last_df  <- add_team_rates(last_df)
+last_df <- add_team_rates(last_df)
 team_games_rates <- add_team_rates(team_games)
 ```
 
@@ -235,8 +319,8 @@ summ_team <- function(df) {
 }
 
 tab_core <- bind_rows(
-  summ_team(start_df) %>% mutate(Window = paste0("Start (1–", params$start_games_n, ")")),
-  summ_team(since_df) %>% mutate(Window = paste0("Since (", params$start_games_n + 1, "+)"))
+  summ_team(start_df) %>% mutate(Window = paste0("Start (1–", start_games_n, ")")),
+  summ_team(since_df) %>% mutate(Window = paste0("Since (", start_games_n + 1, "+)"))
 ) %>%
   select(Window, GP, W, L, PPG, ORtg, eFG, TOV_rate, FT_rate, `3PA_share`) %>%
   mutate(
@@ -248,29 +332,29 @@ tab_core <- bind_rows(
     PPG = round(PPG, 1)
   )
 
-knitr::kable(tab_core, booktabs = TRUE, caption = "Core offensive profile.") %>%
-  kableExtra::kable_styling(latex_options = c("scale_down"))
+knitr::kable(
+  tab_core,
+  booktabs = TRUE,
+  caption = "Core offensive profile."
+) %>%
+  style_table()
 ```
 
 The early-season Clippers were inefficient and careless.
 
 Through the first 27 games, the offense struggled to turn decent looks into points. Shot efficiency sat well below league average, while turnovers wiped out far too many possessions. Despite the poor results, the Clippers’ shot diet was actually fine. They were taking a healthy number of threes and generating pressure in the half court. The problem was execution. Missed shots, rushed decisions, and empty trips piled up quickly, especially late in games.
 
-## Rolling Trends (How Real Is It?)
+## Rolling Trends: How Real Is It?
 
 ```{r rolling, fig.height=5.2, fig.cap="Rolling offensive indicators. Vertical line marks end of the start window."}
-LAC_BLUE <- "#1D428A"
-LAC_RED  <- "#C8102E"
-INK      <- "#141414"
-
-k <- 16
+rolling_k <- 16
 
 roll_df <- team_games_rates %>%
   arrange(game_date) %>%
   mutate(
-    ortg_roll = roll_mean_partial(ortg, k),
-    efg_roll = roll_mean_partial(efg, k),
-    ft_roll = roll_mean_partial(ft_rate, k)
+    ortg_roll = roll_mean_partial(ortg, rolling_k),
+    efg_roll = roll_mean_partial(efg, rolling_k),
+    ft_roll = roll_mean_partial(ft_rate, rolling_k)
   ) %>%
   select(game_date, ortg_roll, efg_roll, ft_roll) %>%
   pivot_longer(-game_date, names_to = "metric", values_to = "value") %>%
@@ -283,12 +367,12 @@ roll_df <- team_games_rates %>%
   )
 
 ggplot(roll_df, aes(game_date, value)) +
-  geom_line(linewidth = 1.05, color = LAC_BLUE, na.rm = TRUE) +
+  geom_line(linewidth = 1.05, color = lac_blue, na.rm = TRUE) +
   geom_vline(
     xintercept = as.numeric(start_end_date),
     linetype = "dashed",
     linewidth = 0.85,
-    color = LAC_RED
+    color = lac_red
   ) +
   facet_wrap(~metric, ncol = 1, scales = "free_y") +
   labs(
@@ -296,63 +380,35 @@ ggplot(roll_df, aes(game_date, value)) +
     subtitle = "Rolling offensive trends since the 6–21 start (dashed line marks the split)",
     x = NULL,
     y = NULL,
-    caption = CAPTION_LINE
+    caption = caption_line
   ) +
   theme_caleb() +
   theme(
-    plot.title = element_text(face = "bold", color = INK),
+    plot.title = element_text(face = "bold", color = ink_color),
     plot.subtitle = element_text(color = "gray25")
   )
 ```
 
 The rolling trends point to a real shift. Offensive rating has steadily climbed after the early-season window and has held in the range of elite offenses. Free throws tell the story. The Clippers are executing possessions more cleanly and with more force, putting defenses in position to foul night after night.
 
-## League Context (Last 17 Games)
+## League Context: Last `r recent_games_n` Games
 
-```{r league-context, include=FALSE}
-fetch_league_lastn <- function() {
-  lg <- hoopR::nba_leaguegamelog(
-    season = params$season,
-    season_type = "Regular Season",
-    player_or_team = "T"
-  )
-
-  df <- lg$LeagueGameLog
-  if (is.null(df) || nrow(df) == 0) stop("LeagueGameLog returned no rows.")
-
-  as_of <- parse_nba_date(params$as_of_date)
-  if (is.na(as_of)) stop("params$as_of_date must be YYYY-MM-DD or MM/DD/YYYY.")
-
-  df %>%
-    mutate(
-      team_abbr = TEAM_ABBREVIATION,
-      game_date = parse_nba_date(GAME_DATE),
-      wl = as.character(WL),
-      PTS = as.numeric(PTS),
-      FGM = as.numeric(FGM),
-      FGA = as.numeric(FGA),
-      FG3M = as.numeric(FG3M),
-      FG3A = as.numeric(FG3A),
-      FTA = as.numeric(FTA),
-      OREB = as.numeric(OREB),
-      TOV = as.numeric(TOV)
-    ) %>%
-    filter(!is.na(game_date), game_date <= as_of) %>%
-    arrange(team_abbr, game_date)
-}
-
-league_lastn_path <- cache_path(paste0("league_last", params$recent_games_n))
+```{r league-context-data}
+league_lastn_path <- cache_path(paste0("league_last", recent_games_n))
 
 league_games <- read_or_fetch(
   league_lastn_path,
-  fetch_fn = fetch_league_lastn
+  fetch_fn = fetch_league_games
 )
 
 league_lastn <- league_games %>%
   group_by(team_abbr) %>%
   arrange(game_date, .by_group = TRUE) %>%
-  mutate(g = row_number(), g_max = max(g, na.rm = TRUE)) %>%
-  filter(g > g_max - params$recent_games_n) %>%
+  mutate(
+    game_number = row_number(),
+    game_max = max(game_number, na.rm = TRUE)
+  ) %>%
+  filter(game_number > game_max - recent_games_n) %>%
   ungroup() %>%
   group_by(team_abbr) %>%
   summarise(
@@ -388,7 +444,7 @@ league_lastn <- league_games %>%
 
 ```{r league-context-table}
 lac_tbl <- league_lastn %>%
-  filter(team_abbr == params$team_abbr) %>%
+  filter(team_abbr == team_abbr) %>%
   transmute(
     Team = team_abbr,
     `GP (W-L)` = paste0(GP, " (", W, "-", L, ")"),
@@ -407,9 +463,9 @@ lac_tbl <- league_lastn %>%
 knitr::kable(
   lac_tbl,
   booktabs = TRUE,
-  caption = paste0("League context: last ", params$recent_games_n, " games.")
+  caption = paste0("League context: last ", recent_games_n, " games.")
 ) %>%
-  kableExtra::kable_styling(latex_options = c("scale_down"))
+  style_table()
 ```
 
 ```{r league-top10-ortg}
@@ -427,8 +483,12 @@ top10 <- league_lastn %>%
     `FT rate` = scales::percent(FT_rate, accuracy = 0.1)
   )
 
-knitr::kable(top10, booktabs = TRUE, caption = "Top 10 offenses in the last 17 games.") %>%
-  kableExtra::kable_styling(latex_options = c("scale_down"))
+knitr::kable(
+  top10,
+  booktabs = TRUE,
+  caption = paste0("Top 10 offenses in the last ", recent_games_n, " games.")
+) %>%
+  style_table()
 ```
 
 ```{r shot-profile}
@@ -441,29 +501,27 @@ profile_plot_df <- league_lastn %>%
   ) %>%
   bind_rows(
     league_lastn %>%
-      filter(team_abbr == params$team_abbr) %>%
+      filter(team_abbr == team_abbr) %>%
       transmute(
-        scope = params$team_abbr,
+        scope = team_abbr,
         `3PA share` = `3PA_share`,
         `FT rate` = FT_rate,
         `TOV rate` = TOV_rate
       )
   ) %>%
-  pivot_longer(-scope, names_to = "metric", values_to = "value")
-
-profile_plot_df <- profile_plot_df %>%
-  mutate(scope = factor(scope, levels = c("League avg", params$team_abbr)))
+  pivot_longer(-scope, names_to = "metric", values_to = "value") %>%
+  mutate(scope = factor(scope, levels = c("League avg", team_abbr)))
 
 ggplot(profile_plot_df, aes(metric, value, fill = scope)) +
   geom_col(position = position_dodge(width = 0.65), width = 0.6) +
-  scale_fill_manual(values = setNames(c("gray70", LAC_BLUE), c("League avg", params$team_abbr))) +
+  scale_fill_manual(values = setNames(c("gray70", lac_blue), c("League avg", team_abbr))) +
   scale_y_continuous(labels = percent_format(accuracy = 1)) +
   labs(
-    title = "How the Clippers score (Last 17 games)",
+    title = paste0("How the Clippers Score (Last ", recent_games_n, " Games)"),
     subtitle = "Three-point volume + free throws",
     x = NULL,
     y = NULL,
-    caption = CAPTION_LINE
+    caption = caption_line
   ) +
   theme_caleb() +
   theme(legend.title = element_blank())
@@ -492,7 +550,7 @@ knitr::kable(
   booktabs = TRUE,
   caption = "Harden/Leonard season counting stats"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("scale_down"))
+  style_table()
 ```
 
 ```{r star-impact}
@@ -515,11 +573,11 @@ knitr::kable(
   booktabs = TRUE,
   caption = "Harden/Leonard WOWY on/off lineup splits"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("scale_down")) %>%
+  style_table() %>%
   kableExtra::column_spec(
     which(names(wowy_tbl_fmt) == "NET_fmt"),
     bold = TRUE,
-    color = ifelse(wowy_tbl$NET > 0, LAC_BLUE, LAC_RED)
+    color = ifelse(wowy_tbl$NET > 0, lac_blue, lac_red)
   )
 ```
 
