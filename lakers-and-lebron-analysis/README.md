@@ -62,5 +62,6 @@ Because the file was built during an active season, standings, records, player a
 
 `analysis.Rmd` — source analysis file
 `analysis.pdf` — rendered report
+`lebron-extra-context.R` — extra context script
 `oldest-szns-20ppg-6apg.png` — final table from extra context
 `README.md` — project overview
