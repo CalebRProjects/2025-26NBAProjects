@@ -1,48 +1,64 @@
-# Keon Ellis Analysis
-This project presents an in-depth analytical breakdown of Keon Ellis, focusing on why teams value him despite mediocre box-score production. The analysis emphasizes impact metrics, offensive role efficiency, defensive event creation, and overall versatility.
+# Keon Ellis: Why Teams Want Him
 
-The goal is to evaluate Ellis as a **playoff-viable rotation guard** whose value is driven by defense, efficiency, and connectivity rather than usage or shot volume.
+## Overview
 
-## Key Questions Addressed
+This project evaluates Keon Ellis as a low-usage, high-impact rotation guard whose value comes from defensive event creation, offensive efficiency, and lineup scalability rather than traditional box-score production.
 
-- Why do lineups consistently perform better with Ellis on the floor?
-- How does Ellis contribute offensively without requiring usage or touches?
-- What makes his defensive impact translate across roles and lineups?
-- Which team contexts maximize his value?
+The analysis focuses on why Ellis is appealing to teams even without high scoring volume. Offensively, he plays within a narrow and efficient role: spot-up shooting, rim attempts, transition chances, and low-turnover connective play. Defensively, he creates events at an elite rate, ranking near the top of the league in steal-based metrics, deflections, and stop creation.
+
+The project frames Ellis as the kind of role player whose value grows next to high-level offensive talent because he can defend, finish plays, avoid mistakes, and stay out of the way offensively.
+
+## Main Question
+
+Why do teams value Keon Ellis, and does his impact profile support viewing him as a scalable, playoff-viable rotation guard?
 
 ## Data Sources
 
-* NBA API via `hoopR`
-  * ShotChartDetail
-  * LeagueDashPlayerStats (Scoring, Defense, Base)
+* NBA.com
+* hoopR
 * Cleaning the Glass
-  * On/Off impact
-  * Possession-based efficiency metrics
-* Databallr
-  * DARKO DPM
-  * RAPM
-  * Contextual offensive and defensive indicators
+* DataBallr
 
-## Analytical Focus
+## Tools Used
 
-### Impact Metrics
-- On/Off Net Rating
-- Offensive points per possession
-- RAPM and DPM 
-- Contextual minute scaling and sample-size controls
+* R
+* tidyverse
+* ggplot2
+* R Markdown
+* hoopR
+* knitr
+* ggrepel
+* showtext / sysfonts
+* lubridate
+* scales
 
-### Offensive Role
-- Shot distribution by zone
-- Spot-up and finishing efficiency
-- Usage vs efficiency tradeoffs
-- Ball security and possession protection
+## Key Outputs
 
-### Defensive Playmaking
-- Steals per 36
-- Steal percentage
-- STOP%
-- Deflections and event creation
-- Defensive impact without scheme dependence
+* Knitted PDF report
+* Cleaned R Markdown analysis file
+* Cleaning the Glass on/off impact table
+* DataBallr impact and event-creation table
+* Usage versus efficiency scatterplots
+* 2024-25 Keon Ellis shot chart
+* 2025-26 Keon Ellis shot chart
+* Efficiency by context table
+* Steals per 36 distribution charts
+* Steal percentage distribution charts
+* Defensive playmaking and event-creation section
+* Team fit and market value section
 
-# Author
-Caleb Ramsey - 
+## Notes and Limitations
+
+This report combines live NBA.com data pulled through `hoopR` with manually entered Cleaning the Glass and DataBallr impact metrics. The manually entered sections preserve specific source snapshots from the time of analysis and should be refreshed before final publishing if updated numbers are available.
+
+The 2025-26 sample is smaller than the 2024-25 sample, so early-season dips in shooting efficiency or on/off impact should be treated cautiously. The report emphasizes multi-season patterns rather than overreacting to a partial-season sample.
+
+The defensive event-creation charts use NBA.com defensive tracking and box-score-derived rates. Those numbers help identify activity and disruption, but they do not fully capture matchup difficulty, scheme responsibility, or off-ball positioning.
+
+The analysis is focused on player archetype, market value, and team fit. It does not attempt to estimate trade value, contract value, or exact playoff lineup impact.
+
+## File Guide
+
+* `analysis.Rmd` — source analysis file
+* `analysis.pdf` — rendered report
+* `README.md` — project overview
