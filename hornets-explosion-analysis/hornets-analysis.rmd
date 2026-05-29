@@ -33,9 +33,15 @@ library(showtext)
 library(sysfonts)
 library(scales)
 
+# ------------------------------------------------------------
 # Fonts
+# ------------------------------------------------------------
 sysfonts::font_add_google("Inter", "inter")
 showtext::showtext_auto()
+
+# ------------------------------------------------------------
+# Global chunk options
+# ------------------------------------------------------------
 
 knitr::opts_chunk$set(
   echo = FALSE,
@@ -46,20 +52,31 @@ knitr::opts_chunk$set(
   out.width = "100%"
 )
 
+# ------------------------------------------------------------
+# Parameters
+# ------------------------------------------------------------
+
 SEASON <- params$season
 TEAM_ABB <- params$team_abbr
 LAST_N <- params$last_n
 ROLL_N <- params$roll_n
 
-# Cache
+# ------------------------------------------------------------
+# Cache helpers
+# ------------------------------------------------------------
 cache_dir <- params$cache_dir
 dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
 
 cache_path <- function(name) file.path(cache_dir, paste0(name, ".rds"))
 cache_read <- function(path) if (isTRUE(params$use_cache) && file.exists(path)) readRDS(path) else NULL
-cache_write <- function(x, path) { saveRDS(x, path); x }
+cache_write <- function(x, path) {
+  saveRDS(x, path)
+  x
+}
 
-# Helpers
+# ------------------------------------------------------------
+# General helpers
+# ------------------------------------------------------------
 pluck_df <- function(x, prefer = NULL) {
   if (is.data.frame(x)) return(x)
   if (!is.null(prefer) && is.list(x) && prefer %in% names(x) && is.data.frame(x[[prefer]])) return(x[[prefer]])
@@ -108,6 +125,10 @@ HORNETS_GRAY   <- "#A1A1A4"
 INK            <- "#141414"
 
 CAPTION_LINE <- "Data: NBA.com | Viz: @Rambzee_"
+
+# ------------------------------------------------------------
+# Theme
+# ------------------------------------------------------------
 
 theme_caleb <- function() {
   theme_minimal(base_family = "inter") +
@@ -420,7 +441,7 @@ kbl(
   caption = paste0("Top ", top_n, " offenses (last ", LAST_N_CTX, " games).")
 ) %>%
   kable_styling(
-    latex_options = c("HOLD_position", "scale_down"),
+    latex_options = c("hold_position", "scale_down"),
     font_size = 8
   )
 ```
@@ -726,10 +747,6 @@ An absolute monster on the boards at times, Diabaté’s value shows up in the m
 # The Young Core Complements Each Other
 
 ```{r wowy, echo=FALSE}
-library(dplyr)
-library(knitr)
-library(kableExtra)
-
 wowy_core4 <- tibble::tribble(
   ~Lineup_ON, ~MIN, ~OFF, ~DEF, ~NET,
   "Ball - Knueppel - Miller - Diabate",        209, 142.4, 111.8, 30.5,
