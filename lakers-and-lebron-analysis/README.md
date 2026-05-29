@@ -14,41 +14,41 @@ Are the Lakers’ late-season improvements real enough to change how they should
 
 ## Data Sources
 
-NBA.com
-hoopR
-DataBallr
+- NBA.com
+- hoopR
+- DataBallr
 
 ## Tools Used
 
-R
-tidyverse
-ggplot2
-R Markdown
-kableExtra
-hoopR
-zoo
-showtext / sysfonts
-janitor
+- R
+- tidyverse
+- ggplot2
+- R Markdown
+- kableExtra
+- hoopR
+- zoo
+- showtext / sysfonts
+- janitor
 
 ## Key Outputs
 
-Knitted PDF report
-Cleaned R Markdown analysis file
-Season-long margin of victory chart
-Rolling 10-game point differential chart
-Monthly offensive and defensive rating chart
-Best records since January 1 table
-Best records since All-Star table
-Western Conference standings context table
-Post-All-Star offensive rating leaderboard
-Post-All-Star defensive rating leaderboard
-Post-All-Star net rating leaderboard
-Lakers big three post-All-Star production table
-Oldest players to average 15+ PPG and 6+ APG table
-Support pieces post-All-Star production table
-Marcus Smart defensive on/off swing table
-Lakers depth-piece production table
-High-minute 3-man lineup table
+- Knitted PDF report
+- Cleaned R Markdown analysis file
+- Season-long margin of victory chart
+- Rolling 10-game point differential chart
+- Monthly offensive and defensive rating chart
+- Best records since January 1 table
+- Best records since All-Star table
+- Western Conference standings context table
+- Post-All-Star offensive rating leaderboard
+- Post-All-Star defensive rating leaderboard
+- Post-All-Star net rating leaderboard
+- Lakers big three post-All-Star production table
+- Oldest players to average 15+ PPG and 6+ APG table
+- Support pieces post-All-Star production table
+- Marcus Smart defensive on/off swing table
+- Lakers depth-piece production table
+- High-minute 3-man lineup table
 
 ## Notes and Limitations
 
@@ -60,8 +60,8 @@ Because the file was built during an active season, standings, records, player a
 
 ## File Guide
 
-`analysis.Rmd` — source analysis file
-`analysis.pdf` — rendered report
-`lebron-extra-context.R` — extra context script
-`oldest-szns-20ppg-6apg.png` — final table from extra context
-`README.md` — project overview
+- `analysis.Rmd` — source analysis file
+- `analysis.pdf` — rendered report
+- `lebron-extra-context.R` — extra context script
+- `oldest-szns-20ppg-6apg.png` — final table from extra context- 
+- `README.md` — project overview
