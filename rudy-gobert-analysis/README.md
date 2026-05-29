@@ -1,41 +1,64 @@
-# Overview
+# Rudy Gobert: Defensive Impact & DPOY Case
 
-This report evaluates Rudy Gobert’s defensive impact during the 2025-26 NBA season and assesses the strength of his Defensive Player of the Year case. While Gobert’s game has long been familiar, the season provides a clear test of how much his presence actually shapes his team. Minnesota’s defense looks fundamentally different with him on the floor versus off it, and this report analyzes that.
+## Overview
 
-The report examines Gobert’s rim protection and team on/off impact to determine whether his value is still elite by modern defensive standards or simply reputational. Rather than relying on blocks or reputation alone, the focus is on volume defended, efficiency allowed, and team context.
+This project evaluates Rudy Gobert’s 2025-26 Defensive Player of the Year case through defensive on/off impact, rim protection, defensive field-goal suppression, and finishing value.
 
-# Key Questions
+The analysis focuses on Gobert as the backbone of Minnesota’s defensive structure. When he is on the floor, the Timberwolves defend at a high level; when he sits, the defense falls apart. The project also includes an offensive finishing section to show that while Gobert’s offensive role remains limited, he is still producing meaningful value through rim finishing, offensive rebounding, and screen assists.
 
-The report is structured around four core questions:
-1. How much does Minnesota’s defense depend on Gobert in real terms?
-2. Is his rim protection still among the league’s best when accounting for volume?
-3. Does his all-shot defensive impact look weaker than it really is once workload is considered?
-4. How does his case compare to other top DPOY contenders, especially Chet Holmgren and Victor Wembanyama?
+The main argument is that Gobert’s impact may not look as flashy as newer defensive stars, but the team-level dependence on his rim protection and defensive infrastructure remains massive.
 
-# Data Sources
+## Main Question
 
-The analysis integrates multiple NBA data endpoints:
-* NBA.com Player Stats
-  * Closest-defender tracking
-  * Rim defense splits (≤ 6 feet)
-  * Shot volume defended and expected FG models
-* Databallr for team on/off ratings (minutes-based)
+Does Rudy Gobert’s defensive impact in 2025-26 still support a legitimate Defensive Player of the Year case?
 
-All data reflects the 2025-26 regular season.
+## Data Sources
 
-# Key Takeaways
+- NBA.com
+- Databallr
 
-* Minnesota collapses defensively the moment Gobert sits (123.4 DRTG) and rises to near-elite levels when he plays (108.1, which would rank second league-wide).
+## Tools Used
 
-* Gobert is defending the second-highest volume of shots in the league, behind only Donovan Clingan, yet still significantly affects efficiency.
+- R
+- tidyverse
+- ggplot2
+- R Markdown
+- bookdown
+- readxl
+- janitor
+- knitr
+- forcats
+- stringr
+- scales
 
-* At the rim, he ranks second among players defending at least five shots per game, holding opponents to 51.2% versus an expected 63.3%.
+## Key Outputs
 
-* His defensive on/off swing (~-15.3) is comparable to the type of impact usually associated with offensive superstars, just on defense.
+- Knitted PDF report
+- Cleaned R Markdown analysis file
+- Career finishing by zone table
+- Restricted-area and paint finishing trend chart
+- Minnesota on/off table with Gobert on versus off
+- Total defensive field-goal impact leaderboard
+- Rim-only defensive field-goal impact leaderboard
+- Total DFG% impact bar chart
+- Rim protection impact bar chart
+- Opponent rim FG% ranking chart
+- DPOY case and conclusion section
 
-* Chet Holmgren is excellent, but his defensive on/off (~-0.3) shows a very different team dependency profile than Gobert’s.
+## Notes and Limitations
 
-* Wembanyama’s candidacy is complicated by his likely failure to meet the games threshold.
+This report combines manually entered defensive tracking leaderboards with an external Excel file containing Gobert’s career rim and paint finishing data. The cleaned R Markdown file expects the finishing file to be stored at `data/raw/RudyGobert_RimAndPaintFinishing_Career.xlsx`, unless the `finishing_path` parameter is changed.
 
-# Author
-Caleb Ramsey - Statistics & Sports Media & Analytics (Virginia Tech)
+The defensive field-goal impact tables are manually entered snapshots from NBA.com tracking data. They should be refreshed before final publishing if the leaderboard changes or if the season is still active.
+
+The on/off ratings are also entered directly rather than recalculated from possession-level play-by-play data. They are used as verified team-context indicators, not as a fully reproducible possession model.
+
+Defensive field-goal percentage impact is useful, but it does not capture every part of defense. Matchup difficulty, scheme responsibility, deterrence, positioning, and teammate context all affect how these numbers should be interpreted.
+
+The DPOY framing is intentionally focused on Gobert’s case. It compares his impact to other elite defenders where relevant, but it is not a complete award model.
+
+## File Guide
+
+- `analysis.Rmd` — source analysis file
+- `analysis.pdf` — rendered report
+- `README.md` — project overview
