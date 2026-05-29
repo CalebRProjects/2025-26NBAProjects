@@ -10,7 +10,11 @@ params:
   season_label: "2025–26"
   player_name: "Peyton Watson"
   team_label: "Denver Nuggets"
-  min_gp_note: "Split context: last 8 games without Jokic (user-provided), full season otherwise."
+  data_dir: "data"
+  path_cs: "Peyton Watson C&S Data.xlsx"
+  path_dist: "Peyton Watson Shot Distance Data.xlsx"
+  path_def: "Peyton Watson Defense Data.xlsx"
+  min_gp_note: "Split context: last 8 games without Jokic, full season otherwise."
 header-includes:
   - \usepackage{float}
   - \floatplacement{figure}{H}
@@ -71,9 +75,12 @@ theme_caleb <- function()
   }
 
 # File paths
-path_cs   <- "Peyton Watson C&S Data.xlsx"
-path_dist <- "Peyton Watson Shot Distance Data.xlsx"
-path_def  <- "Peyton Watson Defense Data.xlsx"
+# These workbooks are NBA.com exports included in the repo's data folder.
+DATA_DIR <- params$data_dir
+
+path_cs <- file.path(DATA_DIR, params$path_cs)
+path_dist <- file.path(DATA_DIR, params$path_dist)
+path_def <- file.path(DATA_DIR, params$path_def)
 
 # Helpers
 to_num <- function(x)
@@ -94,7 +101,7 @@ stop_if_missing <- function(path)
     stop(
       paste0(
         "Missing file: ", path, "\n",
-        "Place the .xlsx files in the SAME folder as this Rmd, or update path_* in setup."
+        "Place the NBA.com .xlsx exports in the data folder, or update the path_* parameters."
       ),
       call. = FALSE
     )
