@@ -30,10 +30,15 @@ library(kableExtra)
 library(showtext)
 library(sysfonts)
 library(forcats)
+library(stringr)
 
 font_add_google("Inter", "inter")
 showtext_auto()
 options(scipen = 999)
+
+# Keep generated cache files out of the project root.
+CACHE_DIR <- "data/cache"
+dir.create(CACHE_DIR, recursive = TRUE, showWarnings = FALSE)
 
 # ------------------------------------------------------------
 # Theme + table helpers
@@ -83,7 +88,7 @@ style_kable <- function(df, align = NULL, font_size = 9.5, full_width = FALSE) {
     linesep = ""
   ) %>%
     kable_styling(
-      latex_options = c("HOLD_position", "striped"),
+      latex_options = c("hold_position", "striped"),
       full_width = full_width,
       font_size = font_size,
       stripe_color = "#fbfaf7"
@@ -244,23 +249,30 @@ league_ts <- tibble(
 # ------------------------------------------------------------
 
 read_or_build <- function(path, builder, rebuild = FALSE, allow_empty = FALSE) {
-  if (file.exists(path) && !rebuild) {
-    return(readRDS(path))
+  cache_file <- if (dirname(path) == ".") {
+    file.path(CACHE_DIR, path)
+  } else {
+    path
+  }
+
+  if (file.exists(cache_file) && !rebuild) {
+    return(readRDS(cache_file))
   }
 
   obj <- builder()
 
   if (!allow_empty) {
     if (is.null(obj)) {
-      stop(sprintf("Builder returned NULL for: %s", path))
+      stop(sprintf("Builder returned NULL for: %s", cache_file))
     }
 
     if (inherits(obj, "data.frame") && nrow(obj) == 0) {
-      stop(sprintf("Builder returned 0 rows for: %s", path))
+      stop(sprintf("Builder returned 0 rows for: %s", cache_file))
     }
   }
 
-  saveRDS(obj, path)
+  dir.create(dirname(cache_file), recursive = TRUE, showWarnings = FALSE)
+  saveRDS(obj, cache_file)
   obj
 }
 
@@ -415,6 +427,7 @@ season_level_ppg <- read_or_build(
 
 season_level_audit <- audit_season_coverage(season_level_ppg)
 
+# Season-level inclusion filter used for single-season translation tables.
 season_level_filtered <- season_level_ppg %>%
   filter(
     rs_games >= MIN_RS_GAMES,
@@ -448,7 +461,7 @@ if (VALIDATE_DATA) {
   bad_modern_playoff <- modern_playoff_audit %>%
     filter(rows == 0)
 
-    if (nrow(bad_modern_playoff) > 0) {
+  if (nrow(bad_modern_playoff) > 0) {
     message(
       sprintf(
         "Incomplete cached modern_playoff_raw detected. Rebuilding cache. Missing seasons: %s",
@@ -546,6 +559,7 @@ modern_rpg_leaders <- modern_playoff %>%
   ) %>%
   slice_head(n = 10)
 
+# Career translation is only calculated over seasons where the player reached the playoffs.
 career_translation <- season_level_ppg %>%
   group_by(player_id, player_name) %>%
   summarise(
@@ -972,7 +986,7 @@ style_leaderboard <- function(df, stat_col) {
     linesep = ""
   ) %>%
     kable_styling(
-      latex_options = c("HOLD_position", "striped"),
+      latex_options = c("hold_position", "striped"),
       full_width = FALSE,
       font_size = 9.5,
       stripe_color = "#fbfaf7"
