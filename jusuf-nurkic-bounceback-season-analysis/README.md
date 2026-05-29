@@ -1,61 +1,89 @@
-# Overview
+# Jusuf Nurkić: The Bosnian Beast Has Bounced Back
 
-This project examines Jusuf Nurkić’s 2025–26 season as a bounce-back year and evaluates what kind of player he is at this stage of his career.
+## Overview
 
-After a few uneven seasons, Nurkić has reestablished himself as a reliable, functional center in Utah. Now the question is how that production translates to winning and what role best maximizes his value.
+This project evaluates Jusuf Nurkić’s 2025-26 bounce-back season with Utah, focusing on how he has reestablished value as a reliable veteran center.
 
-The analysis focuses on his rebounding, playmaking, scoring profile, and defensive impact to define what he still does well and where his limitations now shape his role.
+The analysis looks beyond scoring and focuses on the parts of Nurkić’s game that still translate: rebounding, passing, screening, interior finishing, defensive positioning, and activity. He is no longer being asked to carry offense or anchor an elite defense, but his feel, size, and connective skill set have made him useful again in a more defined role.
 
-# Purpose
+The project frames Nurkić as a dependable center option whose value comes from stabilizing possessions, ending defensive trips, creating advantages through passing and screens, and holding up well enough defensively within the right team context.
 
-The goal of this project is:
+## Main Question
 
-* Evaluate whether Nurkić’s season represents a real bounce-back
+Has Jusuf Nurkić genuinely bounced back as a useful NBA center, and what parts of his game are driving that value?
 
-* Identify his most consistent sources of value (rebounding, passing, screening)
+## Methodology
 
-* Understand the limits of his scoring profile
+This analysis combines season-to-date NBA dashboard data, player game logs, manually entered leaderboard snapshots, and shot-profile information to evaluate Nurkić’s role from multiple angles.
 
-* Analyze defensive impact in a team context
+The baseline section pulls Nurkić’s season-level production through the selected `as_of_date`, including minutes, scoring, rebounding, assists, turnovers, field-goal efficiency, three-point attempts, and free-throw percentage.
 
-* Define what role best fits his current skillset
+The rebounding section uses player game logs and advanced dashboard rebounding rates to evaluate both single-game rebounding peaks and season-long rebounding value. The top rebounding games table highlights his best individual performances, while the rebounding-rate section places his value in a more stable possession-based context.
 
-# Method & Data
+The rebounding/playmaking quadrant compares players by assists per game and rebounds per game, filtering for players with at least 30 games played and 20 minutes per game. The dashed reference lines represent the 75th percentile in each category, helping show which players combine above-average rebounding and passing volume.
 
-* NBA game logs (via hoopR) for baseline production
+The playmaking section uses recent game logs to show his last-10 assist trend, while the screen-assist table adds off-ball offensive value that does not show up in normal box-score creation.
 
-* Rebounding rates and game-level performance
+The scoring section uses NBA.com shot-location dashboard data to summarize where Nurkić’s attempts come from: restricted area, non-restricted-area paint, midrange, and three-point range. This keeps the scoring analysis focused on role and shot diet rather than treating him like a high-usage scorer.
 
-* Assist and playmaking indicators (including screen assists)
+The defensive section uses manually entered rim-protection and deflection leaderboards. These are used to evaluate whether Nurkić still holds up as a functional interior defender and whether his anticipation/activity compensate for reduced mobility.
 
-* Shot zone distribution and scoring efficiency
+## Data Sources
 
-* Rim protection metrics (DFG% at rim)
+- NBA.com
+- hoopR
 
-* Deflections and defensive activity data
+## Tools Used
 
-# Why This Matters
+- R
+- tidyverse
+- ggplot2
+- R Markdown
+- hoopR
+- janitor
+- kableExtra / knitr
+- readr
+- readxl
+- lubridate
+- ggrepel
+- ggimage
+- magick
+- showtext / sysfonts
+- scales
+- glue
 
-## For Player Evaluation
+## Key Outputs
 
-Nurkić’s value is no longer tied to scoring or anchoring a defense. It comes from rebounding, passing, and overall feel as a connective piece.
+- Knitted PDF report
+- Cleaned R Markdown analysis file
+- Season baseline table
+- Top 5 rebounding games table
+- Rebounding rate profile table
+- Rebounding plus playmaking quadrant chart
+- Last-10-game assist trend chart
+- Screen assists per game table
+- Shot profile by NBA.com zone table
+- Shot diet by zone chart
+- Rim-defense company table
+- Deflections among centers table
+- Closing bounce-back summary
 
-## For Offensive Role
+## Notes and Limitations
 
-He is most effective as a low-usage hub; setting screens, facilitating from the short roll, and finishing plays rather than creating them.
+This report combines live NBA.com data pulled through `hoopR` with manually entered leaderboard snapshots. The live pulls are cached locally to make the report easier to rerun, while the manually entered tables should be refreshed before final publishing if the underlying leaderboards change.
 
-## For Skill Profile
+The analysis is built around a selected `as_of_date`, so the results represent Nurkić’s season profile only through that date. Updating the date or rerunning later in the season may change his averages, rankings, and recent-trend sections.
 
-His rebounding remains elite, and his playmaking is relatively rare for a center (see rebounding + assist context on page 2).
+The rebounding/playmaking quadrant uses per-game assists and rebounds with games-played and minutes filters. This is useful for role context, but it does not adjust for pace, usage, teammate shot quality, or passing role.
 
-## For Defensive Impact
+The shot-profile section uses broad NBA.com dashboard zones, not possession-level shot quality. It shows where Nurkić is taking shots and how often, but it does not fully explain how those shots were created.
 
-He is no longer a defensive anchor, but still serviceable. His impact comes through positioning and activity rather than mobility or rim dominance.
+The defensive section should be interpreted carefully. Rim defensive field-goal differential and deflections are useful indicators, but they do not fully capture scheme responsibility, matchup difficulty, deterrence, positioning, or team defensive context.
 
-## For Team Construction
+The purpose of the project is not to argue that Nurkić has returned to his peak Portland form. It is to show that he has bounced back into a useful, clearly defined center role.
 
-Nurkić profiles best as a stabilizing center—someone who can organize lineups, support creators, and provide rebounding and structure without needing touches.
+## File Guide
 
-# Authors
-
-Caleb Ramsey -- Statistics & Sports Media and Analytics (Virginia Tech)
+- `analysis.Rmd` — source analysis file
+- `analysis.pdf` — rendered report
+- `README.md` — project overview
