@@ -1,32 +1,47 @@
-# Cam Johnson: Second-Half Rebound (2025–26)
+# Cam Johnson: Second-Half Rebound
+
 ## Overview
-This report analyzes Cam Johnson’s performance during the 2025–26 NBA season, with a focus on whether his improved production in the latter half of the season reflects sustainable change or short-term variance. After an inconsistent start in a reduced offensive role, Johnson has delivered a strong recent stretch marked by improved efficiency, increased minutes, and clearer offensive rhythm within Denver’s system.
 
-The analysis evaluates how Johnson’s shot profile, usage, and rebounding have evolved over time—and whether those changes reflect meaningful adjustment rather than a temporary shooting spike.
+This project evaluates Cam Johnson’s second-half improvement with Denver during the 2025–26 season. The analysis focuses on whether his production jump reflects a real adjustment in role comfort and shot quality, or whether it is mostly short-run shooting variance. It uses game-log splits, rolling trends, and shot-chart data to compare Johnson’s early-season profile with his recent stretch.
 
-## Key Questions
-The report is structured around three core questions:
-* Is Johnson’s recent improvement sustained or driven by short-run variance?
-* Has his role changed, or are improved outcomes coming from the same usage profile?
-* Where on the floor are the gains coming from, particularly as a three-point shooter?
+## Main Question
 
-# Data Sources
-The analysis integrates multiple NBA data endpoints:
-* NBA Stats API (via hoopR)
-  * League game logs
-  * ShotChartDetail
-* Derived metrics
-  * Rolling averages
-  * Usage-event proxies (FGA, FTA, TOV per 36)
+Has Cam Johnson’s recent production spike come from a meaningful role/shot-profile improvement, or mostly better results from the same offensive blueprint?
 
-All data reflects the 2025–26 regular season.
+## Data Sources
 
-# Key Takeaways
-* Johnson’s offensive role has remained largely stable; improvements are driven by execution, not usage expansion.
-* Three-point attempt share normalized after early volatility, contributing to steadier efficiency.
-* Gains are evident both from above the break and the corners without a structural change in shot location.
-* Increased minutes amplified the impact of improved efficiency, leading to stronger counting production.
-* The recent stretch reflects a sustained adjustment, not a one-week shooting spike.
+- NBA.com
+- hoopR / NBA Stats API
+- NBA ShotChartDetail
 
-# Author
-Caleb Ramsey - Statistics & Sports Media & Analytics (Virginia Tech)
+## Tools Used
+
+- R
+- tidyverse
+- ggplot2
+- R Markdown
+- hoopR
+- lubridate
+- kableExtra
+- ggrepel
+- showtext / sysfonts
+
+## Key Outputs
+
+- Knitted PDF report
+- Cleaned R Markdown analysis file
+- Rolling REB/36, TS%, and 3PA share chart
+- Early vs. recent role/usage proxy table
+- First-half vs. second-half per-game table
+- Three-point zone accuracy chart
+- Shot diet by distance bucket chart
+
+## Notes and Limitations
+
+This report depends on live NBA Stats API pulls through `hoopR`, including league game logs and ShotChartDetail data. If NBA.com changes endpoint schemas, blocks requests, or rate-limits calls, the report may require small code adjustments or cached/local data. The Early/Recent split is based on games played rather than lineup context, opponent quality, or injury context. Usage rate is not available at a game-by-game level in this workflow, so the report uses usage-event proxies instead.
+
+## File Guide
+
+- `analysis.Rmd` — cleaned source analysis
+- `analysis.pdf` — rendered report
+- `README.md` — project overview
