@@ -14,38 +14,38 @@ How does Trae Young’s offensive value translate to a new roster, and what team
 
 ## Data Sources
 
-NBA.com
-Synergy/SportsRadar
-CraftedNBA
+- NBA.com
+- Synergy/SportsRadar
+- CraftedNBA
 hoopR
 
 ## Tools Used
 
-R
-tidyverse
-ggplot2
-R Markdown
-kableExtra
-hoopR
-showtext / sysfonts
+- R
+- tidyverse
+- ggplot2
+- R Markdown
+- kableExtra
+- hoopR
+- showtext / sysfonts
 
 ## Key Outputs
 
-Knitted PDF report for Washington fit
-Knitted PDF report for Toronto fit
-Cleaned R Markdown analysis file, if included
-Trae Young career offensive profile table
-Usage rate and true shooting trend chart
-Shot-type efficiency table
-Shot-type field-goal percentage trend chart
-Play-type portfolio table
-Pick-and-roll ball handler trend chart
-Play-type usage distribution chart
-On/off impact table
-CraftedNBA offensive metrics table
-CraftedNBA defensive metrics table
-Washington roster-fit analysis
-Toronto roster-fit contingency analysis
+- Knitted PDF report for Washington fit
+- Knitted PDF report for Toronto fit
+- Cleaned R Markdown analysis file, if included
+- Trae Young career offensive profile table
+- Usage rate and true shooting trend chart
+- Shot-type efficiency table
+- Shot-type field-goal percentage trend chart
+- Play-type portfolio table
+- Pick-and-roll ball handler trend chart
+- Play-type usage distribution chart
+- On/off impact table
+- CraftedNBA offensive metrics table
+- CraftedNBA defensive metrics table
+- Washington roster-fit analysis
+- Toronto roster-fit contingency analysis
 
 ## Notes and Limitations
 
@@ -57,9 +57,9 @@ The analysis is primarily focused on fit, role, and roster structure. It does no
 
 ## File Guide
 
-`trae-young-wizards-analysis.pdf` — primary rendered report evaluating Trae Young’s fit with Washington
-`trae-young-raptors-analysis.pdf` — contingency rendered report evaluating Trae Young’s potential fit with Toronto
-`trae-young-wizards-analysis.rmd` — source analysis file
-`trae-young-raptors-analysis.rmd` — source analysis file
-`README.md` — project overview
+- `trae-young-wizards-analysis.pdf` — primary rendered report evaluating Trae Young’s fit with Washington
+- `trae-young-raptors-analysis.pdf` — contingency rendered report evaluating Trae Young’s potential fit with Toronto
+- `trae-young-wizards-analysis.rmd` — source analysis file
+- `trae-young-raptors-analysis.rmd` — source analysis file
+- `README.md` — project overview
 
