@@ -6,37 +6,57 @@ output:
   pdf_document:
     latex_engine: xelatex
     number_sections: false
+params:
+  season: "2025-26"
+  season_type: "Regular Season"
+  team_id: "1610612744"
+  steph_id: "201939"
+  jimmy_id: "202710"
+  gui_id: "1630611"
 header-includes:
   - \usepackage{float}
   - \floatplacement{figure}{H}
 ---
 
 ```{r setup, include=FALSE}
+# ------------------------------------------------------------
+# Setup
+# ------------------------------------------------------------
+
 knitr::opts_chunk$set(
   echo = FALSE,
   message = FALSE,
   warning = FALSE,
   fig.pos = "H",
   fig.align = "center",
-  dpi = 200
+  dpi = 200,
+  out.width = "100%"
 )
 
 library(tidyverse)
 library(scales)
 library(knitr)
-library(glue)
 library(showtext)
 library(sysfonts)
 library(hoopR)
 library(janitor)
 library(lubridate)
 library(ggrepel)
-library(gt)
-library(purrr)
 library(kableExtra)
 
 font_add_google("Inter", "inter")
 showtext_auto()
+
+# ------------------------------------------------------------
+# Parameters
+# ------------------------------------------------------------
+
+SEASON <- params$season
+SEASON_TYPE <- params$season_type
+TEAM_ID <- as.character(params$team_id)
+STEPH_ID <- as.character(params$steph_id)
+JIMMY_ID <- as.character(params$jimmy_id)
+GUI_ID <- as.character(params$gui_id)
 
 # ------------------------------------------------------------
 # Constants
@@ -47,11 +67,6 @@ TEXT_DARK <- "#141414"
 GRID <- "#dedad3"
 WARRIORS_BLUE <- "#1D428A"
 WARRIORS_GOLD <- "#FFC72C"
-
-TEAM_ID <- "1610612744"
-STEPH_ID <- "201939"
-JIMMY_ID <- "202710"
-GUI_ID <- "1630611"
 
 CAPTION_LINE <- "Data: NBA.com | Viz: @Rambzee_"
 CAPTION_DATABALLR <- "Data: Databallr | Viz: @Rambzee_"
@@ -80,6 +95,23 @@ parse_nba_date <- function(x) {
   ) %>%
     as.Date()
 }
+
+get_one_numeric <- function(df, col) {
+  if (!col %in% names(df)) return(NA_real_)
+  suppressWarnings(as.numeric(df[[col]][1]))
+}
+
+calc_ts <- function(pts, fga, fta) {
+  pts / (2 * (fga + 0.44 * fta))
+}
+
+calc_impact <- function(pts, reb, ast, stl, blk, tov) {
+  pts + 1.2 * reb + 1.5 * ast + 2 * stl + 2 * blk - 1.2 * tov
+}
+
+# ------------------------------------------------------------
+# Theme
+# ------------------------------------------------------------
 
 theme_caleb <- theme_minimal(base_family = "inter") +
   theme(
@@ -118,13 +150,13 @@ theme_caleb <- theme_minimal(base_family = "inter") +
   )
 
 # ------------------------------------------------------------
-# Data pulls
+# Data pull helpers
 # ------------------------------------------------------------
 
-get_player_gamelog <- function(pid) {
+get_player_gamelog <- function(pid, season = SEASON, season_type = SEASON_TYPE) {
   hoopR::nba_playergamelog(
-    season = "2025-26",
-    season_type = "Regular Season",
+    season = season,
+    season_type = season_type,
     player_id = pid
   ) %>%
     purrr::pluck("PlayerGameLog") %>%
@@ -153,7 +185,7 @@ get_player_gamelog <- function(pid) {
     )
 }
 
-get_league_base <- function(season = "2025-26", season_type = "Regular Season") {
+get_league_base <- function(season = SEASON, season_type = SEASON_TYPE) {
   hoopR::nba_leaguedashplayerstats(
     season = season,
     season_type = season_type,
@@ -169,7 +201,7 @@ get_league_base <- function(season = "2025-26", season_type = "Regular Season") 
     )
 }
 
-get_league_usage <- function(season = "2025-26", season_type = "Regular Season") {
+get_league_usage <- function(season = SEASON, season_type = SEASON_TYPE) {
   hoopR::nba_leaguedashplayerstats(
     season = season,
     season_type = season_type,
@@ -182,7 +214,7 @@ get_league_usage <- function(season = "2025-26", season_type = "Regular Season")
     )
 }
 
-get_league_advanced <- function(season = "2025-26", season_type = "Regular Season") {
+get_league_advanced <- function(season = SEASON, season_type = SEASON_TYPE) {
   hoopR::nba_leaguedashplayerstats(
     season = season,
     season_type = season_type,
@@ -198,7 +230,7 @@ get_league_advanced <- function(season = "2025-26", season_type = "Regular Seaso
 }
 
 # ------------------------------------------------------------
-# Summary / table helpers
+# Table helpers
 # ------------------------------------------------------------
 
 summ_process <- function(df) {
@@ -223,32 +255,24 @@ build_split_kable <- function(raw_df, left_label = "First 38", right_label = "La
     transmute(
       Metric,
       left_value = if_else(
-        Metric == "TS%" | Metric == "FTR",
-        paste0(formatC(first_38, format = "f", digits = 1), "\\%"),
+        Metric %in% c("TS%", "FTR"),
+        paste0(formatC(first_38, format = "f", digits = 1), "\%"),
         formatC(first_38, format = "f", digits = 1)
       ),
       right_value = if_else(
-        Metric == "TS%" | Metric == "FTR",
-        paste0(formatC(last_27, format = "f", digits = 1), "\\%"),
+        Metric %in% c("TS%", "FTR"),
+        paste0(formatC(last_27, format = "f", digits = 1), "\%"),
         formatC(last_27, format = "f", digits = 1)
       ),
       Change = if_else(
-        Metric == "TS%" | Metric == "FTR",
-        paste0(
-          if_else(change_num > 0, "+", ""),
-          formatC(change_num, format = "f", digits = 1),
-          "\\%"
-        ),
-        paste0(
-          if_else(change_num > 0, "+", ""),
-          formatC(change_num, format = "f", digits = 1)
-        )
+        Metric %in% c("TS%", "FTR"),
+        paste0(if_else(change_num > 0, "+", ""), formatC(change_num, format = "f", digits = 1), "\%"),
+        paste0(if_else(change_num > 0, "+", ""), formatC(change_num, format = "f", digits = 1))
       )
     ) %>%
     mutate(
-      Metric = dplyr::case_when(
-        Metric == "TS%" ~ "TS\\%",
-        Metric == "FTR" ~ "FTR",
+      Metric = case_when(
+        Metric == "TS%" ~ "TS\%",
         TRUE ~ Metric
       )
     ) %>%
@@ -259,7 +283,7 @@ build_split_kable <- function(raw_df, left_label = "First 38", right_label = "La
 
   change_col_idx <- which(names(split_display) == "Change")
 
-  change_colors <- dplyr::case_when(
+  change_colors <- case_when(
     raw_df$change_num >= 2.5 ~ "green",
     raw_df$change_num > 0 ~ "olive",
     raw_df$change_num <= -2 ~ "red",
@@ -280,7 +304,7 @@ build_split_kable <- function(raw_df, left_label = "First 38", right_label = "La
       align = c("l", "c", "c", "c")
     ) %>%
     kableExtra::kable_styling(
-      latex_options = c("hold_position"),
+      latex_options = c("HOLD_position"),
       full_width = FALSE,
       position = "center",
       font_size = 11
@@ -369,8 +393,8 @@ Gui Santos has been one of those answers.
 
 ```{r team-context-table}
 lg <- hoopR::nba_leaguegamelog(
-  season = "2025-26",
-  season_type_all_star = "Regular Season"
+  season = SEASON,
+  season_type_all_star = SEASON_TYPE
 ) %>%
   purrr::pluck("LeagueGameLog") %>%
   safe_clean_names()
@@ -471,8 +495,8 @@ gui_no_star <- gui_logs %>%
     by = "game_id"
   ) %>%
   mutate(
-    ts = pts / (2 * (fga + 0.44 * fta)),
-    impact = pts + 1.2 * reb + 1.5 * ast + 2 * stl + 2 * blk - 1.2 * tov
+    ts = calc_ts(pts, fga, fta),
+    impact = calc_impact(pts, reb, ast, stl, blk, tov)
   )
 
 gui_top5 <- gui_no_star %>%
@@ -546,8 +570,8 @@ That carries over to the full-season shot chart, which is probably the cleanest 
 
 ```{r gui-shot-profile, fig.width=7.4, fig.height=4.8}
 shotloc <- hoopR::nba_leaguedashplayershotlocations(
-  season = "2025-26",
-  season_type = "Regular Season",
+  season = SEASON,
+  season_type = SEASON_TYPE,
   per_mode = "Totals"
 )$ShotLocations %>%
   clean_names()
@@ -556,21 +580,16 @@ gui_shotloc <- shotloc %>%
   filter(player_name == "Gui Santos") %>%
   slice(1)
 
-get1 <- function(df, col) {
-  if (!col %in% names(df)) return(NA_real_)
-  suppressWarnings(as.numeric(df[[col]][1]))
-}
-
-corner3_fga <- get1(gui_shotloc, "corner_3_fga")
-atb3_fga <- get1(gui_shotloc, "above_the_break_3_fga")
+corner3_fga <- get_one_numeric(gui_shotloc, "corner_3_fga")
+atb3_fga <- get_one_numeric(gui_shotloc, "above_the_break_3_fga")
 three_fga <- sum(c(corner3_fga, atb3_fga), na.rm = TRUE)
 
 shot_profile <- tibble(
   zone = c("Rim", "Non-Rim Paint", "Midrange", "3PT"),
   fga = c(
-    get1(gui_shotloc, "restricted_area_fga"),
-    get1(gui_shotloc, "in_the_paint_non_ra_fga"),
-    get1(gui_shotloc, "mid_range_fga"),
+    get_one_numeric(gui_shotloc, "restricted_area_fga"),
+    get_one_numeric(gui_shotloc, "in_the_paint_non_ra_fga"),
+    get_one_numeric(gui_shotloc, "mid_range_fga"),
     three_fga
   )
 ) %>%
