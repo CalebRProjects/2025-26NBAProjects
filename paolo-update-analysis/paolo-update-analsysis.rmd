@@ -9,6 +9,13 @@ output:
 header-includes:
   - \usepackage{float}
   - \floatplacement{figure}{H}
+params:
+  season: "2025-26"
+  season_type: "Regular Season"
+  player_name: "Paolo Banchero"
+  shots_dir: "data/processed/shots"
+  playtype_path: "data/raw/Paolo Playtypes (2025-26).xlsx"
+  refresh_shots: false
 ---
 
 
@@ -22,11 +29,21 @@ knitr::opts_chunk$set(
   out.width = "95%"
 )
 
-library(dplyr); library(tidyr); library(tibble)
-library(ggplot2); library(scales); library(knitr)
-library(kableExtra); library(stringr); library(hoopR)
-library(lubridate); library(showtext); library(readr)
-library(readxl); library(forcats)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(stringr)
+library(hoopR)
+library(lubridate)
+library(showtext)
+library(sysfonts)
+library(readr)
+library(readxl)
+library(forcats)
 
 font_add_google("Poppins", "poppins")
 showtext_auto()
@@ -146,16 +163,17 @@ kbl_caleb(
   recent_form_tbl,
   caption = "Recent Paolo Banchero form and team results"
 ) %>%
-  column_spec(1, bold = TRUE)
+  column_spec(1, bold = TRUERUE)
 ```
 
 ```{r helpers}
 # Core settings ------------------------------------------------------------
 
-season_used <- "2025-26"
-paolo_name <- "Paolo Banchero"
+season_used <- params$season
+season_type_used <- params$season_type
+paolo_name <- params$player_name
 
-shots_dir <- file.path("data", "processed", "shots")
+shots_dir <- params$shots_dir
 dir.create(shots_dir, recursive = TRUE, showWarnings = FALSE)
 
 
@@ -164,7 +182,7 @@ dir.create(shots_dir, recursive = TRUE, showWarnings = FALSE)
 get_player_id <- function(season, player_name) {
   league_stats <- hoopR::nba_leaguedashplayerstats(
     season = season,
-    season_type = "Regular Season",
+    season_type = season_type_used,
     measure_type = "Base"
   )$LeagueDashPlayerStats
 
@@ -193,7 +211,7 @@ get_cached_shots <- function(player_id, season, refresh = FALSE) {
 
   shotchart <- hoopR::nba_shotchartdetail(
     season = season,
-    season_type = "Regular Season",
+    season_type = season_type_used,
     player_id = player_id,
     team_id = 0,
     context_measure_simple = "FGA"
@@ -299,7 +317,7 @@ get_game_ft <- function(season, player_id) {
   game_logs <- hoopR::nba_playergamelogs(
     player_id = player_id,
     season = season,
-    season_type = "Regular Season",
+    season_type = season_type_used,
     per_mode = "Totals"
   )$PlayerGameLogs
 
@@ -377,7 +395,7 @@ plot_shot_mix <- function(shot_profile_df, ftr_caption) {
 get_top_ftr_players <- function(season = "2025-26", min_games = 20, min_ppg = 15) {
   league <- hoopR::nba_leaguedashplayerstats(
     season = season,
-    season_type = "Regular Season",
+    season_type = season_type_used,
     measure_type = "Base"
   )$LeagueDashPlayerStats
 
@@ -415,7 +433,7 @@ paolo_id <- get_player_id(season_used, paolo_name)
 shots_paolo <- get_cached_shots(
   player_id = paolo_id,
   season = season_used,
-  refresh = TRUE
+  refresh = isTRUE(params$refresh_shots)
 )
 
 shots_sampled <- build_sampled_shots(shots_paolo)
@@ -469,8 +487,8 @@ plot_shot_mix(shot_profile_raw, ftr_caption)
 kbl_caleb(
   shot_shift_tbl,
   caption = "Paolo Banchero shot profile: Games 1-45 vs Last 10") %>%
-  column_spec(1, bold = T) %>%
-  column_spec(2, bold = T)
+  column_spec(1, bold = TRUE) %>%
+  column_spec(2, bold = TRUE)
 ```
 
 The change in Banchero’s shot diet is not dramatic, but it does show a shift in how he is attacking.
@@ -493,7 +511,7 @@ Among players averaging at least 15 points per game, Banchero ranks 6th in the N
 kbl_caleb(
   top_ftr_tbl,
   caption = "Top 10 NBA players by Free Throw Rate (FTA/FGA), 2025-26") %>%
-  column_spec(1, bold = T)
+  column_spec(1, bold = TRUE)
 ```
 
 This is the version of Banchero’s offense that works.
@@ -513,7 +531,7 @@ The playtype data helps clarify where Banchero’s offense is actually working.
 Most of his efficiency is not coming from difficult jumpers. It shows up in advantage situations (transition, post touches, and attacking defenses that are already shifting).
 
 ```{r playtype-import}
-playtypes <- read_excel("Paolo Playtypes (2025-26).xlsx")
+playtypes <- read_excel(params$playtype_path)
 
 
 # Full playtype table ------------------------------------------------------
@@ -661,8 +679,8 @@ plot_playtype_compare <- function(df) {
 kbl_caleb(
   play_tbl,
   caption = "Paolo Banchero playtype efficiency (2025-26)") %>%
-  column_spec(1, bold = TRUE) %>%
-  column_spec(5, bold = TRUE)
+  column_spec(1, bold = TRUERUE) %>%
+  column_spec(5, bold = TRUERUE)
 ```
 
 Transition and post-ups continue to be where Banchero is most effective. Those are the situations where he can use his size and strength instead of settling for contested jump shots.
@@ -723,8 +741,8 @@ lineup_focus_tbl <- bind_rows(
 kbl_caleb(
   lineup_focus_tbl,
   caption = "Selected Paolo Banchero 3-man lineup combinations (Data: Databallr)") %>%
-  column_spec(1, bold = TRUE) %>%
-  column_spec(5, bold = TRUE)
+  column_spec(1, bold = TRUERUE) %>%
+  column_spec(5, bold = TRUERUE)
 ```
 
 The best Banchero lineups tend to combine spacing with defensive stability.
@@ -785,15 +803,15 @@ impact_takeaways_tbl <- tibble(
 kbl_caleb(
   overall_impact_tbl,
   caption = "Paolo Banchero overall lineup impact snapshot (Data: Databallr)") %>%
-  column_spec(1, bold = TRUE)
+  column_spec(1, bold = TRUERUE)
 ```
 
 ```{r impact-takeaways-table, results='asis'}
 kbl_caleb(
   impact_takeaways_tbl,
   caption = "How to read the impact snapshot") %>%
-  column_spec(1, bold = TRUE) %>%
-  column_spec(2, bold = TRUE)
+  column_spec(1, bold = TRUERUE) %>%
+  column_spec(2, bold = TRUERUE)
 ```
 
 The on/off results are close to neutral.
