@@ -13,17 +13,19 @@ params:
 ---
 
 ```{r setup, include=FALSE}
-library(dplyr)
-library(tidyr)
-library(purrr)
+# ------------------------------------------------------------
+# Packages
+# ------------------------------------------------------------
+
+library(tidyverse)
 library(lubridate)
-library(ggplot2)
 library(scales)
 library(knitr)
 library(showtext)
 library(sysfonts)
 library(hoopR)
-suppressPackageStartupMessages(library(janitor))
+library(janitor)
+library(zoo)
 
 options(tinytex.crop = FALSE)
 
@@ -44,37 +46,70 @@ knitr::opts_chunk$set(
 font_add_google("Inter", "inter")
 showtext_auto()
 
-det_blue <- "#1D42BA"
-det_red <- "#C8102E"
-det_navy <- "#0C2340"
-det_silver <- "#BEC0C2"
-paper_bg <- "#f6f4ef"
-grid_col <- "#dedad3"
-text_col <- "#141414"
-
-theme_caleb <- theme_minimal(base_family = "inter") +
-  theme(
-    plot.background = element_rect(fill = paper_bg, color = NA),
-    panel.background = element_rect(fill = paper_bg, color = NA),
-    panel.grid.major = element_line(color = grid_col, linewidth = 0.25),
-    panel.grid.minor = element_blank(),
-    plot.title = element_text(size = 18, face = "bold", hjust = 0, color = text_col),
-    plot.subtitle = element_text(size = 12, hjust = 0, color = "#2f2f2f"),
-    axis.title = element_text(size = 12, face = "bold", color = text_col),
-    axis.text = element_text(size = 10, color = "#333333"),
-    legend.title = element_text(size = 10),
-    legend.text = element_text(size = 9),
-    plot.caption = element_text(size = 8, hjust = 1, color = "#6e6e6e"),
-    plot.margin = margin(10, 14, 10, 14)
-  )
+# ------------------------------------------------------------
+# Parameters
+# ------------------------------------------------------------
 
 SEASON <- params$season
 SEASON_TYPE <- params$season_type
-TEAM_ID <- params$team_id
+TEAM_ID <- as.character(params$team_id)
+CADE_ID <- "1630595"
 
-fmt_pct <- function(x, accuracy = 0.1) percent(x, accuracy = accuracy)
+# ------------------------------------------------------------
+# Colors and theme
+# ------------------------------------------------------------
+
+DET_BLUE <- "#1D42BA"
+DET_RED <- "#C8102E"
+DET_NAVY <- "#0C2340"
+DET_SILVER <- "#BEC0C2"
+
+BG <- "#f6f4ef"
+GRID <- "#dedad3"
+TEXT_DARK <- "#141414"
+
+theme_caleb <- theme_minimal(base_family = "inter") +
+  theme(
+    plot.background = element_rect(fill = BG, color = NA),
+    panel.background = element_rect(fill = BG, color = NA),
+    panel.grid.major = element_line(color = GRID, linewidth = 0.25),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(
+      size = 18,
+      face = "bold",
+      hjust = 0,
+      color = TEXT_DARK
+    ),
+    plot.subtitle = element_text(
+      size = 12,
+      hjust = 0,
+      color = "#2f2f2f"
+    ),
+    axis.title = element_text(
+      size = 12,
+      face = "bold",
+      color = TEXT_DARK
+    ),
+    axis.text = element_text(size = 10, color = "#333333"),
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 9),
+    plot.caption = element_text(
+      size = 8,
+      hjust = 1,
+      color = "#6e6e6e"
+    ),
+    plot.margin = margin(10, 14, 10, 14)
+  )
+
+# ------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------
+
 safe_clean_names <- function(df) janitor::clean_names(df)
-to_num <- function(x) suppressWarnings(as.numeric(x))
+
+to_num <- function(x) {
+  suppressWarnings(as.numeric(x))
+}
 
 parse_nba_date <- function(x) {
   suppressWarnings(
@@ -82,12 +117,89 @@ parse_nba_date <- function(x) {
       x,
       orders = c("Ymd", "mdY", "b d, Y", "B d, Y")
     )
-  ) %>% as.Date()
+  ) %>%
+    as.Date()
 }
 
-# Standard box-score possession estimate.
 calc_poss <- function(fga, fta, oreb, tov) {
   fga + 0.44 * fta - oreb + tov
+}
+
+calc_ts <- function(pts, fga, fta) {
+  pts / (2 * (fga + 0.44 * fta))
+}
+
+calc_impact <- function(pts, reb, ast, stl, blk, tov) {
+  pts + 1.2 * reb + 1.5 * ast + 2 * stl + 2 * blk - 1.2 * tov
+}
+
+summ_process <- function(df) {
+  tibble(
+    GP = nrow(df),
+    W = sum(df$wl == "W", na.rm = TRUE),
+    L = sum(df$wl == "L", na.rm = TRUE),
+    PPG = mean(df$pts, na.rm = TRUE),
+    `Opp. PPG` = mean(df$opp_pts, na.rm = TRUE),
+    MOV = mean(df$mov, na.rm = TRUE),
+    eFG = (sum(df$fgm, na.rm = TRUE) + 0.5 * sum(df$fg3m, na.rm = TRUE)) /
+      sum(df$fga, na.rm = TRUE),
+    `Opp. eFG` = (sum(df$opp_fgm, na.rm = TRUE) + 0.5 * sum(df$opp_fg3m, na.rm = TRUE)) /
+      sum(df$opp_fga, na.rm = TRUE),
+    `TOV%` = sum(df$tov, na.rm = TRUE) /
+      sum(df$fga + 0.44 * df$fta - df$tov, na.rm = TRUE),
+    ORtg = NA_real_,
+    DRtg = NA_real_
+  )
+}
+
+# ------------------------------------------------------------
+# Data pulls
+# ------------------------------------------------------------
+
+get_player_gamelog <- function(pid) {
+  hoopR::nba_playergamelog(
+    season = SEASON,
+    season_type = SEASON_TYPE,
+    player_id = pid
+  ) %>%
+    purrr::pluck("PlayerGameLog") %>%
+    safe_clean_names() %>%
+    mutate(
+      game_id = as.character(game_id),
+      game_date = parse_nba_date(as.character(game_date)),
+      player_id = as.character(player_id),
+      min = to_num(min),
+      pts = to_num(pts),
+      oreb = to_num(oreb),
+      dreb = to_num(dreb),
+      reb = to_num(reb),
+      ast = to_num(ast),
+      stl = to_num(stl),
+      blk = to_num(blk),
+      tov = to_num(tov),
+      pf = to_num(pf),
+      fga = to_num(fga),
+      fgm = to_num(fgm),
+      fg3m = to_num(fg3m),
+      fg3a = to_num(fg3a),
+      fta = to_num(fta),
+      ftm = to_num(ftm),
+      plus_minus = to_num(plus_minus)
+    )
+}
+
+get_league_game_log <- function() {
+  hoopR::nba_leaguegamelog(
+    season = SEASON,
+    season_type_all_star = SEASON_TYPE
+  ) %>%
+    purrr::pluck("LeagueGameLog") %>%
+    safe_clean_names() %>%
+    mutate(
+      team_id = as.character(team_id),
+      game_id = as.character(game_id),
+      game_date = parse_nba_date(game_date)
+    )
 }
 ```
 
@@ -104,12 +216,7 @@ It is easy to point to Cade as the reason this works, and for the most part, tha
 Detroit has stayed competitive in those games. Not explosive, not overwhelming, but functional. They lean further into defense, generate just enough offense, and rely on a roster that knows how to contribute without needing the ball.
 
 ```{r team-logs, cache=TRUE}
-lg <- hoopR::nba_leaguegamelog(
-  season = SEASON,
-  season_type_all_star = SEASON_TYPE
-) %>%
-  purrr::pluck("LeagueGameLog") %>%
-  safe_clean_names()
+lg <- get_league_game_log()
 
 league_team_games <- lg %>%
   mutate(
@@ -124,8 +231,8 @@ league_team_games <- lg %>%
 league_ppg <- mean(league_team_games$pts, na.rm = TRUE)
 
 team_logs <- lg %>%
+  mutate(team_id = as.character(team_id), game_id = as.character(game_id)) %>%
   filter(team_id == TEAM_ID) %>%
-  mutate(game_id = as.character(game_id)) %>%
   left_join(
     lg %>%
       mutate(game_id = as.character(game_id)) %>%
@@ -165,42 +272,8 @@ team_logs <- lg %>%
   ) %>%
   arrange(game_date)
 
-cade_id <- "1630595"
 
-get_player_gamelog <- function(pid) {
-  hoopR::nba_playergamelog(
-    season = SEASON,
-    season_type = SEASON_TYPE,
-    player_id = pid
-  ) %>%
-    purrr::pluck("PlayerGameLog") %>%
-    safe_clean_names() %>%
-    mutate(
-      game_id = as.character(game_id),
-      game_date = as.character(game_date),
-      game_date = parse_nba_date(game_date),
-      player_id = as.character(player_id),
-      min = to_num(min),
-      pts = to_num(pts),
-      oreb = to_num(oreb),
-      dreb = to_num(dreb),
-      reb = to_num(reb),
-      ast = to_num(ast),
-      stl = to_num(stl),
-      blk = to_num(blk),
-      tov = to_num(tov),
-      pf = to_num(pf),
-      fga = to_num(fga),
-      fgm = to_num(fgm),
-      fg3m = to_num(fg3m),
-      fg3a = to_num(fg3a),
-      fta = to_num(fta),
-      ftm = to_num(ftm),
-      plus_minus = to_num(plus_minus)
-    )
-}
-
-cade_games <- get_player_gamelog(cade_id) %>%
+cade_games <- get_player_gamelog(CADE_ID) %>%
   transmute(game_id, cade_played = TRUE)
 
 team_logs <- team_logs %>%
@@ -250,23 +323,6 @@ cade_out_logs <- team_logs %>% filter(group == "Cade Out")
 # Team-Level Results
 
 ```{r team-summary}
-summ_process <- function(df) {
-  tibble(
-    GP = nrow(df),
-    W = sum(df$wl == "W", na.rm = TRUE),
-    L = sum(df$wl == "L", na.rm = TRUE),
-    PPG = mean(df$pts, na.rm = TRUE),
-    `Opp. PPG` = mean(df$opp_pts, na.rm = TRUE),
-    MOV = mean(df$mov, na.rm = TRUE),
-    eFG = (sum(df$fgm, na.rm = TRUE) + 0.5 * sum(df$fg3m, na.rm = TRUE)) / sum(df$fga, na.rm = TRUE),
-    `Opp. eFG` = (sum(df$opp_fgm, na.rm = TRUE) + 0.5 * sum(df$opp_fg3m, na.rm = TRUE)) / sum(df$opp_fga, na.rm = TRUE),
-    `TOV%` = sum(df$tov, na.rm = TRUE) /
-      sum(df$fga + 0.44 * df$fta - df$tov, na.rm = TRUE),
-    ORtg = NA_real_,
-    DRtg = NA_real_
-  )
-}
-
 split_summary <- bind_rows(
   summ_process(cade_in_logs) %>% mutate(Group = "Cade In"),
   summ_process(cade_out_logs) %>% mutate(Group = "Cade Out")
@@ -323,7 +379,7 @@ ggplot(ppg_compare, aes(x = group, y = value, fill = group)) +
     aes(yintercept = league_avg),
     linetype = "dotted",
     linewidth = 0.55,
-    color = det_navy,
+    color = DET_NAVY,
     alpha = 0.65,
     inherit.aes = FALSE
   ) +
@@ -331,18 +387,18 @@ ggplot(ppg_compare, aes(x = group, y = value, fill = group)) +
     aes(label = round(value, 1)),
     vjust = -0.85,
     size = 3,
-    color = text_col
+    color = TEXT_DARK
   ) +
   geom_text(
     data = league_lines,
     aes(x = 1.5, y = league_avg + 2.2, label = line_label),
     inherit.aes = FALSE,
-    color = det_navy,
+    color = DET_NAVY,
     size = 2.0,
     family = "inter"
   ) +
   facet_wrap(~metric, scales = "fixed") +
-  scale_fill_manual(values = c("Cade In" = det_red, "Cade Out" = det_blue)) +
+  scale_fill_manual(values = c("Cade In" = DET_RED, "Cade Out" = DET_BLUE)) +
   scale_y_continuous(
     limits = c(0, max(ppg_compare$value, league_lines$league_avg) + 18),
     labels = label_number(accuracy = 1),
@@ -373,7 +429,7 @@ style_compare <- team_logs %>%
 
 ggplot(style_compare, aes(x = stat, y = value, fill = group)) +
   geom_col(position = "dodge", width = 0.72) +
-  scale_fill_manual(values = c("Cade In" = det_red, "Cade Out" = det_blue)) +
+  scale_fill_manual(values = c("Cade In" = DET_RED, "Cade Out" = DET_BLUE)) +
   scale_y_continuous(labels = label_number(accuracy = 0.1)) +
   labs(
     title = "How Detroit has functioned with vs. without Cade",
