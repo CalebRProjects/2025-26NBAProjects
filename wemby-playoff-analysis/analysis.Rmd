@@ -97,7 +97,7 @@ style_kable <- function(
     escape = escape
   ) %>%
     kable_styling(
-      latex_options = c("hold_position", "striped"),
+      latex_options = c("HOLD_position", "striped"),
       full_width = full_width,
       font_size = font_size,
       stripe_color = "#fbfaf7"
@@ -125,7 +125,6 @@ highlight_wemby_row <- function(tbl, df, name_col = "Player") {
 # Hand-entered leaderboards from Stathead screenshots
 # ------------------------------------------------------------
 
-
 # ------------------------------------------------------------
 # Wembanyama playoff game log
 # ------------------------------------------------------------
@@ -150,7 +149,7 @@ wemby_game_log <- tribble(
   "2026-05-22", "OKC Game 3", "L", "39:09", 26, 4, 3, 1, 2, 2, 20.4, "Home loss",
   "2026-05-24", "OKC Game 4", "W", "31:02", 33, 8, 5, 2, 3, 4, 28.0, "Response game to tie series 2-2",
   "2026-05-26", "OKC Game 5", "L", "37:38", 20, 6, 1, 2, 3, 2, 15.3, "Game 5 road loss",
-  "2026-05-28", "OKC Game 6", "TBD", "35:00", NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, "Pending verified box score"
+  "2026-05-28", "OKC Game 6", "W", "28:00", 28, 10, 2, 2, 3, 3, 24.4, "Game 6 response to force Game 7"
 ) %>%
   mutate(
     Date = as.Date(Date),
@@ -206,7 +205,7 @@ wemby_okc_games <- wemby_game_log %>%
   )
 
 signature_games_tbl <- wemby_game_log %>%
-  filter(Round_Opp %in% c("POR Game 1", "POR Game 4", "MIN Game 1", "MIN Game 3", "OKC Game 1", "OKC Game 4")) %>%
+  filter(Round_Opp %in% c("POR Game 1", "POR Game 4", "MIN Game 1", "MIN Game 3", "OKC Game 1", "OKC Game 4", "OKC Game 6")) %>%
   transmute(
     Opponent = Round_Opp,
     Line = case_when(
@@ -217,6 +216,12 @@ signature_games_tbl <- wemby_game_log %>%
     `Why It Mattered` = Note
   )
 
+wemby_series_tbl <- tribble(
+  ~Series, ~Games, ~Record, ~`PTS / REB / AST`, ~`STL + BLK`, ~Signature,
+  "Round 1 vs Portland", "3 full games", "3-1", "26.3 / 10.3 / 2.3", "6.7", "35-point debut; defensive closeout after injury scare",
+  "Round 2 vs Minnesota", "5 full games", "4-2", "23.2 / 13.6 / 3.0", "5.2", "12-block playoff record; 39/15/5 takeover",
+  "WCF vs Oklahoma City", "6 full games", "3-3", "28.2 / 11.5 / 3.3", "5.0", "41/24, 33 to even the series, 28/10 to force Game 7"
+)
 
 first_playoff_runs <- tibble::tibble(
   Player = c(
@@ -274,7 +279,7 @@ first_playoff_runs <- tibble::tibble(
     "Lost R1",
     "Lost R1",
     "Lost R1",
-    "OKC leads 3-2 in WCF"
+    "Series tied 3-3 in WCF"
   ),
   Context = c(
   "Below-.500 roster around a rookie star",
@@ -359,12 +364,9 @@ youngest_40_playoff <- tribble(
 
 Victor Wembanyama’s playoff run is forcing a hard-to-address question earlier than expected.
 
-The stat lines are already historic: 35 in his playoff debut, 39 against the defense that had just slowed the 3x MVP, 41/24 in a Conference Finals debut, and now multiple signature games against the defending champions.
+The stat lines are already historic: 35 in his playoff debut, 39 against the defense that had just slowed the 3x MVP, 41/24 in a Conference Finals debut, and multiple signature games against the defending champions.
 
 But the numbers only tell part of the story. The bigger question is why this run is different from the usual young-superstar breakout.
-
-This report is an attempt to contextualize what we’re actually watching.
-
 
 # The Run So Far
 
@@ -376,7 +378,7 @@ run_snapshot_tbl <- tibble(
   APG = fmt_num(wemby_apg, 1),
   BPG = fmt_num(wemby_bpg, 1),
   `STL + BLK` = fmt_num(wemby_stocks, 1),
-  `Game Score` = fmt_num(wemby_summary$GmSc, 1)
+  `TS%` = fmt_num(64.4)
 )
 
 style_kable(
@@ -390,8 +392,6 @@ style_kable(
 ```
 
 The two early-exit games remain part of the full playoff record, but the primary run averages use games where Wembanyama played at least 20 minutes.
-
-
 
 # First Playoff Runs Matter 
 
@@ -473,19 +473,19 @@ style_kable(
   column_spec(4, bold = TRUE)
 ```
 
-The defensive impact is his superpower, and it goes far beyond blocks.
+Wembanyama's defensive impact goes far beyond blocks.
 
-With Wembanyama on the floor, opponents' entire gameplan shifts. Rim attempts fall dramatically, finishing efficiency drops, and overall shot quality deteriorates. Opponents are shooting nearly 8 percentage points worse on two-point attempts and over 10 percentage points worse on long midrange shots.
+With him on the floor, opponents' entire gameplan shifts. Rim attempts fall, finishing efficiency drops, and San Antonio allows 9.2 fewer points per 100 possessions. Opponents are shooting nearly eight percentage points worse on two-point attempts and over 10 percentage points worse on long midrange shots.
 
 # Offense: Still Developing
 
 ```{r shot-diet, results = 'asis'}
 wemby_shot_profile <- tribble(
   ~Zone, ~FGM, ~FGA, ~`FG%`, ~`eFG%`, ~`AST%`, ~`UAST%`,
-  "Restricted Area", 69, 90, "76.7%", "76.7%", "59.4%", "40.6%",
-  "Paint (Non-RA)", 14, 32, "43.8%", "43.8%", "64.3%", "35.7%",
-  "Midrange", 5, 24, "20.8%", "20.8%", "60.0%", "40.0%",
-  "3PT", 22, 61, "36.1%", "54.1%", "77.3%", "22.7%"
+  "Restricted Area", 72, 96, "75.0%", "75.0%", "59.7%", "40.3%",
+  "Paint (Non-RA)", 15, 35, "42.9%", "42.9%", "66.7%", "33.3%",
+  "Midrange", 5, 25, "20.0%", "20.0%", "60.0%", "40.0%",
+  "3PT", 22, 65, "33.8%", "50.8%", "77.3%", "22.7%"
 )
 
 style_kable(
@@ -500,32 +500,34 @@ style_kable(
 
 Wembanyama’s offense is still a little clunky. That might be the scariest part.
 
-At the rim, he is already overwhelming: 76.7% in the restricted area on 6.5 attempts per game. And it is not just spoon-fed finishing. Over 40% of his makes at the rim have been unassisted, which is absurd self-creation for a 7-foot-5 player.
+At the rim, he is already overwhelming: 75.0% in the restricted area on 96 attempts. And it is not just spoon-fed finishing. Over 40% of his makes at the rim have been unassisted, which is absurd self-creation for a 7-foot-5 player.
 
-The jumper is still inconsistent. The midrange has mostly clanked, even when he gets to his fadeaway cleanly. On the other hand, the three-point volume has been a real strength: 4.4 attempts per game at 36.1%, with enough touch and range to pull defenses beyond the paint.
+The jumper is still inconsistent. The midrange has mostly clanked, even when he gets to his fadeaway cleanly. The three-point shot has cooled as the run has gone on, now sitting at 33.8% on 65 attempts, but the volume and range still force defenses to guard him well beyond the paint.
 
 Some possessions are as simple as throwing it up and trusting Wembanyama is somewhere near the rim. Others come from teammates shooting with the confidence that he is waiting behind the play to clean misses up.
 
-# Signature Performances 
+# How the Run Built
 
-```{r okc-series-table, results='asis'}
-# ---- Signature playoff performances ----
+```{r series-by-series-table, results='asis'}
+# ---- Series-level run summary ----
 style_kable(
-  signature_games_tbl,
-  "Wembanyama signature playoff performances",
-  align = "lcl",
-  font_size = 8.3
+  wemby_series_tbl,
+  "Wembanyama's playoff run by series",
+  align = "lccccl",
+  font_size = 7.9
 ) %>%
-  column_spec(1, bold = TRUE) %>%
-  column_spec(2, bold = TRUE) %>%
-  column_spec(3, width = "6cm")
+  column_spec(1, bold = TRUE, width = "3.1cm") %>%
+  column_spec(4, bold = TRUE) %>%
+  column_spec(6, width = "5.8cm")
 ```
 
-His emphatic 41/24 against Oklahoma City will be the game people remember, but it was not the first time Wembanyama declared himself this run.
+The 41/24 against Oklahoma City will be the game people remember, but it was not the first time Wembanyama put his stamp on this run.
 
-He opened the playoffs with 35. After the early injury scare, he came back and crushed whatever hope Portland had left. Against Minnesota, he set the all-time playoff blocks record with 12, then took hold of the series two games later with 39 points, 15 rebounds, and 5 blocks. By Oklahoma City, the expectations and pressure had never been higher. He answered with 41 and 24 in Game 1, including a career-defining shot, then followed it with 33 in Game 4 to pull the series even.
+He scored 35 in his playoff debut against Portland, overcame an early injury scare, then closed the series with a defensive performance that erased whatever hope remained. Minnesota entered the second round with momentum after its first-round upset, and Wembanyama answered with the all-time playoff blocks record, 14 rebounds per game for the series, and a 39/15/5 takeover two games later.
 
-That is the difference between flashes and the beginning of something larger. Every round has raised the pressure, and every round has produced another game that feels impossible to fully contextualize for a player this young.
+Oklahoma City has been the ultimate test. Against the defending champs, fresh off two straight sweeps, 64 wins, and led by the 2x MVP, Wemby opened the series with 41 and 24, answered with 33 to pull San Antonio even after falling behind 2-1, then showed out when they needed him most with 28 and 10 to force a Game 7.
+
+Every series has demanded MVP-level production from Wembanyama. Each round has made that job harder, and he continues to deliver.
 
 # Why The Run Already Matters Historically
 
@@ -638,16 +640,16 @@ The 41/24 game put Wembanyama in old-school big-man company, the 12-block game p
 ```{r spurs-support-table, results='asis'}
 spurs_support_tbl <- tribble(
   ~Player, ~Age, ~Role, ~MPG, ~PPG, ~RPG, ~APG, ~`TOV/G`, ~`TS%`,
-  "Stephon Castle", 21, "Secondary creator", 33.4, 19.2, 4.9, 6.6, 3.7, "60.2%",
-  "De'Aaron Fox", 28, "Lead guard", 32.9, 18.0, 4.2, 5.8, 2.0, "54.1%",
-  "Devin Vassell", 25, "Spacing / wing scoring", 34.3, 13.7, 5.1, 2.6, 1.1, "56.1%",
-  "Dylan Harper", 19, "Young scoring guard", 25.7, 13.3, 5.1, 2.5, 1.5, "61.4%",
-  "Julian Champagnie", 24, "Connector / spacing wing", 30.3, 10.1, 5.6, 1.5, 0.3, "60.0%"
+  "Stephon Castle", 21, "Secondary creator", 33.3, 19.4, 4.9, 6.7, 3.5, "61.6%",
+  "De'Aaron Fox", 28, "Lead guard", 32.4, 16.5, 4.2, 6.0, 1.8, "51.0%",
+  "Devin Vassell", 25, "Spacing / wing scoring", 33.9, 13.1, 4.8, 2.6, 1.1, "55.4%",
+  "Dylan Harper", 19, "Young scoring guard", 25.4, 13.1, 5.2, 2.6, 1.6, "62.1%",
+  "Julian Champagnie", 24, "Connector / spacing wing", 30.0, 10.8, 5.8, 1.5, 0.4, "60.9%"
 )
 
 style_kable(
   spurs_support_tbl,
-  "San Antonio's main playoff support around Wembanyama",
+  "San Antonio's main playoff support around Wembanyama through Game 6 through Game 6",
   align = "lclcccccc",
   font_size = 8.0
 ) %>%
@@ -660,18 +662,14 @@ There is an obvious caveat: Wembanyama has help.
 
 NBA history is not built by isolated players. Magic had Kareem. Duncan had David Robinson and a complete Spurs infrastructure. Kobe entered alongside Shaq. Even Jordan and LeBron needed the right roster construction before championships followed.
 
-The Spurs have real help around Wembanyama, too. Castle has played like a legitimate two-way cornerstone, Fox gives them a veteran creator, and Vassell, Harper, and Champagnie provide enough shooting, length, and athleticism to punish tilted defenses.
+The Spurs have real help around Wembanyama, too. Castle has played like a legitimate two-way cornerstone, Harper has supplied downhill pressure and timely scoring, and Vassell and Champagnie have consistently stretched defenses with their shooting. Fox has been less consistent offensively than expected, but his ability to handle creation duties still gives San Antonio another source of ball pressure.
 
-But situation does not explain everything. Context can accelerate the platform. It cannot manufacture a 41-point, 24-rebound Conference Finals debut, then follow it with a 33-point response to even the series. It cannot make a player control the game defensively every second he is on the floor. It cannot create the feeling that the biggest player on the floor is also the player most comfortable deciding the game from 30 feet.
+But situation does not explain everything. The Spurs have enough talent around Wembanyama to make this run possible, but he is the reason it has become historic.
 
 # Closing
 
-Maybe this becomes a historic run inside a merely great career. Maybe the Spurs’ roster context makes the timeline look clearer than it actually is. Maybe injuries, regression, matchup variance, or expectation interrupt what feels inevitable right now.
+Maybe this remains a historic run inside a merely great career. Maybe the Spurs’ roster context makes the timeline look clearer than it actually is. Maybe injuries, regression, or matchup variance interrupt what feels inevitable right now. Basketball history is full of trajectories that looked obvious until they weren’t.
 
-That uncertainty matters. Basketball history is full of trajectories that looked obvious until they weren’t.
+With that said, Wembanyama is not just putting up numbers that are absurd for his age. He is the superstar leader behind one of the best teams on the planet at 22 years old, with a competitive edge that seems to run up and down the roster. San Antonio is no longer winning on the idea of what he could become. They are winning because of what he already is, arguably the best player in the world right now and already one of the most overwhelming defensive forces the game has ever seen.
 
-But Wembanyama is not just producing big numbers early. He is producing the kind of two-way impact that usually only exists in video games, hypotheticals, and broken score bugs.
-
-The signs usually show up before the certainty does. Right now, they are becoming hard to ignore.
-
-Calling him a GOAT trajectory player already would be premature. Dismissing the question is starting to feel just as irresponsible.
+For the past two decades, the GOAT debate has mostly revolved around two names. Wembanyama has not entered that arena yet, but this run has shown why the path is visible. The offense is already superstar-level, and the defensive gap he is creating looks unlike anything in the modern game. If that combination holds, his ceiling becomes something basketball has rarely, if ever, seen.
