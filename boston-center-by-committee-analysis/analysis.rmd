@@ -41,7 +41,9 @@ knitr::opts_chunk$set(
 )
 
 options(knitr.kable.NA = "")
+```
 
+```{r libraries}
 library(dplyr)
 library(tidyr)
 library(stringr)
@@ -54,42 +56,56 @@ library(scales)
 library(knitr)
 library(kableExtra)
 library(hoopR)
-
 library(showtext)
 library(sysfonts)
+library(ggrepel)
+library(ggimage)
+library(stringi)
+```
 
-# Fonts
-font_add_google("Inter", "inter")
-showtext_auto()
+```{r constants-and-parameters}
+# Report parameters
+season_used <- params$season
+team_abbr <- params$team_abbr
+season_type_used <- params$season_type
+trade_date <- as.Date(params$trade_date)
+cache_dir <- params$cache_dir
+use_cache <- isTRUE(params$use_cache)
+center_names <- params$centers
+caption_line <- params$plot_caption
 
-# Celtics theme + palette
-BG        <- "#f6f4ef"
-TEXT_DARK <- "#141414"
-GRID      <- "#dedad3"
+# Theme constants
+bg_color   <- "#f6f4ef"
+text_dark  <- "#141414"
+grid_color <- "#dedad3"
 
-BOS_GREEN <- "#007A33"
-BOS_GOLD  <- "#BA9653"
-BOS_BLACK <- "#1D1D1B"
-BOS_GRAY  <- "#A8A8A8"
+# Celtics palette
+bos_green <- "#007A33"
+bos_gold  <- "#BA9653"
+bos_black <- "#1D1D1B"
+bos_gray  <- "#A8A8A8"
 
-pal <- c(
-  "Neemias Queta"  = BOS_GREEN,
-  "Luka Garza"     = BOS_GOLD,
-  "Nikola Vucevic" = BOS_BLACK
+center_palette <- c(
+  "Neemias Queta" = bos_green,
+  "Luka Garza" = bos_gold,
+  "Nikola Vucevic" = bos_black
 )
 
-CAPTION_LINE <- params$plot_caption
+font_add_google("Inter", "inter")
+showtext_auto()
+```
 
+```{r theme-and-table-helpers}
 theme_caleb_bos <- function() {
   theme_minimal(base_family = "inter") +
     theme(
-      plot.background  = element_rect(fill = BG, color = NA),
-      panel.background = element_rect(fill = BG, color = NA),
-      panel.grid.major = element_line(color = GRID, linewidth = 0.35),
+      plot.background  = element_rect(fill = bg_color, color = NA),
+      panel.background = element_rect(fill = bg_color, color = NA),
+      panel.grid.major = element_line(color = grid_color, linewidth = 0.35),
       panel.grid.minor = element_blank(),
-      plot.title       = element_text(size = 18, face = "bold", hjust = 0.5, color = TEXT_DARK),
+      plot.title       = element_text(size = 18, face = "bold", hjust = 0.5, color = text_dark),
       plot.subtitle    = element_text(size = 10, hjust = 0.5, color = "#2f2f2f", margin = margin(b = 8)),
-      axis.title       = element_text(size = 12, face = "bold", color = TEXT_DARK),
+      axis.title       = element_text(size = 12, face = "bold", color = text_dark),
       axis.text        = element_text(size = 10, color = "#333333"),
       plot.caption     = element_text(size = 8, color = "#6e6e6e", hjust = 1, margin = margin(t = 8)),
       plot.margin      = margin(10, 12, 14, 12),
@@ -97,20 +113,10 @@ theme_caleb_bos <- function() {
     )
 }
 
-# LaTeX escaping helper
-latex_escape <- function(x) {
-  if (is.null(x) || length(x) == 0) return(x)
-  x <- as.character(x)
-  x <- gsub("\\\\", "\\\\textbackslash{}", x)
-  x <- gsub("([{}_#$%&])", "\\\\\\1", x)
-  x <- gsub("~", "\\\\textasciitilde{}", x)
-  x <- gsub("\\^", "\\\\textasciicircum{}", x)
-  x
-}
-
-# Table helper
 kbl_pdf <- function(df, caption = NULL, digits = NULL, align = NULL, font_size = 9) {
-  if (!is.null(caption)) caption <- gsub("_", " ", caption, fixed = TRUE)
+  if (!is.null(caption)) {
+    caption <- gsub("_", " ", caption, fixed = TRUE)
+  }
 
   df2 <- df
   names(df2) <- gsub("_", " ", names(df2), fixed = TRUE)
@@ -129,28 +135,80 @@ kbl_pdf <- function(df, caption = NULL, digits = NULL, align = NULL, font_size =
 
   do.call(knitr::kable, k_args) %>%
     kableExtra::kable_styling(
-      latex_options = c("HOLD_position", "scale_down"),
+      latex_options = c("hold_position", "scale_down"),
       font_size = font_size
     )
 }
+```
 
+```{r utility-functions}
 to_num <- function(x) suppressWarnings(as.numeric(gsub("[^0-9.-]", "", as.character(x))))
 
 pct01 <- function(x) {
   x <- to_num(x)
   ifelse(is.na(x), NA_real_, ifelse(x > 1, x / 100, x))
 }
+
+first_df <- function(x) {
+  if (is.data.frame(x)) return(x)
+
+  if (is.list(x)) {
+    idx <- which(vapply(x, is.data.frame, logical(1)))
+    if (length(idx) > 0) return(x[[idx[1]]])
+  }
+
+  x
+}
+
+pick_col <- function(df, candidates) {
+  candidates <- candidates[candidates %in% names(df)]
+  if (length(candidates) == 0) return(NA_character_)
+  candidates[[1]]
+}
+
+name_key <- function(x) {
+  x2 <- iconv(x, from = "", to = "ASCII//TRANSLIT")
+  x2 <- ifelse(is.na(x2), x, x2)
+  str_squish(str_to_lower(x2))
+}
+
+parse_game_date <- function(x) {
+  x <- as.character(x)
+
+  is_iso <- stringr::str_detect(x, "^\\d{4}-\\d{2}-\\d{2}")
+  d <- rep(as.Date(NA), length(x))
+
+  if (any(is_iso)) {
+    d[is_iso] <- suppressWarnings(as.Date(substr(x[is_iso], 1, 10)))
+  }
+
+  not_iso <- !is_iso
+
+  if (any(not_iso)) {
+    d[not_iso] <- suppressWarnings(lubridate::mdy(x[not_iso]))
+    d_na <- is.na(d) & not_iso
+    if (any(d_na)) d[d_na] <- suppressWarnings(lubridate::mdy(gsub(",", "", x[d_na])))
+  }
+
+  d
+}
 ```
 
-```{r helpers, include=FALSE}
-# Caching
-dir.create(params$cache_dir, showWarnings = FALSE, recursive = TRUE)
+```{r cache-helpers}
+dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
 
-cache_path <- function(name) file.path(params$cache_dir, paste0(name, ".rds"))
+cache_path <- function(name) {
+  file.path(cache_dir, paste0(name, ".rds"))
+}
 
 read_cache <- function(name) {
-  p <- cache_path(name)
-  if (isTRUE(params$use_cache) && file.exists(p)) readRDS(p) else NULL
+  path <- cache_path(name)
+
+  if (use_cache && file.exists(path)) {
+    readRDS(path)
+  } else {
+    NULL
+  }
 }
 
 write_cache <- function(name, obj) {
@@ -161,55 +219,27 @@ write_cache <- function(name, obj) {
 get_or_pull <- function(name, pull_fn) {
   cached <- read_cache(name)
   if (!is.null(cached)) return(cached)
+
   out <- pull_fn()
   write_cache(name, out)
 }
+```
 
-# Some hoopR endpoints return a list of tables; grab the first data.frame.
-first_df <- function(x) {
-  if (is.data.frame(x)) return(x)
-  if (is.list(x)) {
-    idx <- which(vapply(x, is.data.frame, logical(1)))
-    if (length(idx) > 0) return(x[[idx[1]]])
-  }
-  x
-}
-
-pick_col <- function(df, candidates) {
-  candidates <- candidates[candidates %in% names(df)]
-  if (length(candidates) == 0) return(NA_character_)
-  candidates[[1]]
-}
-
-# ASCII-style name key to handle accents consistently.
-name_key <- function(x) {
-  x2 <- iconv(x, from = "", to = "ASCII//TRANSLIT")
-  x2 <- ifelse(is.na(x2), x, x2)
-  str_squish(str_to_lower(x2))
-}
-
+```{r nba-helper-functions}
 nba_team_id_from_abbr <- function(abbr) {
   abbr <- toupper(as.character(abbr))
 
-  teams_raw <- hoopR::nba_teams()
-  teams <- first_df(teams_raw)
+  teams <- hoopR::nba_teams() %>% first_df()
 
   if (!is.data.frame(teams) || nrow(teams) == 0) {
     stop("hoopR::nba_teams() returned no rows. Check NBA Stats connectivity.")
   }
 
-  abbr_col <- pick_col(teams, c(
-    "team_abbreviation", "abbreviation", "TEAM_ABBREVIATION", "ABBREVIATION"
-  ))
-  id_col <- pick_col(teams, c(
-    "team_id", "TEAM_ID", "id", "ID"
-  ))
+  abbr_col <- pick_col(teams, c("team_abbreviation", "abbreviation", "TEAM_ABBREVIATION", "ABBREVIATION"))
+  id_col <- pick_col(teams, c("team_id", "TEAM_ID", "id", "ID"))
 
   if (is.na(abbr_col) || is.na(id_col)) {
-    stop(paste0(
-      "nba_teams() columns not recognized. Found: ",
-      paste(names(teams), collapse = ", ")
-    ))
+    stop(paste0("nba_teams() columns not recognized. Found: ", paste(names(teams), collapse = ", ")))
   }
 
   out <- teams %>%
@@ -219,30 +249,25 @@ nba_team_id_from_abbr <- function(abbr) {
     unique()
 
   if (length(out) == 0) {
-    avail <- teams %>%
-      mutate(.abbr = toupper(as.character(.data[[abbr_col]]))) %>%
-      distinct(.abbr) %>%
-      arrange(.abbr) %>%
-      pull(.abbr)
-
-    stop(glue::glue(
-      "Could not find team id for abbr: {abbr}. Available abbreviations include: {paste(head(avail, 30), collapse = ', ')} ..."
-    ))
+    stop(glue("Could not find team id for abbr: {abbr}."))
   }
 
   as.integer(out[[1]])
 }
 
-resolve_player_ids <- function(names, season = params$season) {
+resolve_player_ids <- function(names, season = season_used) {
   cap <- get_or_pull(
     glue("commonallplayers_{season}"),
     function() hoopR::nba_commonallplayers(season = season, is_only_current_season = 0)
-  ) |> first_df()
+  ) %>%
+    first_df()
 
   nm_col <- pick_col(cap, c("DISPLAY_FIRST_LAST", "PLAYER_NAME", "FULL_NAME", "full_name"))
   id_col <- pick_col(cap, c("PERSON_ID", "PLAYER_ID", "player_id", "person_id"))
 
-  if (is.na(nm_col) || is.na(id_col)) stop("commonallplayers columns not recognized. Inspect with: names(cap)")
+  if (is.na(nm_col) || is.na(id_col)) {
+    stop("commonallplayers columns not recognized. Inspect with: names(cap)")
+  }
 
   cap2 <- cap %>%
     mutate(.nm = name_key(.data[[nm_col]])) %>%
@@ -257,7 +282,7 @@ resolve_player_ids <- function(names, season = params$season) {
     select(full_name, name_key, player_id, resolved_name)
 
   if (any(is.na(out$player_id))) {
-    idx <- get_or_pull("playerindex", function() hoopR::nba_playerindex()) |> first_df()
+    idx <- get_or_pull("playerindex", function() hoopR::nba_playerindex()) %>% first_df()
     idx_nm <- pick_col(idx, c("PLAYER_NAME", "DISPLAY_FIRST_LAST", "FULL_NAME", "full_name"))
     idx_id <- pick_col(idx, c("PERSON_ID", "PLAYER_ID", "player_id", "person_id"))
 
@@ -279,58 +304,6 @@ resolve_player_ids <- function(names, season = params$season) {
   out
 }
 
-parse_game_date <- function(x) {
-  x <- as.character(x)
-
-  is_iso <- stringr::str_detect(x, "^\\d{4}-\\d{2}-\\d{2}")
-  d <- rep(as.Date(NA), length(x))
-  if (any(is_iso)) d[is_iso] <- suppressWarnings(as.Date(substr(x[is_iso], 1, 10)))
-
-  not_iso <- !is_iso
-  if (any(not_iso)) {
-    d[not_iso] <- suppressWarnings(lubridate::mdy(x[not_iso]))
-    d_na <- is.na(d) & not_iso
-    if (any(d_na)) d[d_na] <- suppressWarnings(lubridate::mdy(gsub(",", "", x[d_na])))
-  }
-
-  d
-}
-```
-
-# Executive Summary
-
-This season, Boston has had to operate without its previous championship center infrastructure of Horford, Kornet, and Porziņģis, and without Tatum, who has yet to return after rupturing his Achilles. The response has been a center-by-committee approach where each big fills a distinct role. Neemias Queta anchors the interior with rim pressure, rebounding, and defense, Luka Garza provides spacing and offensive versatility, and trade-deadline acquisition Nikola Vučević adds a skilled, high-touch connector who stabilizes non-Queta minutes without changing Joe Mazzulla’s foundation.
-
-```{r pulls}
-team_id <- nba_team_id_from_abbr(params$team_abbr)
-
-center_ids <- resolve_player_ids(params$centers)
-
-team_gamelog <- get_or_pull(
-  glue("teamgamelog_{params$season}_{team_id}_{params$season_type}"),
-  function() hoopR::nba_teamgamelog(season = params$season, season_type = params$season_type, team_id = team_id)
-) |> first_df()
-
-player_gamelog <- get_or_pull(
-  glue("playergamelog_{params$season}_{team_id}_{params$season_type}"),
-  function() hoopR::nba_playergamelog(season = params$season, season_type = params$season_type, team_id = team_id)
-) |> first_df()
-
-team_pt_pass <- get_or_pull(
-  glue("teamdashptpass_{params$season}_{team_id}_{params$season_type}"),
-  function() hoopR::nba_teamdashptpass(season = params$season, season_type = params$season_type, team_id = team_id)
-) |> first_df()
-
-team_pt_reb <- get_or_pull(
-  glue("teamdashptreb_{params$season}_{team_id}_{params$season_type}"),
-  function() hoopR::nba_teamdashptreb(season = params$season, season_type = params$season_type, team_id = team_id)
-) |> first_df()
-
-team_pt_shots <- get_or_pull(
-  glue("teamdashptshots_{params$season}_{team_id}_{params$season_type}"),
-  function() hoopR::nba_teamdashptshots(season = params$season, season_type = params$season_type, team_id = team_id)
-) |> first_df()
-
 safe_pull <- function(expr, empty = tibble()) {
   tryCatch(
     expr,
@@ -340,36 +313,68 @@ safe_pull <- function(expr, empty = tibble()) {
     }
   )
 }
+```
+
+# Executive Summary
+
+This season, Boston has had to operate without its previous championship center infrastructure of Horford, Kornet, and Porziņģis, and without Tatum, who has yet to return after rupturing his Achilles. The response has been a center-by-committee approach where each big fills a distinct role. Neemias Queta anchors the interior with rim pressure, rebounding, and defense, Luka Garza provides spacing and offensive versatility, and trade-deadline acquisition Nikola Vučević adds a skilled, high-touch connector who stabilizes non-Queta minutes without changing Joe Mazzulla’s foundation.
+
+```{r nba-data-pulls}
+# Cached NBA Stats pulls. These may need existing cache files if NBA Stats/hoopR is unavailable.
+target_team_id <- nba_team_id_from_abbr(team_abbr)
+center_ids <- resolve_player_ids(center_names)
+
+team_gamelog <- get_or_pull(
+  glue("teamgamelog_{season_used}_{target_team_id}_{season_type_used}"),
+  function() hoopR::nba_teamgamelog(season = season_used, season_type = season_type_used, team_id = target_team_id)
+) %>%
+  first_df()
+
+player_gamelog <- get_or_pull(
+  glue("playergamelog_{season_used}_{target_team_id}_{season_type_used}"),
+  function() hoopR::nba_playergamelog(season = season_used, season_type = season_type_used, team_id = target_team_id)
+) %>%
+  first_df()
+
+team_pt_pass <- get_or_pull(
+  glue("teamdashptpass_{season_used}_{target_team_id}_{season_type_used}"),
+  function() hoopR::nba_teamdashptpass(season = season_used, season_type = season_type_used, team_id = target_team_id)
+) %>%
+  first_df()
+
+team_pt_reb <- get_or_pull(
+  glue("teamdashptreb_{season_used}_{target_team_id}_{season_type_used}"),
+  function() hoopR::nba_teamdashptreb(season = season_used, season_type = season_type_used, team_id = target_team_id)
+) %>%
+  first_df()
+
+team_pt_shots <- get_or_pull(
+  glue("teamdashptshots_{season_used}_{target_team_id}_{season_type_used}"),
+  function() hoopR::nba_teamdashptshots(season = season_used, season_type = season_type_used, team_id = target_team_id)
+) %>%
+  first_df()
 
 pull_player_pt <- function(player_id, which = c("pass", "reb", "shots")) {
   which <- match.arg(which)
-  nm <- glue("playerpt_{which}_{params$season}_{player_id}_{params$season_type}")
+  cache_key <- glue("playerpt_{which}_{season_used}_{player_id}_{season_type_used}")
 
-  get_or_pull(nm, function() {
+  get_or_pull(cache_key, function() {
     if (which == "pass") {
-      safe_pull(
-        hoopR::nba_playerdashptpass(season = params$season, season_type = params$season_type, player_id = player_id),
-        empty = tibble()
-      )
+      safe_pull(hoopR::nba_playerdashptpass(season = season_used, season_type = season_type_used, player_id = player_id), empty = tibble())
     } else if (which == "reb") {
-      safe_pull(
-        hoopR::nba_playerdashptreb(season = params$season, season_type = params$season_type, player_id = player_id),
-        empty = tibble()
-      )
+      safe_pull(hoopR::nba_playerdashptreb(season = season_used, season_type = season_type_used, player_id = player_id), empty = tibble())
     } else {
-      safe_pull(
-        hoopR::nba_playerdashptshots(season = params$season, season_type = params$season_type, player_id = player_id),
-        empty = tibble()
-      )
+      safe_pull(hoopR::nba_playerdashptshots(season = season_used, season_type = season_type_used, player_id = player_id), empty = tibble())
     }
-  }) |> first_df()
+  }) %>%
+    first_df()
 }
 
 center_pt <- center_ids %>%
   filter(!is.na(player_id)) %>%
   mutate(
-    pt_pass  = map(player_id, ~ pull_player_pt(.x, "pass")),
-    pt_reb   = map(player_id, ~ pull_player_pt(.x, "reb")),
+    pt_pass = map(player_id, ~ pull_player_pt(.x, "pass")),
+    pt_reb = map(player_id, ~ pull_player_pt(.x, "reb")),
     pt_shots = map(player_id, ~ pull_player_pt(.x, "shots"))
   )
 ```
@@ -388,10 +393,10 @@ Boston’s bet on Vučević was not to replace Queta, but to stabilize the non-Q
 
 ```{r center-overview}
 center_snapshot <- tibble::tribble(
-  ~PLAYER_NAME,       ~AGE, ~GP, ~GS, ~MPG, ~FG, ~FGA, ~FG_PCT, ~FG3, ~FG3A, ~FG3_PCT, ~ORB, ~DRB, ~TRB, ~AST, ~BLK, ~TOV, ~PTS,
-  "Neemias Queta",     26,   51,  50,  25.1, 4.1,  6.5,  0.639,   0.0,  0.1,   0.000,    3.0,  5.3,  8.3,  1.5,  1.3,  1.1,  9.7,
-  "Luka Garza",        27,   45,   4,  16.7, 2.8,  4.8,  0.583,   0.7,  1.6,   0.438,    2.4,  1.8,  4.2,  1.0,  0.5,  0.6,  7.8,
-  "Nikola Vucevic",    35,    3,   0,  26.0, 5.3, 11.0,  0.485,   1.7,  4.0,   0.417,    3.3,  6.3,  9.7,  2.3,  1.0,  2.7, 13.7
+  ~PLAYER_NAME, ~AGE, ~GP, ~GS, ~MPG, ~FG, ~FGA, ~FG_PCT, ~FG3, ~FG3A, ~FG3_PCT, ~ORB, ~DRB, ~TRB, ~AST, ~BLK, ~TOV, ~PTS,
+  "Neemias Queta", 26, 51, 50, 25.1, 4.1, 6.5, 0.639, 0.0, 0.1, 0.000, 3.0, 5.3, 8.3, 1.5, 1.3, 1.1, 9.7,
+  "Luka Garza", 27, 45, 4, 16.7, 2.8, 4.8, 0.583, 0.7, 1.6, 0.438, 2.4, 1.8, 4.2, 1.0, 0.5, 0.6, 7.8,
+  "Nikola Vucevic", 35, 3, 0, 26.0, 5.3, 11.0, 0.485, 1.7, 4.0, 0.417, 3.3, 6.3, 9.7, 2.3, 1.0, 2.7, 13.7
 )
 
 center_snapshot %>%
@@ -402,18 +407,17 @@ center_snapshot %>%
 ## Center-by-Committee Minutes Share (Pre vs. Post Vučević)
 
 ```{r committee-minutes-prepost}
-td <- as.Date(params$trade_date)
-
 roster <- get_or_pull(
-  glue("commonteamroster_{params$season}_{team_id}"),
-  function() hoopR::nba_commonteamroster(season = params$season, team_id = team_id)
-) |> first_df()
+  glue("commonteamroster_{season_used}_{target_team_id}"),
+  function() hoopR::nba_commonteamroster(season = season_used, team_id = target_team_id)
+) %>%
+  first_df()
 
 roster_nm <- pick_col(roster, c("PLAYER", "PLAYER_NAME", "DISPLAY_FIRST_LAST", "FULL_NAME"))
 roster_id <- pick_col(roster, c("PLAYER_ID", "PERSON_ID", "Player_ID"))
 if (is.na(roster_nm) || is.na(roster_id)) stop("Roster columns not recognized.")
 
-centers_have <- tibble::tibble(full_name = params$centers) %>%
+centers_have <- tibble(full_name = center_names) %>%
   mutate(name_key = name_key(full_name)) %>%
   left_join(
     roster %>% transmute(name_key = name_key(.data[[roster_nm]]), player_id = as.character(.data[[roster_id]])),
@@ -422,32 +426,37 @@ centers_have <- tibble::tibble(full_name = params$centers) %>%
   transmute(player = full_name, player_id = player_id) %>%
   filter(!is.na(player_id))
 
-pull_center_gamelog <- function(pid) {
+pull_center_gamelog <- function(player_id) {
   get_or_pull(
-    glue("playergamelog_{params$season}_{pid}_{params$season_type}"),
-    function() hoopR::nba_playergamelog(
-      season = params$season,
-      season_type = params$season_type,
-      player_id = pid
-    )
-  ) |> first_df()
+    glue("playergamelog_{season_used}_{player_id}_{season_type_used}"),
+    function() hoopR::nba_playergamelog(season = season_used, season_type = season_type_used, player_id = player_id)
+  ) %>% first_df()
 }
 
 center_games <- centers_have %>%
-  select(-player) %>%
-  mutate(gamelog = purrr::map2(player_id, centers_have$player, ~{
-    df <- pull_center_gamelog(.x)
-    if (!is.data.frame(df) || nrow(df) == 0) return(tibble())
+  transmute(
+    player_id = player_id,
+    player_name = player
+  ) %>%
+  mutate(
+    gamelog = map2(player_id, player_name, ~{
+      df <- pull_center_gamelog(.x)
 
-    df %>%
-      mutate(
-        player = .y,
-        game_date = parse_game_date(GAME_DATE),
-        split = dplyr::if_else(game_date < td, "Pre-Vucevic", "Post-Vucevic")
-      ) %>%
-      filter(!is.na(game_date))
-  })) %>%
-  tidyr::unnest(gamelog)
+      if (!is.data.frame(df) || nrow(df) == 0) {
+        return(tibble())
+      }
+
+      df %>%
+        mutate(
+          player = .y,
+          game_date = parse_game_date(GAME_DATE),
+          split = if_else(game_date < trade_date, "Pre-Vucevic", "Post-Vucevic")
+        ) %>%
+        filter(!is.na(game_date))
+    })
+  ) %>%
+  select(player_id, gamelog) %>%
+  unnest(gamelog, names_repair = "unique")
 
 out_base <- center_games %>%
   group_by(split, player) %>%
@@ -456,7 +465,7 @@ out_base <- center_games %>%
     minutes = sum(as.numeric(MIN), na.rm = TRUE),
     .groups = "drop"
   ) %>%
-  tidyr::complete(
+  complete(
     split = c("Pre-Vucevic", "Post-Vucevic"),
     player = unique(center_games$player),
     fill = list(gp = 0L, minutes = 0)
@@ -476,43 +485,31 @@ out2 <- out_base %>%
 
 out2_tbl <- out2 %>%
   mutate(
-    min_share = scales::percent(min_share, accuracy = 0.1),
+    min_share = percent(min_share, accuracy = 0.1),
     minutes = round(minutes, 0),
     gp = as.integer(gp)
   ) %>%
   arrange(split, desc(minutes)) %>%
   select(split, player, gp, minutes, min_share)
 
-kbl_pdf(
-  out2_tbl,
-  caption = glue::glue("Center minutes share (split at {params$trade_date})"),
-  digits = 0
-)
+kbl_pdf(out2_tbl, caption = glue("Center minutes share (split at {params$trade_date})"), digits = 0)
 
-split_lvls <- c("Pre-Vucevic", "Post-Vucevic")
-
-out2_plot <- out2 %>%
+out2 %>%
   mutate(
-    split = factor(split, levels = split_lvls),
+    split = factor(split, levels = c("Pre-Vucevic", "Post-Vucevic")),
     player = factor(player, levels = c("Neemias Queta", "Luka Garza", "Nikola Vucevic"))
-  )
-
-out2_plot %>%
+  ) %>%
   ggplot(aes(x = split, y = min_share, fill = player)) +
   geom_col(width = 0.7) +
-  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
-  scale_fill_manual(values = c(
-    "Neemias Queta" = BOS_GREEN,
-    "Luka Garza" = BOS_GOLD,
-    "Nikola Vucevic" = BOS_BLACK
-  )) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  scale_fill_manual(values = center_palette) +
   labs(
-    title = "Center minutes distribution (pre vs. post Vučević)",
+    title = "Center Minutes Distribution (Pre vs. Post Vučević)",
     subtitle = "Share of center minutes by split",
     x = NULL,
     y = "Share of center minutes",
     fill = NULL,
-    caption = CAPTION_LINE
+    caption = caption_line
   ) +
   theme_caleb_bos()
 ```
@@ -521,10 +518,10 @@ out2_plot %>%
 
 ```{r onoff-table}
 center_onoff_tbl <- tibble::tribble(
-  ~player,          ~min_on, ~off_on, ~def_on, ~net_on, ~min_off, ~off_off, ~def_off, ~net_off,
-  "Luka Garza",         749,   121.8,   116.2,    5.7,     1853,    120.8,    112.1,    8.8,
-  "Neemias Queta",      1280,  120.5,   108.9,   11.6,     1322,    121.7,    117.4,    4.4,
-  "Nikola Vučević",       78,  112.1,   106.5,    5.6,     2524,    121.4,    113.4,    8.0
+  ~player, ~min_on, ~off_on, ~def_on, ~net_on, ~min_off, ~off_off, ~def_off, ~net_off,
+  "Luka Garza", 749, 121.8, 116.2, 5.7, 1853, 120.8, 112.1, 8.8,
+  "Neemias Queta", 1280, 120.5, 108.9, 11.6, 1322, 121.7, 117.4, 4.4,
+  "Nikola Vučević", 78, 112.1, 106.5, 5.6, 2524, 121.4, 113.4, 8.0
 ) %>%
   mutate(
     off_delta = off_on - off_off,
@@ -540,12 +537,12 @@ center_onoff_tbl %>%
 center_onoff_tbl %>%
   mutate(player = reorder(player, net_delta)) %>%
   ggplot(aes(x = net_delta, y = player)) +
-  geom_segment(aes(x = 0, xend = net_delta, yend = player), color = BOS_GRAY, linewidth = 1) +
-  geom_point(size = 3, color = BOS_GREEN) +
+  geom_segment(aes(x = 0, xend = net_delta, yend = player), color = bos_gray, linewidth = 1) +
+  geom_point(size = 3, color = bos_green) +
   labs(
-    title = "Center on/off net rating",
+    title = "Center On/Off Net Rating",
     subtitle = "On-off net rating (Vučević is very low-sample)",
-    caption = CAPTION_LINE,
+    caption = caption_line,
     x = "Net rating (On - Off)",
     y = NULL
   ) +
@@ -555,9 +552,9 @@ center_onoff_tbl %>%
 ```{r onoff-mechanisms}
 center_mech_tbl <- tibble::tribble(
   ~player, ~off_ts_delta, ~off_tov_delta, ~off_orb_delta, ~def_ts_delta, ~def_tov_delta, ~def_orb_delta,
-  "Luka Garza",      -1.2,          0.1,           4.8,          2.2,         -1.6,         -2.4,
-  "Neemias Queta",   -0.7,         -0.4,          -0.1,         -4.1,          1.1,          0.3,
-  "Nikola Vučević",  -4.1,          0.7,          -0.3,         -2.9,          3.9,          0.0
+  "Luka Garza", -1.2, 0.1, 4.8, 2.2, -1.6, -2.4,
+  "Neemias Queta", -0.7, -0.4, -0.1, -4.1, 1.1, 0.3,
+  "Nikola Vučević", -4.1, 0.7, -0.3, -2.9, 3.9, 0.0
 )
 
 kbl_pdf(center_mech_tbl, caption = "On/off mechanism deltas", digits = 1)
@@ -570,66 +567,47 @@ Garza’s value shows up more on the offensive side, where Boston maintains effi
 # Comparative Strengths (Role Marker Separation)
 
 ```{r skill-separation, fig.cap="Center role markers (standardized within this 3-player group)."}
-library(ggrepel)
-library(ggimage)
-
-pal <- c(
-  "Neemias Queta"  = BOS_GREEN,
-  "Luka Garza"     = BOS_GOLD,
-  "Nikola Vucevic" = BOS_BLACK
-)
-
-players_idx <- hoopR::nba_playerindex() |> first_df()
+players_idx <- hoopR::nba_playerindex() %>% first_df()
 
 players_lkp <- players_idx %>%
-  dplyr::transmute(
+  transmute(
     personId = as.character(PERSON_ID),
-    displayName = str_squish(stringi::stri_trans_general(
-      paste(PLAYER_FIRST_NAME, PLAYER_LAST_NAME), "Latin-ASCII"
-    ))
+    displayName = str_squish(stringi::stri_trans_general(paste(PLAYER_FIRST_NAME, PLAYER_LAST_NAME), "Latin-ASCII"))
   ) %>%
-  dplyr::mutate(nm_key = name_key(displayName))
+  mutate(nm_key = name_key(displayName))
 
-centers_lkp <- tibble::tibble(player = params$centers) %>%
-  dplyr::mutate(nm_key = name_key(player)) %>%
-  dplyr::left_join(players_lkp, by = "nm_key") %>%
-  dplyr::mutate(
-    headshot = dplyr::case_when(
+centers_lkp <- tibble(player = center_names) %>%
+  mutate(nm_key = name_key(player)) %>%
+  left_join(players_lkp, by = "nm_key") %>%
+  mutate(
+    headshot = case_when(
       player == "Nikola Vucevic" ~ "https://cdn.nba.com/headshots/nba/latest/1040x760/202696.png",
-      TRUE ~ dplyr::if_else(
-        !is.na(personId),
-        paste0("https://cdn.nba.com/headshots/nba/latest/1040x760/", personId, ".png"),
-        NA_character_
-      )
+      TRUE ~ if_else(!is.na(personId), paste0("https://cdn.nba.com/headshots/nba/latest/1040x760/", personId, ".png"), NA_character_)
     )
   ) %>%
-  dplyr::select(player, personId, headshot)
-
-stopifnot(exists("center_snapshot"))
+  select(player, personId, headshot)
 
 skill_df <- center_snapshot %>%
-  dplyr::filter(PLAYER_NAME %in% params$centers) %>%
-  dplyr::mutate(
+  filter(PLAYER_NAME %in% center_names) %>%
+  mutate(
     player = as.character(PLAYER_NAME),
     mpg = as.numeric(MPG),
-    three_rate = dplyr::if_else(as.numeric(FGA) > 0, as.numeric(FG3A) / as.numeric(FGA), NA_real_),
+    three_rate = if_else(as.numeric(FGA) > 0, as.numeric(FG3A) / as.numeric(FGA), NA_real_),
     assists = as.numeric(AST),
     blocks = as.numeric(BLK),
     turnovers = as.numeric(TOV),
     points = as.numeric(PTS),
     oreb = as.numeric(ORB)
   ) %>%
-  dplyr::select(player, mpg, three_rate, assists, blocks, oreb, turnovers, points)
+  select(player, mpg, three_rate, assists, blocks, oreb, turnovers, points)
 
-skill_long2 <- skill_df %>%
-  tidyr::pivot_longer(-player, names_to = "metric", values_to = "value") %>%
-  dplyr::group_by(metric) %>%
-  dplyr::mutate(
-    z = (value - mean(value, na.rm = TRUE)) / stats::sd(value, na.rm = TRUE)
-  ) %>%
-  dplyr::ungroup() %>%
-  dplyr::mutate(
-    metric = dplyr::recode(metric,
+skill_long <- skill_df %>%
+  pivot_longer(-player, names_to = "metric", values_to = "value") %>%
+  group_by(metric) %>%
+  mutate(z = (value - mean(value, na.rm = TRUE)) / stats::sd(value, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(
+    metric = recode(metric,
       mpg = "Role size",
       three_rate = "Floor spacing",
       assists = "Playmaking hub",
@@ -638,60 +616,30 @@ skill_long2 <- skill_df %>%
       turnovers = "Usage burden",
       points = "Scoring load"
     ),
-    metric = factor(metric, levels = c(
-      "Floor spacing",
-      "Playmaking hub",
-      "Scoring load",
-      "O-Boards",
-      "Rim protection",
-      "Usage burden",
-      "Role size"
-    ))
+    metric = factor(metric, levels = c("Floor spacing", "Playmaking hub", "Scoring load", "O-Boards", "Rim protection", "Usage burden", "Role size"))
   ) %>%
-  dplyr::left_join(centers_lkp, by = "player") %>%
-  dplyr::mutate(
-    player_lab = vapply(player, function(x) tail(strsplit(x, " ")[[1]], 1), character(1))
-  )
+  left_join(centers_lkp, by = "player")
 
 xlim_pad <- 0.35
-x_min <- min(skill_long2$z, na.rm = TRUE) - xlim_pad
-x_max <- max(skill_long2$z, na.rm = TRUE) + xlim_pad
+x_min <- min(skill_long$z, na.rm = TRUE) - xlim_pad
+x_max <- max(skill_long$z, na.rm = TRUE) + xlim_pad
 
-ggplot(skill_long2, aes(x = z, y = metric)) +
-  geom_vline(xintercept = 0, linewidth = 0.8, linetype = "dashed", color = BOS_GRAY) +
-  ggimage::geom_image(
-    aes(image = headshot),
-    size = 0.1,
-    by = "width",
-    vjust = 0.5,
-    na.rm = TRUE
-  ) +
-  scale_color_manual(values = pal) +
+ggplot(skill_long, aes(x = z, y = metric)) +
+  geom_vline(xintercept = 0, linewidth = 0.8, linetype = "dashed", color = bos_gray) +
+  ggimage::geom_image(aes(image = headshot), size = 0.1, by = "width", vjust = 0.5, na.rm = TRUE) +
+  scale_color_manual(values = center_palette) +
   coord_cartesian(xlim = c(x_min, x_max)) +
-  annotate(
-    "text",
-    x = x_min, y = levels(skill_long2$metric)[1],
-    label = "Less of this role", hjust = 0, vjust = 5,
-    size = 3, family = "inter", color = "#4a4a4a"
-  ) +
-  annotate(
-    "text",
-    x = x_max, y = levels(skill_long2$metric)[1],
-    label = "More of this role", hjust = 1, vjust = 5,
-    size = 3, family = "inter", color = "#4a4a4a"
-  ) +
+  annotate("text", x = x_min, y = levels(skill_long$metric)[1], label = "Less of this role", hjust = 0, vjust = 5, size = 3, family = "inter", color = "#4a4a4a") +
+  annotate("text", x = x_max, y = levels(skill_long$metric)[1], label = "More of this role", hjust = 1, vjust = 5, size = 3, family = "inter", color = "#4a4a4a") +
   labs(
-    title = "Non-overlapping skillsets",
+    title = "Non-overlapping Skillsets",
     subtitle = "Standardized within the Celtics' center committee (who covers which job)",
     x = "Standardized within-group value (z-score)",
     y = NULL,
-    caption = CAPTION_LINE
+    caption = caption_line
   ) +
   theme_caleb_bos() +
-  theme(
-    legend.position = "none",
-    panel.grid.minor = element_blank()
-  )
+  theme(legend.position = "none", panel.grid.minor = element_blank())
 ```
 
 Each center covers a different job. Queta carries the defensive and interior workload, Garza keeps lineups functional with spacing and offensive feel, and Vučević adds a higher-usage offensive hub with real scoring punch. The result is full role coverage across the position without forcing Boston to compromise how it plays.
@@ -701,20 +649,18 @@ Each center covers a different job. Queta carries the defensive and interior wor
 ## Shot Profile + Rebounding Stability (Pre vs. Post)
 
 ```{r system-preservation-teamgamelog}
-td <- as.Date(params$trade_date)
-
-tg <- team_gamelog %>%
+team_games_clean <- team_gamelog %>%
   mutate(
     game_date = parse_game_date(GAME_DATE),
-    split = if_else(game_date < td, "Pre-Vučević", "Post-Vučević"),
-    FGA  = suppressWarnings(as.numeric(FGA)),
+    split = if_else(game_date < trade_date, "Pre-Vučević", "Post-Vučević"),
+    FGA = suppressWarnings(as.numeric(FGA)),
     FG3A = suppressWarnings(as.numeric(FG3A)),
     OREB = suppressWarnings(as.numeric(OREB)),
     DREB = suppressWarnings(as.numeric(DREB))
   ) %>%
   filter(!is.na(game_date))
 
-team_rates <- tg %>%
+team_rates <- team_games_clean %>%
   mutate(
     threepa_rate = if_else(!is.na(FGA) & FGA > 0, FG3A / FGA, NA_real_),
     oreb_rate = if_else(!is.na(OREB + DREB) & (OREB + DREB) > 0, OREB / (OREB + DREB), NA_real_)
@@ -735,12 +681,12 @@ team_rates_long <- team_rates %>%
   mutate(metric = recode(metric, threepa_rate = "3PA rate", oreb_rate = "OREB rate"))
 
 ggplot(team_rates_long, aes(x = split, y = value)) +
-  geom_col(fill = BOS_GREEN, alpha = 0.90, width = 0.7) +
+  geom_col(fill = bos_green, alpha = 0.90, width = 0.7) +
   facet_wrap(~ metric, scales = "free_y") +
-  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
   labs(
-    title = "Team identity proxies (pre vs. post)",
-    caption = CAPTION_LINE,
+    title = "Team Identity Proxies (Pre vs. Post)",
+    caption = caption_line,
     x = NULL,
     y = NULL
   ) +
@@ -763,11 +709,7 @@ orb_rank_tbl <- tibble::tribble(
   7, "Charlotte", 12.4
 )
 
-kbl_pdf(
-  orb_rank_tbl,
-  caption = "Team offensive rebounding leaders",
-  digits = 1
-)
+kbl_pdf(orb_rank_tbl, caption = "Team offensive rebounding leaders", digits = 1)
 
 drb_rank_tbl <- tibble::tribble(
   ~Rank, ~Team, ~DRB,
@@ -779,11 +721,7 @@ drb_rank_tbl <- tibble::tribble(
   15, "Milwaukee", 32.5
 )
 
-kbl_pdf(
-  drb_rank_tbl,
-  caption = "Team defensive rebounding rankings",
-  digits = 1
-)
+kbl_pdf(drb_rank_tbl, caption = "Team defensive rebounding rankings", digits = 1)
 ```
 
 Vučević brings a strong rebounding presence, with elite size, strength, and veteran positioning on the glass. Boston has already stabilized in that area after a slow start, and his addition only reinforces that advantage.
@@ -796,11 +734,7 @@ ast_rank_tbl <- tibble::tribble(
   30, "Clippers", 23.5
 )
 
-kbl_pdf(
-  ast_rank_tbl,
-  caption = "Team assist rankings",
-  digits = 1
-)
+kbl_pdf(ast_rank_tbl, caption = "Team assist rankings", digits = 1)
 ```
 
 Despite consistently creating open shots, Boston ranks in the bottom three in assists per game, reflecting its spacing-driven offense. Vučević adds needed playmaking, averaging 4.5 assists per 100 possessions compared to roughly 3 per 100 from Garza at 3.1 and Queta at 3. He is comfortable facilitating from the short roll and acting as a connector, helping keep possessions organized without disrupting Boston’s spacing.
@@ -813,10 +747,7 @@ Offensively, Tatum also gives Boston a primary creator that elevates the effecti
 
 # Conclusion
 
-* Boston addressed the center position through complementary roles rather than a single replacement.
-
-* Queta anchored the defense and rebounding, Garza preserved spacing and offensive flow, and Vučević adds a higher-skill offensive connector.
-
-* Team identity remained intact, with Boston maintaining its spacing, rebounding, and efficiency profile with any of their centers.
-
-* Tatum’s potential return further strengthens the team by improving rebounding, defensive versatility, and offensive creation.
+- Boston addressed the center position through complementary roles rather than a single replacement.
+- Queta anchored the defense and rebounding, Garza preserved spacing and offensive flow, and Vučević adds a higher-skill offensive connector.
+- Team identity remained intact, with Boston maintaining its spacing, rebounding, and efficiency profile with any of their centers.
+- Tatum’s potential return further strengthens the team by improving rebounding, defensive versatility, and offensive creation.
