@@ -10,6 +10,7 @@ params:
   season_label: "2025–26"
   player_name: "Rudy Gobert"
   team_label: "Minnesota Timberwolves"
+  finishing_path: "data/raw/RudyGobert_RimAndPaintFinishing_Career.xlsx"
 header-includes:
   - \usepackage{float}
   - \floatplacement{figure}{H}
@@ -28,6 +29,12 @@ library(readxl)
 
 library(stringr)
 library(forcats)
+
+# Parameters
+SEASON_LABEL <- params$season_label
+PLAYER_NAME <- params$player_name
+TEAM_LABEL <- params$team_label
+FINISHING_PATH <- params$finishing_path
 
 # Timberwolves palette
 MIN_NAVY  <- "#0C2340"
@@ -84,7 +91,7 @@ as_rate01 <- function(x)
   ifelse(!is.na(z) & z > 1, z / 100, z)
 }
 
-# LaTex Table Helpers
+# LaTeX table helpers
 
 # kable wrapper for PDF: replaces underscores in column names for nicer output
 kbl_pdf <- function(df)
@@ -126,7 +133,14 @@ Offensively his role hasn’t changed, but he’s finishing at a career-best lev
 # Load & tidy Rudy Gobert rim/paint finishing (career by season)
 
 # Inputs
-fin_path <- "C:/Users/caleb/Downloads/RudyGobert_RimAndPaintFinishing_Career.xlsx"
+fin_path <- FINISHING_PATH
+
+if (!file.exists(fin_path)) {
+  stop(
+    "Finishing file not found. Place RudyGobert_RimAndPaintFinishing_Career.xlsx in data/raw/ ",
+    "or update params$finishing_path."
+  )
+}
 
 # Read & standardize column names
 fin_raw <- readxl::read_excel(fin_path) %>%
@@ -169,20 +183,24 @@ fin_long2 <- fin_long %>%
       TRUE                                      ~ NA_character_
     ),
     measure = dplyr::case_when(
-      stringr::str_detect(metric, "fga$")                    ~ "FGA",
-      stringr::str_detect(metric, "fgm$")                    ~ "FGM",
-      stringr::str_detect(metric, "fg%|fg_percent|fg$")      ~ "FG%",
-      TRUE                                            ~ NA_character_
+      stringr::str_detect(metric, "fga$") ~ "FGA",
+      stringr::str_detect(metric, "fgm$") ~ "FGM",
+      stringr::str_detect(metric, "fg%|fg_percent|fg$") ~ "FG%",
+      TRUE ~ NA_character_
     ),
-    # Keep FG% in 0–1 scale
-    fg_pct = dplyr::if_else(measure == "FG%", as_rate01(value), 
-                            NA_real_)
+    # Keep FG% in 0–1 scale.
+    fg_pct = dplyr::if_else(measure == "FG%", as_rate01(value), NA_real_)
   ) %>%
   dplyr::filter(
     !is.na(zone),
     zone %in% c("Restricted Area", "Paint (Non-RA)"),
     measure %in% c("FGA", "FGM", "FG%")
   )
+
+fin_fg <- fin_long2 %>%
+  filter(measure == "FG%") %>%
+  select(season, zone, fg_pct) %>%
+  arrange(season, zone)
 ```
 
 ## Career Finishing Snapshot
@@ -319,6 +337,7 @@ tbl_float(
 ## DFG% Impact
 ```{r dfg-impact, results='asis'}
 # Defensive FG% Impact Leaderboards
+# These are manually entered snapshots from NBA.com tracking tables.
 
 # Helpers
 
