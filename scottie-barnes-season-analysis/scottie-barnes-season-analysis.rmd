@@ -13,6 +13,7 @@ params:
   min_minutes: 500
   viz_credit: "@Rambzee_"
   data_credit: "NBA.com"
+  raw_data_dir: "data/raw"
 header-includes:
   - \usepackage{float}
   - \floatplacement{figure}{H}
@@ -113,27 +114,46 @@ cap_line <- function(data = params$data_credit, viz = params$viz_credit) {
 }
 
 # -------------------------
-# File paths (uploaded to this chat)
+# File paths
 # -------------------------
-path_team_drtg     <- "NBA Teams DRTG Leaderboard.xlsx"
-path_onball_def    <- "Scottie Barnes On-Ball Defense.xlsx"
-path_playtypes     <- "Scottie Barnes Playtypes (2025-26).xlsx"
-path_deflections   <- "NBA Deflections Per Game Leaders (Feb 20, 2026).xlsx"
-path_stocks        <- "NBA Stocks Per Game Rankings.xlsx"
-path_counting      <- "Scottie Barnes Counting Stats (2021-22 -_ 2025-26).xlsx"
-path_shot_zones    <- "Scottie Barnes Shot Zones - Last 3 Seasons.xlsx"
+# These workbooks were exported from NBA.com tables and are not included
+# in the public repo by default. Store them in params$raw_data_dir or
+# update the paths below before rendering.
+raw_data_dir <- params$raw_data_dir
+
+path_team_drtg     <- file.path(raw_data_dir, "NBA Teams DRTG Leaderboard.xlsx")
+path_onball_def    <- file.path(raw_data_dir, "Scottie Barnes On-Ball Defense.xlsx")
+path_playtypes     <- file.path(raw_data_dir, "Scottie Barnes Playtypes (2025-26).xlsx")
+path_deflections   <- file.path(raw_data_dir, "NBA Deflections Per Game Leaders (Feb 20, 2026).xlsx")
+path_stocks        <- file.path(raw_data_dir, "NBA Stocks Per Game Rankings.xlsx")
+path_counting      <- file.path(raw_data_dir, "Scottie Barnes Counting Stats (2021-22 -_ 2025-26).xlsx")
+path_shot_zones    <- file.path(raw_data_dir, "Scottie Barnes Shot Zones - Last 3 Seasons.xlsx")
+path_def_playtypes <- file.path(raw_data_dir, "Scottie Barnes Defensive Playtypes (2025-26).xlsx")
+
+require_file <- function(path) {
+  if (!file.exists(path)) {
+    stop(
+      paste0(
+        "Required input file not found: ", path,
+        "\nThese files are NBA.com exports and are not included in the repo by default."
+      ),
+      call. = FALSE
+    )
+  }
+  path
+}
 ```
 
 # Executive Summary
 
-Scottie Barnes has long stood out for his rare blend of size, vision, and defensive versatility. While his scoring remains solid rather than dominant, his all-around skillset has always pointed toward elite two-way impact. This season, with Brandon Ingram being brought in to absorb offensive responsibility, Barnes has been able to shift more of his energy toward defense. The result has been a defining stretch where his activity, versatility, and disruption have powered the Raptor's rise into a top-five defensive unit.
+Scottie Barnes has long stood out for his rare blend of size, vision, and defensive versatility. While his scoring remains solid rather than dominant, his all-around skillset has always pointed toward elite two-way impact. This season, with Brandon Ingram being brought in to absorb offensive responsibility, Barnes has been able to shift more of his energy toward defense. The result has been a defining stretch where his activity, versatility, and disruption have powered the Raptors' rise into a top-five defensive unit.
 
 # Offense
 
 ## Passing is the engine
 
 ```{r load-counting}
-counting <- readxl::read_xlsx(path_counting) %>% janitor::clean_names()
+counting <- readxl::read_xlsx(require_file(path_counting)) %>% janitor::clean_names()
 
 count_keep <- counting %>%
   dplyr::select(
@@ -207,7 +227,7 @@ This season, Barnes has taken meaningful steps forward as an efficient scorer. H
 ## Playtypes and where his size creates advantages
 
 ```{r load-playtypes}
-pt <- readxl::read_xlsx(path_playtypes) %>% janitor::clean_names()
+pt <- readxl::read_xlsx(require_file(path_playtypes)) %>% janitor::clean_names()
 
 # keep only what matters for the write-up
 pt_keep <- pt %>%
@@ -236,7 +256,7 @@ Scoring has never been Barnes’ calling card, but he has shown he can reliably 
 ## Scoring context and shot zones
 
 ```{r load-shotzones}
-zones <- readxl::read_xlsx(path_shot_zones) %>% janitor::clean_names()
+zones <- readxl::read_xlsx(require_file(path_shot_zones)) %>% janitor::clean_names()
 
 kbl_pdf(zones, caption = "Scottie Barnes shot zones (last 3 seasons)")
 ```
@@ -278,8 +298,8 @@ Though he is not among the league’s elite in finishing or touch shots, Barnes 
 ## Event creation: stocks + deflections 
 
 ```{r load-event-data}
-stocks <- readxl::read_xlsx(path_stocks) %>% janitor::clean_names()
-defl   <- readxl::read_xlsx(path_deflections) %>% janitor::clean_names()
+stocks <- readxl::read_xlsx(require_file(path_stocks)) %>% janitor::clean_names()
+defl   <- readxl::read_xlsx(require_file(path_deflections)) %>% janitor::clean_names()
 ```
 
 ```{r stocks-table}
@@ -299,9 +319,7 @@ He ranks second in the league in stocks per game (2.9), trailing only Wembanyama
 ## On-ball defense: matchup workload + results
 
 ```{r load-onball}
-path_def_playtypes <- "Scottie Barnes Defensive Playtypes (2025-26).xlsx"
-
-def_pt_raw <- readxl::read_xlsx(path_def_playtypes) %>% janitor::clean_names()
+def_pt_raw <- readxl::read_xlsx(require_file(path_def_playtypes)) %>% janitor::clean_names()
 
 # helper: pick first existing col from a list
 pick1 <- function(df, candidates) {
@@ -362,7 +380,7 @@ Rim protection is not his primary role, but Barnes holds up well as a weakside h
 ## Team impact: fueling a top-five defense
 
 ```{r load-team-drtg}
-team_drtg <- readxl::read_xlsx(path_team_drtg) %>% janitor::clean_names()
+team_drtg <- readxl::read_xlsx(require_file(path_team_drtg)) %>% janitor::clean_names()
 ```
 
 ```{r team-drtg-table}
