@@ -14,33 +14,33 @@ Are the Pistons finally built well enough to survive without Cade Cunningham, an
 
 ## Data Sources
 
-NBA.com
-hoopR
+- NBA.com
+- hoopR
 
 ## Tools Used
 
-R
-tidyverse
-ggplot2
-R Markdown
-knitr
-hoopR
-janitor
-showtext / sysfonts
-lubridate
+- R
+- tidyverse
+- ggplot2
+- R Markdown
+- knitr
+- hoopR
+- janitor
+- showtext / sysfonts
+- lubridate
 
 ## Key Outputs
 
-Knitted PDF report
-Cleaned R Markdown analysis file
-Team profile with Cade in versus out table
-Points scored versus points allowed chart
-Style-shift chart comparing rebounds, assists, and turnovers
-Teammate production table in Cade-out games
-Jalen Duren top Cade-out games table
-Daniss Jenkins top Cade-out games table
-Best supporting-player Cade-out games table
-Manual game-log add-ins for missing or incomplete pulled games
+- Knitted PDF report
+- Cleaned R Markdown analysis file
+- Team profile with Cade in versus out table
+- Points scored versus points allowed chart
+- Style-shift chart comparing rebounds, assists, and turnovers
+- Teammate production table in Cade-out games
+- Jalen Duren top Cade-out games table
+- Daniss Jenkins top Cade-out games table
+- Best supporting-player Cade-out games table
+- Manual game-log add-ins for missing or incomplete pulled games
 
 ## Notes and Limitations
 
@@ -54,6 +54,6 @@ Because the report was built during an active season, player averages, team reco
 
 ## File Guide
 
-`analysis.Rmd` — source analysis file
-`analysis.pdf` — rendered report
-`README.md` — project overview
+- `analysis.Rmd` — source analysis file
+- `analysis.pdf` — rendered report
+- `README.md` — project overview
