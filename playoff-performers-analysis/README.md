@@ -57,8 +57,6 @@ For droppers, the analysis attempts to remove obvious role-loss cases by filteri
 - NBA.com
 - hoopR
 - Basketball Reference
-- Manually entered league true shooting context
-- Manually entered all-time playoff leaderboard tables
 
 ## Tools Used
 
