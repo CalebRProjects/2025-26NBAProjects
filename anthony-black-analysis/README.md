@@ -1,61 +1,81 @@
-# Overview
+# Anthony Black: Opportunity, Efficiency & Impact
 
-This project examines Anthony Black’s development through the lens of opportunity, efficiency, and impact during the 2025–26 season.
+## Overview
 
-With injuries forcing a larger role, Black has taken on more on-ball responsibility while increasing his scoring and maintaining solid efficiency. The key question is whether this jump reflects real growth or simply expanded opportunity.
+This project evaluates Anthony Black’s 2025-26 development with the Orlando Magic, focusing on how expanded opportunity, improved efficiency, transition value, defensive activity, and on/off impact have shaped his role.
 
-The analysis focuses on how his production is generated—breaking down playtypes, shot profile, defensive impact, and on/off results to understand what kind of player he is becoming and how that translates to winning.
+The analysis frames Black as a young guard whose value is clearest when he is attacking advantages rather than creating everything from a standstill. His scoring has grown into the 15-point-per-game range, but the stronger signal is how that production is being generated: transition, cuts, spot-ups, closeout attacks, improved rim finishing, and disruptive defense.
 
-# Purpose
+The project also identifies the main limitation in his offensive profile. Black has taken on more on-ball responsibility, but pick-and-roll ball-handler possessions remain inefficient relative to league average. His long-term value depends on whether he can keep improving as a creator while continuing to thrive in the advantage-based roles where he already adds value.
 
-The goal of this project is:
+## Main Question
 
-* Evaluate how Black’s role expansion has impacted his efficiency
+Has Anthony Black’s expanded role translated into real impact, and what parts of his game look most sustainable moving forward?
 
-* Identify where his offense is actually effective
+## Methodology
 
-* Track shot profile changes, especially finishing vs perimeter shooting
+This project uses NBA.com data exported into Excel files, then analyzed and presented in a rendered PDF report.
 
-* Analyze defensive impact across playtypes and disruption metrics
+The original R Markdown source file is not included in this repo. The repo is therefore structured around the final PDF report and the supporting data files rather than a fully reproducible source-code workflow.
 
-* Connect his individual growth to team-level impact
+The career snapshot section compares Black’s scoring, shooting efficiency, two-point percentage, free-throw percentage, and relative true shooting across his first three seasons.
 
-# Method & Data
+The role and skill section tracks year-to-year changes in assist-to-turnover ratio, usage rate, transition frequency, and potential assists. These indicators help show how Black’s role has expanded without completely breaking his decision-making profile.
 
-* NBA API (via hoopR) for game logs and career progression
+The offensive playtype section compares Black’s points per possession against league average across his highest-volume play types. This separates where his offense works best from where it still struggles. Transition, cuts, and spot-ups show positive value, while pick-and-roll ball-handler possessions remain the biggest limitation.
 
-* Usage, assist, and transition frequency trends
+The shot-zone section tracks field-goal percentage by zone across multiple seasons. The main focus is Black’s growth at the rim, his corner-three efficiency, and the continued weakness of non-rim paint attempts, midrange shots, and above-the-break threes.
 
-* Synergy playtype data (PPP vs league average)
+The defensive playtype section evaluates Black’s defensive workload and efficiency allowed by possession type. It shows that his toughest on-ball matchups can produce mixed results, but that his off-ball defense, screen navigation, and activity remain valuable.
 
-* Shot zone splits across seasons
+The disruption section uses deflections per game to place Black among the league’s highest-activity defenders.
 
-* Defensive playtype efficiency (PPP allowed)
+The impact section uses DataBallr on/off data with low-leverage possessions removed to evaluate whether Orlando performs better with Black on the floor.
 
-* Deflections leaderboard and on/off impact data
+## Data Sources
 
-# Why This Matters
+* NBA.com
+* DataBallr 
 
-**For Player Evaluation**
+## Tools Used
 
-Black’s efficiency is role-driven. His value comes in transition, cuts, and advantage situations—not as a primary creator.
+* R
+* R Markdown
+* ggplot2
+* tidyverse
+* knitr / kableExtra
+* NBA.com exported tables
+* DataBallr research data
 
-**For Offensive Role**
+## Key Outputs
 
-He is most effective attacking space and playing off others. On-ball creation, especially in pick-and-roll, remains the limiting factor.
+* Rendered PDF report
+* Career progression table
+* Usage and creation changes table
+* Offensive playtype PPP versus league average table
+* Offensive playtype PPP versus league average chart
+* Shot-zone trend table
+* Shot-zone FG% trend chart
+* Defensive playtype PPP allowed versus league average table
+* Defensive playtype PPP allowed chart
+* Deflections per game leaderboard
+* DataBallr on/off impact table
+* Final role and impact summary
 
-**For Skill Development**
+## Notes and Limitations
 
-The biggest growth area is finishing. His jump at the rim (see shot zones on page 4) is what’s driving improved efficiency, while perimeter shooting is still inconsistent.
+The original R Markdown file for this project is not included in the repo. The final PDF report is preserved, along with the supporting data files. Because of that, this repo should be treated as a report-first portfolio project rather than a fully reproducible code project.
 
-**For Defensive Impact**
+The data files referenced in the project come from NBA.com exports and DataBallr research. Some tables may have been cleaned or reformatted after export to make them easier to use in the report.
 
-His value shows up through activity and disruption. Even with mixed on-ball efficiency, his off-ball defense and deflections place him in a high-impact tier.
+The playtype and shot-zone sections are descriptive. They show where Black has been efficient or inefficient, but they do not fully capture lineup context, opponent quality, teammate availability, shot quality, or late-clock burden.
 
-**For Team Impact**
+The on/off data helps support the impact case, but it should not be treated as a complete estimate of individual value. Lineup combinations, role, opponent strength, and team context all affect those numbers.
 
-The on/off data supports the profile—Orlando performs better with him on the floor, driven largely by offensive stability and overall lineup fit.
+The main purpose of the project is to evaluate Black’s role development and identify where his production looks sustainable. It is not intended to be a full projection model or a definitive ranking of young guards.
 
-# Authors
+## File Guide
 
-Caleb Ramsey -- Statistics & Sports Media and Analytics (Virginia Tech)
+* `analysis.pdf` — final rendered report
+* `data/` — NBA.com and DataBallr data exports used to build the report
+* `README.md` — project overview
