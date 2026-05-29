@@ -19,8 +19,6 @@ header-includes:
   - \usepackage{float}
   - \floatplacement{figure}{H}
   - \usepackage[table]{xcolor}
-  - \usepackage{fontspec}
-  - \setmainfont{Inter}
 ---
 
 ```{r setup, include=FALSE}
@@ -45,13 +43,16 @@ library(glue)
 library(ggrepel)
 library(hoopR)
 library(readr)
+library(grid)
+library(magick)
+library(ggimage)
 library(readxl)
 library(lubridate)
 
 font_add_google("Inter", "inter")
 showtext_auto()
 
-# Jazz-style theme ---------------------------------------------------------
+# Theme --------------------------------------------------------------------
 
 BG <- "#f6f4ef"
 TEXT_DARK <- "#141414"
@@ -86,7 +87,7 @@ use_cache <- isTRUE(params$use_cache)
 cache_dir <- params$cache_dir
 dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
 
-# Cache helper -------------------------------------------------------------
+# Cache helpers ------------------------------------------------------------
 
 cached <- function(key, fn) {
   path <- file.path(cache_dir, paste0(key, ".rds"))
@@ -104,7 +105,7 @@ cached <- function(key, fn) {
   out
 }
 
-# Data helpers -------------------------------------------------------------
+# NBA data helpers ---------------------------------------------------------
 
 get_league_base <- function() {
   res <- hoopR::nba_leaguedashplayerstats(
@@ -138,7 +139,7 @@ get_league_adv <- function() {
   clean_names(df)
 }
 
-# Cached pulls -------------------------------------------------------------
+# Cached league pulls ------------------------------------------------------
 
 lg_base <- cached(
   paste0("lg_base_", season_used, "_", stype_used),
@@ -155,7 +156,8 @@ lg_adv <- cached(
 target_id <- lg_base %>%
   filter(player_name == target_name) %>%
   slice(1) %>%
-  pull(player_id)
+  pull(player_id) %>%
+  as.character()
 
 if (length(target_id) == 0 || is.na(target_id)) {
   stop("Could not find player_id for target_name in lg_base. Check params$player_name spelling.")
@@ -328,10 +330,6 @@ Rebounding is Nurkić’s most dependable contribution. Among players with 30+ g
 ## REB/AST unique value
 
 ```{r apg_rpg_quadrants_opaque_headshots, message=FALSE, warning=FALSE, dpi=180, fig.width=7.2, fig.height=5.4}
-library(grid)
-library(magick)
-library(ggimage)
-
 quad_df <- lg_base %>%
   mutate(
     gp = parse_number(gp),
@@ -348,10 +346,10 @@ x_ref <- as.numeric(quantile(quad_df$apg, 0.75, na.rm = TRUE))
 y_ref <- as.numeric(quantile(quad_df$rpg, 0.75, na.rm = TRUE))
 
 nurk_anchor <- quad_df %>%
-  filter(player_id == target_id)
+  filter(as.character(player_id) == target_id)
 
 others <- quad_df %>%
-  filter(player_id != target_id)
+  filter(as.character(player_id) != target_id)
 
 if (nrow(nurk_anchor) != 1) {
   stop("Nurk anchor not found or duplicated. Check gp filter and target_id.")
@@ -401,8 +399,8 @@ quad_df <- quad_df %>%
   ) %>%
   left_join(opaque_paths, by = "player_id")
 
-others <- quad_df %>% filter(player_id != target_id)
-nurk_anchor <- quad_df %>% filter(player_id == target_id)
+others <- quad_df %>% filter(as.character(player_id) != target_id)
+nurk_anchor <- quad_df %>% filter(as.character(player_id) == target_id)
 
 stopifnot(all(!is.na(quad_df$headshot_opaque)))
 
@@ -620,11 +618,11 @@ tab <- df_company %>%
     Player = player,
     Team = team,
     `DFGA / G` = sprintf("%.1f", dfga_pg),
-    `Diff%` = sprintf("%.1f", diff_pp),
+    `Diff (pp)` = sprintf("%.1f", diff_pp),
     Rank = rank
   )
 
-cap <- "Rim defense company (shots < 6 ft) | Centers only | Qualified: DFGA >= 2.5 | Metric: DFG Diff\\% (pp; lower = better)"
+cap <- "Rim defense company (shots < 6 ft) | Centers only | Qualified: DFGA >= 2.5 | Metric: DFG Diff (percentage points; lower = better)"
 
 kbl(
   tab,
