@@ -1,5 +1,5 @@
 ---
-title: "Jayson Tatum Has Been an Anomaly"
+title: "Jayson Tatum’s Return Opened the Celtics’ Next Chapter"
 author: "Caleb Ramsey"
 date: "`r format(Sys.Date(), '%B %d, %Y')`"
 output:
@@ -33,6 +33,7 @@ library(hoopR)
 library(janitor)
 library(lubridate)
 library(ggrepel)
+library(ggimage)
 library(gt)
 library(purrr)
 library(kableExtra)
@@ -59,6 +60,7 @@ tatum_id <- "1628369"
 # Report parameters
 season_used <- "2025-26"
 return_date <- as.Date("2026-03-06")
+logo_dir <- "assets/NBA-Team-Logos"
 
 # Captions
 caption_line      <- "Data: NBA.com | Viz: @Rambzee_"
@@ -188,6 +190,8 @@ build_regular_season_kable <- function(raw_df, left_label = "2024-25", right_lab
 ```
 
 ```{r api-functions}
+# NBA Stats / hoopR helpers. Downstream chunks use tryCatch fallbacks so the
+# report can still render if an endpoint is temporarily unavailable.
 get_player_gamelog <- function(player_id, season = season_used, season_type = "Regular Season") {
   hoopR::nba_playergamelog(
     season = season,
@@ -281,18 +285,20 @@ get_league_advanced <- function(season = season_used, season_type = "Regular Sea
 ```
 
 ```{r hand-input-data}
-# Manually entered research notes and source extracts.
+# Manually entered source extracts used for the final report.
+# These preserve the published values for playoff rankings, on/off splits,
+# rebounding leaderboards, and Net Points.
 regular_season_split <- tibble(
-  Metric = c("GP", "PTS", "REB", "AST", "STL", "TOV", "FG%", "3P%", "2P%", "eFG%", "TS%"),
-  left = c(72, 26.8, 8.7, 6.0, 1.1, 2.9, 45.2, 34.3, 55.9, 53.7, 58.2),
-  right = c(16, 21.8, 10.0, 5.3, 1.4, 2.4, 41.1, 32.9, 49.3, 49.3, 54.1),
-  is_pct = c(FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, TRUE, TRUE, TRUE, TRUE)
+  Metric = c("GP", "PTS", "REB", "AST", "STL", "TOV", "FGA", "FG%", "3P%", "2P%", "TS%"),
+  left = c(72, 26.8, 8.7, 6.0, 1.1, 2.9, 20.3, 45.2, 34.3, 55.9, 58.2),
+  right = c(16, 21.8, 10.0, 5.3, 1.4, 2.4, 17.9, 41.1, 32.9, 49.3, 54.1),
+  is_pct = c(FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, TRUE, TRUE, TRUE)
 )
 
 playoff_profile <- tibble(
   Metric = c("MPG", "PTS", "REB", "AST", "STL", "TOV", "FG%", "3P%", "2P%", "eFG%", "TS%"),
   Value = c(36.3, 23.3, 10.7, 6.8, 1.2, 2.8, 47.5, 36.5, 59.2, 56.9, 60.8),
-  is_pct = c(FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, TRUE, TRUE, TRUE, TRUE),
+  is_pct = c(FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, TRUE, TRUE, TRUE),
   Note = if_else(
     Metric %in% c("AST", "FG%", "2P%", "eFG%", "TS%"),
     "Career playoff high",
@@ -301,9 +307,9 @@ playoff_profile <- tibble(
 )
 
 playmaking_profile <- tibble(
-  Indicator = c("On-ball share", "Last season on-ball share", "Potential assists", "Rim assists"),
-  Value = c("29.0%", "30.1%", "15.4", "3.0"),
-  Context = c("Essentially unchanged role size", "Pre-injury baseline", "91st percentile", "89th percentile")
+  Indicator = c("Touches per game", "Last season touches per game", "Potential assists", "Rim assists"),
+  Value = c("76.3", "84.9", "15.4", "3.0"),
+  Context = c("Slightly smaller role-size", "Pre-injury baseline", "91st percentile", "89th percentile")
 )
 
 rebound_leaders <- tibble(
@@ -336,76 +342,63 @@ impact_split <- tibble(
   ThreeP_Def = c(35.5, 35.3, NA)
 )
 
+playoff_impact_split <- tibble(
+  Group = c("Tatum ON", "Tatum OFF", "ON - OFF"),
+  Minutes = c(201, 92, NA),
+  Off_Rating = c(118.0, 104.9, 13.1),
+  Def_Rating = c(112.0, 111.5, 0.5),
+  Net_Rating = c(6.0, -6.6, 12.7),
+  ThreeP_Off = c(35.8, 30.9, NA),
+  ThreeP_Def = c(35.4, 35.1, NA)
+)
+
 playoff_rank_snapshot <- tibble(
   Category = c(
     "Points", "Points", "Points", "Points", "Points",
     "Rebounds", "Rebounds", "Rebounds", "Rebounds", "Rebounds",
-    "Assists", "Assists", "Assists", "Assists", "Assists", "Assists"
+    "Assists", "Assists", "Assists", "Assists", "Assists", "Assists", "Assists"
   ),
   Rank = c(
-    10, 11, 12, 12, 14,
+    12, 13, 14, 15, 16,
     1, 2, 3, 4, 5,
-    1, 2, 3, 4, 5, 6
+    1, 2, 3, 4, 5, 6, 7
   ),
   Player = c(
-    "Scottie Barnes", "Jamal Murray", "Donovan Mitchell", "Jayson Tatum", "LeBron James",
-    "Nikola Jokic", "Karl-Anthony Towns", "Deandre Ayton", "Rudy Gobert", "Jayson Tatum",
-    "Nikola Jokic", "Scottie Barnes", "LeBron James", "Shai Gilgeous-Alexander", "Jrue Holiday", "Jayson Tatum"
+    "Victor Wembanyama", "Tyrese Maxey", "Jamal Murray", "Jayson Tatum", "LeBron James",
+    "Nikola Jokic", "Victor Wembanyama", "Jayson Tatum", "Karl-Anthony Towns", "Alperen Sengun",
+    "Nikola Jokic", "Scottie Barnes", "Shai Gilgeous-Alexander", "Cade Cunningham", "LeBron James", "Jrue Holiday", "Jayson Tatum"
   ),
   Value = c(
-    24.2, 23.7, 23.3, 23.3, 23.2,
-    13.2, 11.3, 10.8, 10.7, 10.7,
-    9.5, 9.0, 8.3, 8.0, 7.2, 6.8
+    24.0, 23.7, 23.7, 23.3, 23.2,
+    13.2, 10.7, 10.7, 10.6, 10.2,
+    9.5, 8.6, 7.9, 7.5, 7.3, 7.2, 6.8
   )
 )
 
 celtics_net_points <- tibble(
   Player = c(
-    "Jayson Tatum", "Neemias Queta", "Luka Garza", "Baylor Scheierman",
-    "Jordan Walsh", "Ron Harper Jr.", "Jaylen Brown", "Max Shulga",
-    "Dalano Banton", "Hugo González", "Payton Pritchard", "Amari Williams",
-    "Sam Hauser", "Nikola Vucevic", "Derrick White"
+    "Jayson Tatum", "Neemias Queta", "Jaylen Brown", "Ron Harper Jr.",
+    "Jordan Walsh", "Baylor Scheierman", 
+    "Luka Garza", "Sam Hauser", "Payton Pritchard", "Hugo González", "Nikola Vucevic", "Derrick White"
   ),
   Team = "BOS",
-  Pos = c(
-    "F-G", "C", "C", "G", "G", "F", "G-F", "G", "F", "G",
-    "G", "F-C", "F", "C", "G"
-  ),
-  Offense = c(16, 2, 8, 4, -3, 2, -4, 1, 1, -1, 5, 0, -2, -8, -16),
-  Defense = c(4, 11, -4, 0, 6, 1, 5, 0, 1, 1, -4, 1, 1, -1, 1),
-  Overall = c(20, 13, 5, 4, 3, 3, 2, 1, 1, 1, 1, 0, -1, -8, -15)
-)
-
-game7_summary <- tibble(
-  GP = 7,
-  MIN = 41.5,
-  PTS = 26.7,
-  REB = 9.3,
-  AST = 5.1,
-  `TS%` = "60.8%",
-  Record = "5-2"
-)
-
-game7_best <- tibble(
-  Date = "May 14, 2023",
-  Opponent = "vs PHI",
-  PTS = 51,
-  REB = 13,
-  AST = 5,
-  `TS%` = "74.6%",
-  Note = "NBA Game 7 playoff record"
+  Offense = c(16, 5, -2, 1, -5, 0, 5, 0, 5, -4, -8, -16),
+  Defense = c(4, 10, 5, 2, 6, 1, -4, 0, -6, 0, -1, 2),
+  Overall = c(20, 15, 3, 3, 1, 1, 1, 0, -1, -4, -8, -14)
 )
 ```
 
 # Executive Summary
 
-Less than a year removed from an Achilles rupture, Jayson Tatum has already returned as one of the most versatile and impactful players in basketball while carrying a similar load to what he handled before the injury.
+Less than a year after rupturing his Achilles, Jayson Tatum returned to a Celtics team that had already been better than expected without him.
 
-It is rare to watch a former top-five player rebuild parts of his game in real time. The scoring and movement are not fully back yet. The burst, balance, and flow are still coming along, but he has already shown enough to suggest he can reach a similar level, possibly with a slightly more polished all-around game.
+He was not immediately the same scorer he had been prior to the injury, but the rest of his game still looked familiar. He defended across matchups, rebounded at a high level, kept the offense organized, and gave Boston the steady decision-making it had been missing from its best player.
 
-Now the Celtics are tied 3–3 with Philadelphia, and the demands are only growing. Until now, Tatum has been evaluated with his timeline in mind. Achilles ruptures rarely allow for a return this quick. Game 7 raises the stakes and forces a different standard.
+That is the version of Tatum the Celtics built a champion around in 2024. He was a player who could shift with a series, handle different coverages, and impact games even when the jumper was not carrying him.
 
-# Box Score Difference
+Before the injury, Tatum was already a four-time First Team All-NBA player and one of the league’s defining stars. The Achilles rupture put that level in question. His return did not erase every concern, but by the playoffs, the outlook looked a lot better. Even while sharing more of the scoring load with Jaylen Brown, Tatum looked closer to the player Boston had trusted for years.
+
+# The Scoring Fluctuated
 
 ```{r regular-season-split-table}
 build_regular_season_kable(
@@ -415,13 +408,11 @@ build_regular_season_kable(
 )
 ```
 
-At face value, Tatum’s efficiency clearly dropped after his return. He was never an efficiency outlier as a scorer, but he consistently balanced league-average efficiency with elite volume, which creates massive value on its own. This season, he has struggled to reach that same scoring flow.
+The scoring decline was less about Tatum disappearing and more about the details that usually separate his offense. He was still getting shots up and drawing attention, but the burst, balance, and comfort playing through contact were not fully back yet. The clearest sign was inside the arc, where his two-point percentage dropped from 55.9% to 49.3%.
 
-Early on, he had to rebuild confidence attacking the rim, playing through contact, and finding his jumper within the same process. Even with those drops, the impact held because the rest of his game traveled. His rebounding stayed elite, his defense remained active, and he gave Boston the playmaking lift it needed while keeping turnovers low for the size of his role.
+# The Ramp-Up
 
-# The Ramp Up
-
-```{r tatum-game-logs}
+```{r api-game-log-data}
 # These NBA Stats API calls can fail if hoopR is unavailable, rate-limited, or blocked.
 tatum_regular <- tryCatch(
   get_player_gamelog(tatum_id, season = season_used, season_type = "Regular Season"),
@@ -444,79 +435,110 @@ tatum_since_return <- tatum_regular %>%
   )
 ```
 
-```{r game-log-trend, fig.width=7.5, fig.height=5.0}
+```{r game-log-trend, fig.width=7.5, fig.height=4.6}
+team_logo_paths <- tibble(
+  opponent = c(
+    "ATL", "BKN", "CHA", "CHI", "CLE", "DAL", "DEN", "DET", "GSW", "HOU",
+    "IND", "LAC", "LAL", "MEM", "MIA", "MIL", "MIN", "NOP", "NYK", "OKC",
+    "ORL", "PHI", "PHX", "POR", "SAC", "SAS", "TOR", "UTA", "WAS"
+  ),
+  logo = file.path(logo_dir, paste0(opponent, ".png"))
+)
+
 if (nrow(tatum_since_return) > 0) {
-  game_actual <- tatum_since_return %>%
-    select(game_date, pts, reb, ast) %>%
-    pivot_longer(
-      cols = c(pts, reb, ast),
-      names_to = "Metric",
-      values_to = "Value"
-    ) %>%
-    mutate(Metric = recode(Metric, pts = "PTS", reb = "REB", ast = "AST"))
 
-  game_roll <- tatum_since_return %>%
-    select(game_date, game_number, pts_roll, reb_roll, ast_roll) %>%
-    pivot_longer(
-      cols = c(pts_roll, reb_roll, ast_roll),
-      names_to = "Metric",
-      values_to = "Rolling"
-    ) %>%
+  tatum_plot_games <- tatum_since_return %>%
     mutate(
-      Metric = recode(Metric, pts_roll = "PTS", reb_roll = "REB", ast_roll = "AST")
+      Game = row_number(),
+      opponent = matchup %>%
+        stringr::str_extract("([A-Z]{3})$") %>%
+        tidyr::replace_na("OPP")
     ) %>%
-    filter(!is.na(Rolling))
+    left_join(team_logo_paths, by = "opponent")
 
-  ggplot() +
-    geom_vline(
-      xintercept = return_date,
+  n_games <- max(tatum_plot_games$Game, na.rm = TRUE)
+
+  tatum_ppg <- mean(tatum_plot_games$pts, na.rm = TRUE)
+  tatum_rpg <- mean(tatum_plot_games$reb, na.rm = TRUE)
+  tatum_apg <- mean(tatum_plot_games$ast, na.rm = TRUE)
+
+  y_max <- max(tatum_plot_games$pts, na.rm = TRUE) + 4
+
+  ggplot(tatum_plot_games, aes(x = Game, y = pts)) +
+    geom_hline(
+      yintercept = tatum_ppg,
       linetype = "dashed",
       linewidth = 0.45,
-      alpha = 0.35
+      color = "#6e6e6e",
+      alpha = 0.55
+    ) +
+    geom_line(
+      linewidth = 1.25,
+      color = celtics_green,
+      lineend = "round"
+    ) +
+    geom_point(
+      size = 3.05,
+      color = celtics_green
+    ) +
+    geom_text(
+      aes(label = pts),
+      vjust = -1.05,
+      size = 2.55,
+      family = "inter",
+      fontface = "bold",
+      color = text_dark
     ) +
     annotate(
       "text",
-      x = return_date + 0.4,
-      y = 32.5,
-      label = "Return",
+      x = n_games - 0.25,
+      y = tatum_ppg - 1.2,
+      label = paste0(round(tatum_ppg, 1), " PPG after return"),
       family = "inter",
-      size = 3,
-      hjust = 0,
-      color = "#555555"
+      size = 2.45,
+      color = "#6e6e6e",
+      hjust = 1
     ) +
-    geom_point(
-      data = game_actual,
-      aes(x = game_date, y = Value, color = Metric),
-      alpha = 0.18,
-      size = 1.9
+    ggimage::geom_image(
+      aes(x = Game, y = -1.9, image = logo),
+      inherit.aes = FALSE,
+      size = 0.048,
+      by = "width"
     ) +
-    geom_line(
-      data = game_roll,
-      aes(x = game_date, y = Rolling, color = Metric, group = Metric),
-      linewidth = 1.15,
-      lineend = "round"
+    scale_x_continuous(
+      breaks = tatum_plot_games$Game,
+      labels = rep("", n_games)
     ) +
-    scale_color_manual(
-      values = c(
-        "PTS" = celtics_green,
-        "REB" = celtics_gold,
-        "AST" = celtics_dark
-      )
+    scale_y_continuous(
+      limits = c(-3.5, y_max),
+      breaks = seq(0, ceiling(y_max / 10) * 10, 10),
+      expand = expansion(mult = c(0.01, 0.10))
     ) +
-    scale_x_date(
-      date_breaks = "1 week",
-      date_labels = "%b %d",
-      limits = c(return_date, max(game_actual$game_date, na.rm = TRUE))
-    ) +
-    scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, 10)) +
     labs(
-      title = "The Scoring is Catching up to the Rest",
-      subtitle = "Single-game results with five-game trend lines since Tatum's March 6 return",
+      title = "The Scoring Rhythm Took Time",
+      subtitle = paste0(
+        "Tatum post-return scoring by game | ",
+        round(tatum_rpg, 1), " REB and ",
+        round(tatum_apg, 1), " AST per game"
+      ),
       x = NULL,
-      y = "Per-game production",
+      y = "Points",
       caption = caption_line
     ) +
-    theme_caleb
+    theme_caleb +
+    theme(
+      panel.grid.minor = element_blank(),
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      legend.position = "none",
+      plot.subtitle = element_text(
+        size = 9.3,
+        hjust = 0.5,
+        color = "#2f2f2f",
+        margin = margin(b = 6)
+      )
+    )
+
 } else {
   ggplot() +
     annotate(
@@ -539,16 +561,21 @@ if (nrow(tatum_since_return) > 0) {
 }
 ```
 
-# The Impact Is Already Star Level
+Tatum took some time to find his footing as a scorer, but the late-season direction was promising. After some uneven nights early in the return, he settled into the mid-20s by the end of the regular season.
 
-```{r impact-table}
+# The Impact Translated Before the Scoring Fully Did
+
+```{r regular-season-impact-table, results='asis'}
 impact_display <- impact_split %>%
   transmute(
     Group,
     MIN = if_else(is.na(Minutes), "--", as.character(Minutes)),
     OFF = fmt_num(Off_Rating),
     DEF = fmt_num(Def_Rating),
-    NET = paste0(if_else(Net_Rating > 0, "+", ""), fmt_num(Net_Rating))
+    NET = paste0(
+      if_else(Net_Rating > 0, "+", ""),
+      fmt_num(Net_Rating)
+    )
   )
 
 impact_display %>%
@@ -559,12 +586,18 @@ impact_display %>%
     caption = "Boston's regular-season lineup performance with and without Jayson Tatum"
   ) %>%
   style_kable_tatum(font_size = 11) %>%
-  kableExtra::column_spec(5, bold = TRUE, color = celtics_green)
+  kableExtra::column_spec(
+    5,
+    bold = TRUE,
+    color = celtics_green
+  )
 ```
 
-Boston was good without Tatum this season, but his minutes still popped. In a small regular-season sample, Boston was +11.4 per 100 with him on the floor and +4.1 better than it was in the non-Tatum minutes overall. His return immediately brought two-way stability, ballhandling, and processing back to the lineup. Among Celtics players, his net rating trailed only Neemias Queta (+13.1) and Hugo González (+12.3).
+Despite the shaky scoring, Tatum's impact came back quickly. In his 522 regular-season minutes, Boston posted a +11.4 net rating, compared with +7.3 when he sat.
 
-# The Rebounding Is Still Elite
+That split is not a perfect measure of individual value, especially across 16 games. Lineups, opponents, and shooting swings all have to be taken into consideration. Still, it matched the larger takeaway that Boston had another level with Tatum back on the floor. His rebounding, decision-making, and control of the game led to immediate impact for the Celtics.
+
+# The Rebounding Remained High-Level
 
 ```{r post-return-rebounding-table}
 rebound_display <- rebound_leaders %>%
@@ -594,15 +627,22 @@ rebound_display %>%
   style_kable_tatum(font_size = 10.5)
 ```
 
-Tatum’s rebounding can be underappreciated, but it has long been one of the steadiest parts of his game. Since returning, he has lived in the same range as centers on the glass.
-
-That gives Boston more lineup flexibility and more margin when the offense is not clicking. Even when the scoring rhythm is shaky, he can still finish possessions and keep the Celtics out of rotation-heavy scramble situations.
-
-The volume backs it up. Tatum ranked seventh in rebounds per game after his return, and his 26.5% defensive rebounding rate ranked sixth in the league. This is not a new development either: he has ranked in the 90th percentile or higher in defensive rebounds for his position every season of his career.
-
 ```{r drb-percent-leaders, fig.width=7.2, fig.height=4.7}
-ggplot(drb_leaders, aes(x = Player, y = DRB_Pct, fill = Team_Color)) +
-  geom_col(width = 0.68, alpha = 0.94) +
+drb_plot <- drb_leaders %>%
+  mutate(
+    Player_Label = case_when(
+      Player == "Tatum" ~ "Tatum (F)",
+      Player == "KAT" ~ "KAT (C)",
+      TRUE ~ paste0(Player, " (C)")
+    ),
+    is_tatum = Player == "Tatum",
+    fill_color = if_else(is_tatum, celtics_green, "#cfcac0")
+  ) %>%
+  arrange(DRB_Pct) %>%
+  mutate(Player_Label = factor(Player_Label, levels = Player_Label))
+
+ggplot(drb_plot, aes(x = Player_Label, y = DRB_Pct, fill = fill_color)) +
+  geom_col(width = 0.68, alpha = 0.96) +
   geom_text(
     aes(label = paste0(fmt_num(DRB_Pct), "%")),
     hjust = -0.15,
@@ -612,10 +652,13 @@ ggplot(drb_leaders, aes(x = Player, y = DRB_Pct, fill = Team_Color)) +
   ) +
   coord_flip() +
   scale_fill_identity() +
-  scale_y_continuous(limits = c(0, 31), expand = expansion(mult = c(0, 0.06))) +
+  scale_y_continuous(
+    limits = c(0, 31),
+    expand = expansion(mult = c(0, 0.06))
+  ) +
   labs(
-    title = "Defensive Rebounding Percentage Leaders",
-    subtitle = "2025-26 regular season | Min. 15 GP",
+    title = "Tatum Was in Elite Rebounding Company",
+    subtitle = "Defensive rebounding percentage leaders | 2025-26 regular season | Min. 15 GP",
     x = NULL,
     y = "DRB%",
     caption = caption_line
@@ -624,7 +667,9 @@ ggplot(drb_leaders, aes(x = Player, y = DRB_Pct, fill = Team_Color)) +
   theme(legend.position = "none")
 ```
 
-# The Playmaking Has Held the Offense Together
+From his return through the end of the regular season, Tatum averaged 10.0 boards per game and posted a 27.4% defensive rebounding rate, right in the range of several true centers. That gave Boston lineup flexibility it had missed for most of the season, letting the Celtics play smaller and keep more skill on the floor without giving up the glass.
+
+# A Methodical Offensive Engine
 
 ```{r playmaking-table}
 playmaking_profile %>%
@@ -637,13 +682,11 @@ playmaking_profile %>%
   style_kable_tatum(font_size = 10.5)
 ```
 
-The playmaking may be the clearest sign that Boston’s reliance on Tatum never really wavered.
+The most reassuring development may have been how patiently Tatum controlled the offense. His touches dipped slightly from the year before, but the passing indicators were strong: 15.4 potential assists and 3.0 rim assists, both near the top of the league.
 
-His on-ball share barely moved from last season, which shows how unshielded his return has been. The Celtics let him initiate, read the defense, and solve possessions when the first action stalled, not just to get him reps, but because they needed him to.
+Boston kept him in a familiar role, and that part of his game translated right away. Tatum still looked comfortable reading help, controlling the pace, and finding the right pass without rushing. If anything, his playmaking looked even more polished while the scoring efficiency worked its way back.
 
-The passing indicators show his growth as a game-reader. His potential assists and rim assists point to creation that is actually shifting the defense, not just swinging the ball and collecting easy “one-mores.” He has been getting downhill, drawing help, reading the second layer, and making passes a full beat ahead of the defense. The scoring rhythm is still coming back, but the control is already there.
-
-# League Context: Usage and Efficiency
+# Similar Responsibility, Lower Regular-Season Efficiency
 
 ```{r league-usage-ts, fig.width=7.5, fig.height=5.1}
 league_usage <- tryCatch({
@@ -661,10 +704,9 @@ if (nrow(league_usage) > 0) {
   avg_usg <- mean(league_usage$usg_pct, na.rm = TRUE)
   avg_ts  <- mean(league_usage$ts_pct, na.rm = TRUE)
 
-  # Tatum comparison is hand-entered to preserve the original pre/post-injury comparison.
   tatum_compare <- tibble(
     season = c("Tatum 2024-25", "Tatum 2025-26"),
-    usg_pct = c(30.1, 29.0),
+    usg_pct = c(31.2, 30.0),
     ts_pct = c(58.2, 54.1)
   )
 
@@ -674,10 +716,10 @@ if (nrow(league_usage) > 0) {
     geom_point(alpha = 0.16, size = 1.4, color = "#4d4d4d") +
     geom_segment(
       data = tibble(
-        x = 30.1,
-        xend = 29.0,
+        x = 31.2,
+        xend = 30.0,
         y = 58.2,
-        yend = 54.5
+        yend = 54.1
       ),
       aes(x = x, xend = xend, y = y, yend = yend),
       inherit.aes = FALSE,
@@ -707,8 +749,8 @@ if (nrow(league_usage) > 0) {
     labs(
       title = "Similar Role, Less Scoring Efficiency",
       subtitle = "2025-26 regular season (min. 500 minutes) | Tatum: 2024-25 vs. 2025-26",
-      x = "Usage rate",
-      y = "True shooting %",
+      x = "Usage %",
+      y = "True Shooting %",
       caption = caption_line
     ) +
     theme_caleb
@@ -734,9 +776,7 @@ if (nrow(league_usage) > 0) {
 }
 ```
 
-That same responsibility shows up in the usage profile. Tatum is operating in a very similar role, with his usage barely moving from about 30% pre-injury to roughly 29% this season. The difference is the efficiency, which dipped below his usual standard in the regular season. In the playoffs, that has started to look more like his norm.
-
-# The Next Phase of the Ramp-Up
+# The Scoring Caught Up in the Playoffs
 
 ```{r playoff-profile-table}
 playoff_profile %>%
@@ -750,17 +790,19 @@ playoff_profile %>%
     booktabs = TRUE,
     escape = FALSE,
     align = c("l", "c", "l"),
-    caption = "Tatum's 2026 playoff production through six playoff games"
+    caption = "Tatum's 2026 playoff production"
   ) %>%
   style_kable_tatum(font_size = 10.5) %>%
   kableExtra::column_spec(3, italic = TRUE, color = celtics_green)
 ```
 
-Through six games, Tatum has averaged 23.3 points, 10.7 rebounds, and 6.8 assists against just 2.8 turnovers on 60.8% true shooting, a playoff career high. The efficiency jump is not limited to TS%. He is also at playoff career highs in several efficiency metrics, while carrying major playmaking responsibility despite uneven shooting from the teammates around him.
+The playoffs were the clearest sign that the regular-season efficiency dip was not Tatum’s new baseline. He looked more comfortable creating off the dribble and getting downhill, finishing at 47.5% from the field, 59.2% inside the arc, and 60.8% true shooting.
 
-# Playoff Ranking
+The rebounding and playmaking were there from the start. Once the scoring started to catch up, his place among the playoff leaders reflected it.
 
-```{r tatum-ranking}
+# Playoff Rankings
+
+```{r playoff-rankings-table}
 playoff_rank_snapshot %>%
   mutate(
     is_tatum = Player == "Jayson Tatum",
@@ -781,84 +823,110 @@ playoff_rank_snapshot %>%
     booktabs = TRUE,
     escape = FALSE,
     align = c("l", "c", "l", "c"),
-    caption = "Where Tatum ranks among 2026 playoff leaders"
+    caption = "Where Tatum ranked among 2026 playoff leaders"
   ) %>%
   style_kable_tatum(font_size = 9.5) %>%
   kableExtra::collapse_rows(columns = 1, valign = "top")
 ```
 
-That all-around production shows up clearly on the playoff leaderboards. He ranks 12th in points, fifth in rebounds, and sixth in assists, joining Jokic as the only other player top 12 in all three.
+# Boston Still Ran Through Him
 
-# Playoff Team Context
+**Net Points Definition:** Net Points is a play-by-play based metric that assigns credit and blame for every possession while a player is on the floor, capturing scoring, turnovers, defense, and context beyond the box score. It reflects how much a player moved the score rather than only what appeared in his individual line.
 
-**Net Points Definition:** Net Points is a play-by-play based metric that assigns credit and blame for every possession while a player is on the floor, capturing scoring, turnovers, defense, and context beyond the box score. It reflects how much a player actually moved the score, not just what they produced individually.
-
-```{r celtics-playoff-net-points, fig.width=7.5, fig.height=5.2}
+```{r playoff-net-points-chart, fig.width=7.5, fig.height=5.0}
 celtics_net_points %>%
-  filter(!Player %in% c("Hugo González", "Amari Williams", "Max Shulga", "Dalano Banton")) %>%
+  filter(
+    Player %in% c(
+      "Jayson Tatum", "Neemias Queta", "Ron Harper Jr.", "Jaylen Brown",
+      "Luka Garza", "Baylor Scheierman", "Jordan Walsh", "Sam Hauser",
+      "Payton Pritchard", "Hugo González", "Nikola Vucevic", "Derrick White"
+    )
+  ) %>%
   arrange(Overall) %>%
   mutate(
     Player = factor(Player, levels = Player),
-    label = fmt_signed(Overall, 0)
+    label = fmt_signed(Overall, 0),
+    fill_color = case_when(
+      Player == "Jayson Tatum" ~ celtics_green,
+      Overall > 0 ~ "#b8c5ad",
+      Overall == 0 ~ "#d6d3c8",
+      TRUE ~ "#cf7d6d"
+    ),
+    label_hjust = if_else(Overall >= 0, -0.15, 1.12)
   ) %>%
-  ggplot(aes(x = Player, y = Overall, fill = Overall)) +
-  geom_col(width = 0.68, alpha = 0.94) +
-  geom_hline(yintercept = 0, linewidth = 0.45, color = "#555555", alpha = 0.5) +
+  ggplot(aes(x = Player, y = Overall, fill = fill_color)) +
+  geom_col(width = 0.68, alpha = 0.96) +
+  geom_hline(
+    yintercept = 0,
+    linewidth = 0.45,
+    color = "#555555",
+    alpha = 0.55
+  ) +
   geom_text(
-    aes(label = label, hjust = if_else(Overall >= 0, -0.18, 1.15)),
-    size = 3.2,
+    aes(label = label, hjust = label_hjust),
+    size = 3.15,
     family = "inter",
     color = text_dark
   ) +
   coord_flip() +
-  scale_fill_gradient2(
-    low = "#b91c1c",
-    mid = "#d6d3c8",
-    high = celtics_green,
-    midpoint = 0
+  scale_fill_identity() +
+  scale_y_continuous(
+    expand = expansion(mult = c(0.14, 0.16))
   ) +
-  scale_y_continuous(expand = expansion(mult = c(0.12, 0.14))) +
   labs(
-    title = "Boston's Playoff Success Has Relied on Tatum",
-    subtitle = "Celtics playoff net points | 2026 NBA Playoffs",
+    title = "Tatum Gave Boston Its Biggest Playoff Lift",
+    subtitle = "Celtics playoff net points",
     x = NULL,
-    y = "Net points",
+    y = "Net points added",
     caption = "Data: ESPN Analytics | Viz: @Rambzee_"
   ) +
   theme_caleb +
   theme(legend.position = "none")
 ```
 
-Boston’s path forward has run through Tatum.
+```{r playoff-impact-table, results='asis'}
+playoff_impact_display <- playoff_impact_split %>%
+  transmute(
+    Group,
+    MIN = if_else(is.na(Minutes), "--", as.character(Minutes)),
+    OFF = fmt_num(Off_Rating),
+    DEF = fmt_num(Def_Rating),
+    NET = paste0(
+      if_else(Net_Rating > 0, "+", ""),
+      fmt_num(Net_Rating)
+    ),
+    net_color = case_when(
+      Net_Rating > 0 ~ celtics_green,
+      Net_Rating < 0 ~ "#B23A3A",
+      TRUE ~ text_dark
+    )
+  )
 
-These are essentially his 17th through 22nd games back from an Achilles rupture. He is playing 36.3 minutes per game, 20th in the playoffs, less than a year removed from an injury that has derailed so many careers. Yet it has not been enough. Despite taking a 3–1 lead, Boston has been pushed to Game 7 as Philadelphia has tightened the series, raised the pressure on both ends, and forced the Celtics to ask even more of him.
-
-The support around him has been inconsistent, and some rotation decisions have amplified it. Key pieces like Derrick White and Nikola Vučević have struggled, while other options have barely been explored. Players like Luka Garza and Ron Harper Jr. have produced in small bursts, but in limited minutes. Whether that production would translate is a different question, but the lack of experimentation has stood out as the series tightened.
-
-# What Game 7 Means for Tatum and the Celtics
-
-```{r game-7-tables}
-game7_summary %>%
+playoff_impact_display %>%
+  select(-net_color) %>%
   kableExtra::kbl(
     format = "latex",
     booktabs = TRUE,
-    align = c("c", "c", "c", "c", "c", "c", "c"),
-    caption = "Jayson Tatum's career Game 7 averages"
+    align = c("l", "c", "c", "c", "c"),
+    caption = paste0(
+      "Boston's playoff performance with and without Jayson Tatum ",
+      "| 50\\% offensive and defensive 3-point luck adjustments"
+    )
   ) %>%
-  style_kable_tatum(font_size = 10.5)
-
-game7_best %>%
-  kableExtra::kbl(
-    format = "latex",
-    booktabs = TRUE,
-    align = c("l", "l", "c", "c", "c", "c", "l"),
-    caption = "Tatum's best Game 7 performance"
-  ) %>%
-  style_kable_tatum(font_size = 10.5) %>%
-  kableExtra::column_spec(3, bold = TRUE, color = celtics_green) %>%
-  kableExtra::column_spec(7, italic = TRUE, color = celtics_green)
+  style_kable_tatum(font_size = 11) %>%
+  kableExtra::column_spec(
+    5,
+    bold = TRUE,
+    color = playoff_impact_display$net_color
+  )
 ```
 
-Tatum has been here before. Across seven career Game 7s, he has averaged 26.7 points, 9.3 rebounds, and 5.1 assists on 60.8% true shooting, with a 5–2 record. His 51-point game against Philadelphia in 2023 remains the NBA playoff Game 7 scoring record.
+By the end of the playoffs, Tatum had answered much of the doubt that came with the injury. Boston’s future was still going to run through him.
 
-The context is different this time. He is less than a year removed from an Achilles rupture. Tatum has already done more than anyone could have reasonably expected this soon. Now Boston needs him to be its best player once more in a Game 7 while he is still rebuilding the final pieces of his game.
+The Celtics struggled immensely in the minutes without him, especially on offense. He finished with Boston’s best net-points mark at +20, and the adjusted on/off split showed a 13.1-point offensive gap with him on the floor.
+
+Note: Playoff on/off ratings use Databallr’s 50% offensive and defensive three-point luck adjustment, which helps reduce the effect of hot or cold shooting in a small sample. It does not remove the other noise that comes with 201 Tatum minutes and 92 non-Tatum minutes, including lineup context, matchup patterns, and rotation timing. The split should be read as directional, not definitive.
+
+# What This Means Going Forward
+
+After the first major physical setback of his career, Tatum gave Boston real reason to believe. The scoring needed time, but the rebounding, playmaking, defense, and versatility were there almost immediately. By the playoffs, the scoring started to follow. The roster around him may change, the money may get tighter, and Boston may have to build differently, but the postseason brought the same truth back into focus: whatever comes next for the Celtics, it starts with Tatum.
